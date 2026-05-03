@@ -1,0 +1,59 @@
+# HonkHonk
+
+A modern, Wayland-native soundboard for Linux.
+
+Play meme sounds, sound effects, and audio clips in Discord, games, and voice chat — with a polished UI and global hotkeys that work on Wayland.
+
+## Why HonkHonk?
+
+Linux has lacked a soundboard that feels as polished and easy to use as VoiceMod on Windows. Existing options either don't support Wayland, have dated UIs, or require complex audio routing setup.
+
+HonkHonk is built from the ground up for the modern Linux desktop:
+
+- **Wayland-native** — no X11 fallbacks or XWayland hacks
+- **PipeWire audio** — persistent virtual mic, zero-glitch playback
+- **Global hotkeys** — via xdg-desktop-portal GlobalShortcuts (works on KDE, GNOME, Hyprland)
+- **Polished UI** — web-based frontend with Svelte, designed to look and feel great
+- **Multi-DE support** — KDE Plasma 6, GNOME 45+, Hyprland, and more
+- **Distro-friendly** — packages for Flatpak, AUR, DEB, RPM, Nix, AppImage
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Backend | Rust |
+| Frontend | Tauri v2 + Svelte |
+| Audio | pipewire-rs |
+| Shortcuts | ashpd (xdg-desktop-portal) |
+| System Tray | ksni (StatusNotifierItem) |
+| Audio Decode | symphonia |
+
+## Status
+
+**Early development.** Architecture and specification phase. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
+
+## Building
+
+```bash
+# Install dependencies (Arch / Manjaro)
+sudo pacman -S rust nodejs npm pkg-config pipewire webkit2gtk-4.1 base-devel
+
+# Build and run
+cargo tauri dev
+```
+
+See [CLAUDE.md](CLAUDE.md) for build instructions for other distros.
+
+## Prior Art
+
+HonkHonk builds on ideas and lessons learned from the Linux audio community. We're grateful to these projects for paving the way:
+
+- [Soundux](https://github.com/Soundux/Soundux) — pioneered the Linux soundboard space with PipeWire support and a web-based UI
+- [PWSP](https://github.com/arabianq/pipewire-soundpad) — demonstrated the Rust + PipeWire soundboard architecture
+- [venmic](https://github.com/Vencord/venmic) — excellent PipeWire virtual device patterns
+- [Pipeweaver](https://github.com/pipeweaver/pipeweaver) — modern Rust + web UI for PipeWire routing
+- [obs-wayland-hotkeys](https://github.com/leia-uwu/obs-wayland-hotkeys) — proved GlobalShortcuts portal works on KDE6
+
+## License
+
+[MIT](LICENSE)
