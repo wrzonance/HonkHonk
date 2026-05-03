@@ -10,10 +10,11 @@ Linux has lacked a soundboard that feels as polished and easy to use as VoiceMod
 
 HonkHonk is built from the ground up for the modern Linux desktop:
 
+- **Pure Rust** — single binary, single `cargo build`, no Node.js/WebKitGTK
 - **Wayland-native** — no X11 fallbacks or XWayland hacks
 - **PipeWire audio** — persistent virtual mic, zero-glitch playback
 - **Global hotkeys** — via xdg-desktop-portal GlobalShortcuts (works on KDE, GNOME, Hyprland)
-- **Polished UI** — web-based frontend with Svelte, designed to look and feel great
+- **Polished UI** — Iced GUI with custom theming, GPU-rendered
 - **Multi-DE support** — KDE Plasma 6, GNOME 45+, Hyprland, and more
 - **Distro-friendly** — packages for Flatpak, AUR, DEB, RPM, Nix, AppImage
 
@@ -21,11 +22,10 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 
 | Component | Technology |
 |-----------|-----------|
-| Backend | Rust |
-| Frontend | Tauri v2 + Svelte |
+| GUI | Iced (Rust, Elm architecture, wgpu) |
 | Audio | pipewire-rs |
 | Shortcuts | ashpd (xdg-desktop-portal) |
-| System Tray | ksni (StatusNotifierItem) |
+| System Tray | tray-icon (StatusNotifierItem) |
 | Audio Decode | symphonia |
 
 ## Status
@@ -36,10 +36,13 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 
 ```bash
 # Install dependencies (Arch / Manjaro)
-sudo pacman -S rust nodejs npm pkg-config pipewire webkit2gtk-4.1 base-devel
+sudo pacman -S rust pkg-config pipewire wayland base-devel
 
 # Build and run
-cargo tauri dev
+cargo run
+
+# Release build
+cargo build --release
 ```
 
 See [CLAUDE.md](CLAUDE.md) for build instructions for other distros.
@@ -53,6 +56,7 @@ HonkHonk builds on ideas and lessons learned from the Linux audio community. We'
 - [venmic](https://github.com/Vencord/venmic) — excellent PipeWire virtual device patterns
 - [Pipeweaver](https://github.com/pipeweaver/pipeweaver) — modern Rust + web UI for PipeWire routing
 - [obs-wayland-hotkeys](https://github.com/leia-uwu/obs-wayland-hotkeys) — proved GlobalShortcuts portal works on KDE6
+- [Cosmic DE](https://github.com/pop-os/cosmic-epoch) — large-scale Iced application reference
 
 ## License
 

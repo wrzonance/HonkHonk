@@ -18,74 +18,101 @@ The key technical blocker — global hotkeys on Wayland — is now solved via `x
 2. **Use existing libraries.** Don't rewrite what's solved. PipeWire bindings, portal APIs, audio decoders — all exist.
 3. **Wayland-native from day one.** No X11 fallbacks. No XWayland hacks. If it doesn't work on Wayland, it doesn't ship.
 4. **Look good.** The UI is the product. A soundboard with an ugly UI is a soundboard nobody uses.
+5. **Single toolchain.** Pure Rust. One language, one build system, minimal external dependencies.
 
 ## Tech Stack
 
 | Component | Technology | Why |
 |-----------|------------|-----|
-| Language | **Rust** | Single language for backend + desktop integration. Memory safety. Strong PipeWire/portal ecosystem |
-| Frontend | **Tauri v2 + Svelte** | Web tech = maximum UI design flexibility. Tauri = Rust-native, ~10MB overhead (not 150MB Electron). WebKitGTK backend works on Wayland |
-| PipeWire | **pipewire-rs** | Official Rust bindings from PipeWire project. Production-proven |
-| Global Shortcuts | **ashpd** (crate, `global_shortcuts` feature) | Full xdg-desktop-portal GlobalShortcuts API. Async/tokio. Bypasses Tauri's broken Wayland shortcut impl |
-| System Tray | **ksni** or Tauri tray API | StatusNotifierItem protocol — the only tray protocol KDE6 supports |
-| Audio Decode | **symphonia** | Pure Rust. MP3, WAV, OGG, FLAC. No C dependencies |
+| Language | **Rust** | Single language for everything — GUI, audio, system integration. Memory safety. Strong PipeWire/portal ecosystem |
+| GUI | **Iced 0.13** | Pure Rust, Elm/MVU architecture, wgpu GPU rendering, Wayland-native via winit. MIT license |
+| Renderer | **wgpu** (default) / **tiny-skia** (fallback) | GPU-accelerated by default, software renderer via env var for edge cases |
+| PipeWire | **pipewire-rs 0.8** | Official Rust bindings from PipeWire project. Production-proven |
+| Global Shortcuts | **ashpd 0.13** (`global_shortcuts` feature) | Full xdg-desktop-portal GlobalShortcuts API. Async/tokio |
+| System Tray | **tray-icon 0.19** + **muda 0.15** | Actively maintained (Tauri team), standalone SNI, cross-DE |
+| Audio Decode | **symphonia 0.5** | Pure Rust. MP3, WAV, OGG, FLAC, AAC. No C dependencies |
 | Audio Playback | **pipewire-rs** streams | Direct PipeWire playback — no rodio/ALSA intermediary |
 
-### Why Tauri v2 over alternatives
+### Why Iced over alternatives
 
 | Option | Rejected Because |
 |--------|-----------------|
-| Iced (Rust) | Hard to make VoiceMod-beautiful. No CSS, no animations, no blur effects. System tray not built-in |
+| Tauri v2 + Svelte | WebKitGTK dep (~50MB), two languages (Rust+TS), Node.js toolchain, IPC serialization overhead. Overkill for a grid-of-buttons UI |
 | Qt6/QML | C++ complexity. QML learning curve. rohrkabel (C++23 PipeWire wrapper) has solo maintainer risk |
 | Electron | 150MB binary. Memory hog. Not native |
 | GTK4 | GNOME design language looks foreign on KDE6 |
+| Slint | GPL or commercial license. Conflicts with MIT project |
+| egui | Immediate mode, "dev tools" aesthetic. Not suitable for consumer-facing UI |
 
-Tauri v2 gives us: web UI design flexibility (CSS/animations/gradients), Rust backend (type-safe IPC), ~10MB overhead, WebKitGTK Wayland rendering.
+Iced gives us: pure Rust (single `cargo build`), Elm architecture (immutable state, message-driven updates), wgpu GPU rendering, Wayland-native via winit, MIT license, no WebKitGTK/Node.js dependencies, custom theming via Rust traits.
 
-**Known Tauri limitation:** `global-hotkey` crate doesn't work on Wayland. We bypass this entirely — ashpd talks directly to the GlobalShortcuts portal from the Rust backend. Tauri never touches hotkeys.
+### Renderer Selection
+
+```
+HONKHONK_RENDERER=software honkhonk   # Force CPU rendering (tiny-skia)
+honkhonk                                # Default: GPU rendering (wgpu)
+```
+
+Wayland sessions require GPU drivers (compositor needs them), so wgpu works on all target systems. Software fallback exists for VMs, debugging, and edge cases. No auto-fallback — explicit user choice.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                  Tauri v2 Window                      │
+│                   Iced Application                     │
 │  ┌────────────────────────────────────────────────┐  │
-│  │              Svelte Frontend                    │  │
+│  │                 View Layer                      │  │
 │  │                                                 │  │
 │  │  ┌──────────────┐  ┌───────────────────────┐   │  │
-│  │  │  Sound Grid  │  │  Settings / Config    │   │  │
-│  │  │  - thumbnails│  │  - hotkey slots       │   │  │
-│  │  │  - search    │  │  - audio device       │   │  │
-│  │  │  - favorites │  │  - volume controls    │   │  │
-│  │  │  - folders   │  │  - theme picker       │   │  │
+│  │  │  Sound Grid  │  │  Controls             │   │  │
+│  │  │  - cards     │  │  - search bar         │   │  │
+│  │  │  - click play│  │  - volume slider      │   │  │
+│  │  │  - stop btn  │  │  - stop all           │   │  │
 │  │  └──────────────┘  └───────────────────────┘   │  │
 │  │                                                 │  │
 │  └─────────────────────┬──────────────────────────┘  │
-│                        │ Tauri IPC (invoke/events)    │
+│                        │ Messages (Elm architecture)  │
 │  ┌─────────────────────┴──────────────────────────┐  │
-│  │               Rust Backend                      │  │
+│  │            State + Update Logic                  │  │
 │  │                                                 │  │
 │  │  ┌──────────────┐  ┌───────────────────────┐   │  │
-│  │  │ AudioEngine  │  │  ShortcutManager      │   │  │
-│  │  │              │  │                        │   │  │
-│  │  │ - pipewire-rs│  │  - ashpd              │   │  │
-│  │  │ - virtual mic│  │  - GlobalShortcuts    │   │  │
-│  │  │ - playback   │  │  - fixed slot model   │   │  │
-│  │  │ - mixing     │  │  - KDE portal         │   │  │
-│  │  └──────┬───────┘  └──────────┬────────────┘   │  │
-│  │         │                     │                 │  │
-│  │  ┌──────┴───────┐  ┌─────────┴─────────────┐   │  │
-│  │  │ symphonia    │  │  ksni                  │   │  │
-│  │  │ decode audio │  │  system tray icon      │   │  │
-│  │  └──────────────┘  └───────────────────────┘   │  │
-│  └─────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────┘
-         │                          │
-         ▼                          ▼
-   PipeWire Server         xdg-desktop-portal-kde
-   (virtual sink +          (GlobalShortcuts v2)
-    audio graph)
+│  │  │ AudioHandle  │  │  Library / Config     │   │  │
+│  │  │ (channel tx) │  │  (sound entries,      │   │  │
+│  │  │              │  │   XDG paths)          │   │  │
+│  │  └──────┬───────┘  └───────────────────────┘   │  │
+│  │         │                                       │  │
+│  └─────────┼───────────────────────────────────────┘  │
+└────────────┼──────────────────────────────────────────┘
+             │ Channels (no IPC serialization)
+             ▼
+┌─────────────────────────────┐    ┌────────────────────┐
+│  AudioEngine (PipeWire      │    │  tray-icon         │
+│  thread)                    │    │  (main thread,     │
+│  - virtual sink             │    │   channel → sub)   │
+│  - mic passthrough          │    └────────────────────┘
+│  - playback streams         │
+│  - monitor output           │
+└──────────────┬──────────────┘
+               │
+               ▼
+         PipeWire Server
+         (virtual sink +
+          audio graph)
 ```
+
+### Communication Model
+
+No IPC serialization. Direct Rust channel communication:
+
+1. **UI → Audio (Commands):** Iced `Command::perform` sends `AudioCommand` via `tokio::sync::mpsc` to PipeWire thread.
+2. **Audio → UI (Events):** PipeWire thread sends `AudioEvent` via channel. Iced `Subscription` polls receiver each frame.
+3. **Tray → App:** `tray-icon` sends events via channel → Iced `Subscription`.
+
+### Threading Model
+
+- **Main thread:** Iced event loop + tray-icon (both need main thread on Linux)
+- **PipeWire thread:** Dedicated thread running PipeWire's own event loop. Owns `AudioEngine`.
+- **Communication:** Bounded `mpsc` channels. Non-blocking sends from main thread.
 
 ## PipeWire Audio Architecture
 
@@ -118,7 +145,7 @@ Key design decisions:
 
 PWSP created/destroyed a PipeWire stream node for every sound played. Each creation triggered PipeWire graph reconfiguration → driver renegotiation → audio dropouts. HonkHonk keeps a persistent sink and writes audio data into it, similar to how a music player works. No graph changes during playback.
 
-## Global Shortcuts — Fixed Slot Model
+## Global Shortcuts — Fixed Slot Model (Phase 2)
 
 The xdg-desktop-portal GlobalShortcuts API requires a user confirmation dialog when shortcuts are registered. To avoid spamming dialogs every time a sound is added:
 
@@ -134,7 +161,7 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 ## Phased Delivery
 
 ### Phase 1: MVP — "It plays sounds in Discord"
-- Tauri v2 + Svelte skeleton
+- Iced GUI skeleton (window, sound grid, search, volume)
 - Sound file browser (folder-based, search, grid view)
 - PipeWire virtual mic (persistent sink + mic passthrough)
 - Play sound → virtual mic + local headset
@@ -153,7 +180,7 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 ### Phase 3: Polish
 - Favorites / recently played
 - Sound pack import (drag-and-drop folders, MyInstants URL import)
-- Themes (dark/light, accent colors)
+- Themes (dark/light, accent colors via Iced custom Theme)
 - Per-sound volume
 - Overlap mode (concurrent vs. interrupt)
 
@@ -167,41 +194,40 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 
 ```
 honkhonk/
-├── src-tauri/              # Rust backend
-│   ├── src/
-│   │   ├── main.rs         # Tauri app entry
-│   │   ├── audio/
-│   │   │   ├── engine.rs   # PipeWire virtual mic + playback
-│   │   │   ├── decoder.rs  # symphonia wrapper
-│   │   │   └── mixer.rs    # Audio mixing logic
-│   │   ├── shortcuts/
-│   │   │   └── portal.rs   # ashpd GlobalShortcuts
-│   │   ├── tray/
-│   │   │   └── mod.rs      # System tray (ksni)
-│   │   ├── state/
-│   │   │   ├── config.rs   # App config (JSON)
-│   │   │   ├── library.rs  # Sound file index
-│   │   │   └── slots.rs    # Hotkey slot assignments
-│   │   └── commands.rs     # Tauri IPC command handlers
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── src/                    # Svelte frontend
-│   ├── lib/
-│   │   ├── components/
-│   │   │   ├── SoundGrid.svelte
-│   │   │   ├── SoundCard.svelte
-│   │   │   ├── SearchBar.svelte
-│   │   │   ├── VolumeSlider.svelte
-│   │   │   ├── SlotConfig.svelte
-│   │   │   └── Settings.svelte
-│   │   ├── stores/
-│   │   │   ├── sounds.ts   # Sound library state
-│   │   │   ├── playback.ts # Playback state
-│   │   │   └── config.ts   # App config state
-│   │   └── api.ts          # Tauri invoke wrappers
-│   ├── App.svelte
-│   └── main.ts
-├── static/                 # Icons, default theme assets
+├── src/
+│   ├── main.rs              # Entry point, renderer selection, app launch
+│   ├── app.rs               # Iced Application impl (state, update, view)
+│   ├── ui/
+│   │   ├── mod.rs           # Re-exports
+│   │   ├── sound_grid.rs    # Grid of sound cards
+│   │   ├── sound_card.rs    # Individual sound button/card
+│   │   ├── search_bar.rs    # Search input
+│   │   ├── volume.rs        # Volume slider
+│   │   └── theme.rs         # Custom theme (colors, spacing)
+│   ├── audio/
+│   │   ├── mod.rs           # Re-exports
+│   │   ├── error.rs         # AudioError enum (thiserror)
+│   │   ├── engine.rs        # PipeWire lifecycle (virtual sink, mic passthrough)
+│   │   ├── decoder.rs       # symphonia → PCM samples
+│   │   ├── mixer.rs         # Mix mic + playback into virtual sink
+│   │   └── playback.rs      # Play sound to sink + monitor output
+│   ├── tray/
+│   │   ├── mod.rs
+│   │   └── icon.rs          # tray-icon setup, menu, quit handler
+│   ├── shortcuts/           # Phase 2
+│   │   ├── mod.rs
+│   │   ├── error.rs         # PortalError enum
+│   │   └── portal.rs        # ashpd GlobalShortcuts session
+│   └── state/
+│       ├── mod.rs
+│       ├── error.rs         # ConfigError enum
+│       ├── config.rs        # App settings (serde JSON)
+│       ├── library.rs       # Sound file index + metadata
+│       └── slots.rs         # Hotkey slot ↔ sound mapping (Phase 2)
+├── assets/
+│   └── icons/               # App icon, tray icon (SVG + PNG sizes)
+├── tests/
+│   └── fixtures/            # Short audio files for decode tests
 ├── packaging/
 │   ├── flatpak/
 │   │   └── io.github.thewrz.HonkHonk.yml
@@ -219,20 +245,22 @@ honkhonk/
 │   └── appimage/
 │       └── HonkHonk.desktop
 ├── docs/
-│   └── adr/                    # Architecture Decision Records
-│       ├── 001-tauri-over-electron.md
+│   └── adr/                     # Architecture Decision Records
+│       ├── 001-iced-over-tauri-svelte.md
 │       ├── 002-pipewire-only-no-pulseaudio.md
 │       ├── 003-fixed-slot-hotkey-model.md
-│       └── 004-persistent-sink-no-per-sound-nodes.md
+│       ├── 004-persistent-sink-no-per-sound-nodes.md
+│       └── 005-tray-icon-over-ksni.md
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml              # Lint, test, build on PR
-│       └── release.yml         # Build all package formats on tag
-├── clippy.toml             # Strict complexity thresholds
-├── deny.toml               # cargo-deny config (license + advisory audit)
-├── ARCHITECTURE.md         # This file
-├── CLAUDE.md               # Dev instructions
-├── LICENSE                 # MIT
+│       ├── ci.yml               # Lint, test, build on PR
+│       └── release.yml          # Build all package formats on tag
+├── Cargo.toml
+├── clippy.toml              # Strict complexity thresholds
+├── deny.toml                # cargo-deny config (license + advisory audit)
+├── ARCHITECTURE.md          # This file
+├── CLAUDE.md                # Dev instructions
+├── LICENSE                  # MIT
 └── README.md
 ```
 
@@ -240,19 +268,21 @@ honkhonk/
 
 ```toml
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+iced = { version = "0.13", features = ["tokio", "tiny-skia"] }
 pipewire = "0.8"           # pipewire-rs — official PipeWire Rust bindings
-ashpd = { version = "0.13", features = ["global_shortcuts", "tokio"] }
+ashpd = { version = "0.13", features = ["global_shortcuts", "tokio"] }  # Phase 2
 symphonia = { version = "0.5", features = ["mp3", "ogg", "flac", "wav", "pcm", "aac"] }
-ksni = "0.3"               # KDE StatusNotifierItem
+tray-icon = "0.19"         # System tray (StatusNotifierItem)
+muda = "0.15"              # Menu for tray-icon
 thiserror = "2"            # Typed error enums at module boundaries
-anyhow = "1"               # Error context chains in glue/command layer
+anyhow = "1"               # Error context chains in glue/app layer
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
+directories = "6"          # XDG path resolution
 
 [dev-dependencies]
-cargo-deny = "0.16"        # Dependency audit
+tempfile = "3"             # Test fixtures
 ```
 
 ## Lessons from Prior Art
@@ -265,9 +295,9 @@ Building on what the community has learned from existing Linux soundboard projec
 | Solo maintainer bottleneck | Public from day one. Accept contributions. |
 | Building custom libs before the app | Use existing crates (pipewire-rs, ashpd, symphonia). Don't reinvent. |
 | X11-first with Wayland bolted on | Wayland-native from line 1. Portal APIs only. |
-| Deprecated webview dependencies | Tauri v2 (actively maintained WebKitGTK integration) |
-| Complex submodule dependency trees | Cargo dependencies. No submodules. |
+| Complex web toolchains for desktop apps | Pure Rust. Single `cargo build`. No Node/npm/WebKitGTK. |
 | Dual PulseAudio + PipeWire backends | PipeWire only. PulseAudio compat layer handles legacy apps. |
+| Two-language complexity | Single language (Rust) for GUI + backend. No IPC serialization. |
 
 ## Target Platforms
 
@@ -305,18 +335,17 @@ These must be available on the host system (not bundled):
 pipewire >= 1.0
 xdg-desktop-portal >= 1.18
 xdg-desktop-portal-{kde,gnome,hyprland,wlr} (DE-specific)
-webkit2gtk-4.1 (Tauri v2 webview backend)
-libappindicator3 OR libayatana-appindicator (system tray fallback)
+vulkan-driver or mesa (for wgpu GPU rendering)
+wayland-client
 ```
 
 ### Build Dependencies
 
 ```
 rust >= 1.75 (Cargo, rustc)
-nodejs >= 20 (Svelte frontend build)
 pkg-config
 pipewire-devel / libpipewire-0.3-dev (headers)
-webkit2gtk-4.1-devel / libwebkit2gtk-4.1-dev (headers)
+wayland-devel / libwayland-dev (headers)
 clang / gcc
 ```
 
@@ -342,10 +371,11 @@ This ensures cross-DE compatibility. KDE, GNOME, and Hyprland each implement the
 
 ### System Tray
 
-StatusNotifierItem (SNI) is the standard. Implementation priority:
-1. `ksni` crate (pure Rust SNI) — works on KDE, GNOME w/ extension, Hyprland w/ waybar
-2. Tauri tray-icon plugin — fallback if ksni has issues
-3. No legacy XEmbed tray support
+StatusNotifierItem (SNI) is the standard. Implementation via `tray-icon` crate:
+1. Initialize on main thread before Iced event loop
+2. Menu via `muda` crate: "Show/Hide", separator, "Quit"
+3. Events communicated to Iced via channel → Subscription
+4. No legacy XEmbed tray support
 
 ### .desktop File
 
@@ -379,16 +409,17 @@ Exec=honkhonk --quit
 
 ### Flatpak (primary distribution)
 
-Natural fit for portal-based apps — sandboxed, portal permissions handled by Flatpak runtime.
+Portal-based apps work naturally in Flatpak's sandbox.
 
 ```yaml
 # Flatpak manifest key points
 app-id: io.github.thewrz.HonkHonk
-runtime: org.gnome.Platform  # WebKitGTK lives here
-sdk: org.gnome.Sdk
+runtime: org.freedesktop.Platform
+sdk: org.freedesktop.Sdk
 finish-args:
   - --socket=wayland
   - --socket=pulseaudio      # PipeWire accessed via pulse socket
+  - --device=dri             # GPU access for wgpu
   - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.kde.StatusNotifierWatcher
   - --filesystem=xdg-music:ro
@@ -399,8 +430,8 @@ finish-args:
 ```bash
 # PKGBUILD key points
 pkgname=honkhonk
-makedepends=('rust' 'cargo' 'nodejs' 'npm' 'pkg-config' 'pipewire' 'webkit2gtk-4.1')
-depends=('pipewire' 'webkit2gtk-4.1' 'xdg-desktop-portal')
+makedepends=('rust' 'cargo' 'pkg-config' 'pipewire' 'wayland')
+depends=('pipewire' 'wayland' 'vulkan-driver' 'xdg-desktop-portal')
 optdepends=(
   'xdg-desktop-portal-kde: KDE Plasma support'
   'xdg-desktop-portal-gnome: GNOME support'
@@ -412,9 +443,9 @@ optdepends=(
 
 ```
 # debian/control key points
-Build-Depends: rustc, cargo, nodejs, npm, pkg-config,
- libpipewire-0.3-dev, libwebkit2gtk-4.1-dev
-Depends: pipewire, libwebkit2gtk-4.1-0, xdg-desktop-portal
+Build-Depends: rustc, cargo, pkg-config,
+ libpipewire-0.3-dev, libwayland-dev
+Depends: pipewire, libwayland-client0, mesa-vulkan-drivers, xdg-desktop-portal
 Recommends: xdg-desktop-portal-kde | xdg-desktop-portal-gnome | xdg-desktop-portal-hyprland
 ```
 
@@ -422,8 +453,8 @@ Recommends: xdg-desktop-portal-kde | xdg-desktop-portal-gnome | xdg-desktop-port
 
 ```spec
 # .spec key points
-BuildRequires: rust cargo nodejs npm pkg-config pipewire-devel webkit2gtk4.1-devel
-Requires: pipewire webkit2gtk4.1 xdg-desktop-portal
+BuildRequires: rust cargo pkg-config pipewire-devel wayland-devel
+Requires: pipewire wayland mesa-vulkan-drivers xdg-desktop-portal
 Recommends: (xdg-desktop-portal-kde if plasma-workspace)
 Recommends: (xdg-desktop-portal-gnome if gnome-shell)
 ```
@@ -433,12 +464,12 @@ Recommends: (xdg-desktop-portal-gnome if gnome-shell)
 ```nix
 # flake.nix — provide a package and NixOS module
 # Module enables PipeWire + portal integration automatically
-# Package uses buildRustPackage + npmConfigHook
+# Package uses buildRustPackage
 ```
 
 ### AppImage (portable fallback)
 
-Bundle WebKitGTK and ship as single binary. Least preferred — portal access from AppImage requires `--appimage-extract-and-run` or proper AppImage desktop integration.
+Self-contained binary with bundled libs. Least preferred — portal access from AppImage requires proper desktop integration.
 
 ### CI/CD — Build Matrix
 
@@ -471,3 +502,5 @@ MIT — permissive, no friction for contributors or downstream use.
 | [Soundux](https://github.com/Soundux/Soundux) | Feature set reference. Avoid: scope creep, private repos, library perfectionism |
 | [ashpd docs](https://docs.rs/ashpd/latest/ashpd/desktop/global_shortcuts/) | GlobalShortcuts API reference |
 | [pipewire-rs](https://gitlab.freedesktop.org/pipewire/pipewire-rs) | PipeWire Rust bindings |
+| [Iced](https://github.com/iced-rs/iced) | GUI framework — examples, widget catalog, custom styling |
+| [Cosmic DE](https://github.com/pop-os/cosmic-epoch) | Large Iced application reference (System76's desktop) |

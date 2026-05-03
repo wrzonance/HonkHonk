@@ -1,52 +1,58 @@
 # HonkHonk
 
-Wayland-native Linux soundboard. Rust + Tauri v2 + Svelte + PipeWire.
+Wayland-native Linux soundboard. Pure Rust — Iced GUI + PipeWire audio.
 
 ## Architecture
 
 Read ARCHITECTURE.md for the full spec. Key points:
 
-- Tauri v2 app: Rust backend + Svelte frontend
+- Pure Rust application with Iced 0.13 GUI (Elm/MVU architecture)
 - PipeWire audio via pipewire-rs (persistent virtual sink, no per-sound node churn)
-- Global shortcuts via ashpd (xdg-desktop-portal GlobalShortcuts v2)
-- System tray via ksni (StatusNotifierItem — works across KDE, GNOME, Hyprland)
+- Global shortcuts via ashpd (xdg-desktop-portal GlobalShortcuts v2) — Phase 2
+- System tray via tray-icon (StatusNotifierItem — works across KDE, GNOME, Hyprland)
 - Audio decoding via symphonia (pure Rust)
+- Renderer: wgpu default, tiny-skia software fallback via `HONKHONK_RENDERER=software`
 
 ## Build
 
 ```bash
-cargo tauri dev    # Development (hot-reload frontend + Rust rebuild)
-cargo tauri build  # Production binary
+cargo build --release   # Production binary
+cargo run               # Development
+cargo test              # Run tests
 ```
 
 ### Build Dependencies
 
 ```bash
 # Arch / Manjaro
-sudo pacman -S rust nodejs npm pkg-config pipewire webkit2gtk-4.1 base-devel
+sudo pacman -S rust pkg-config pipewire wayland base-devel
 
 # Fedora
-sudo dnf install rust cargo nodejs npm pkg-config pipewire-devel webkit2gtk4.1-devel gcc
+sudo dnf install rust cargo pkg-config pipewire-devel wayland-devel gcc
 
 # Ubuntu / Debian
-sudo apt install rustc cargo nodejs npm pkg-config libpipewire-0.3-dev libwebkit2gtk-4.1-dev build-essential
+sudo apt install rustc cargo pkg-config libpipewire-0.3-dev libwayland-dev build-essential
 ```
 
 ## Project Structure
 
-- `src-tauri/` — Rust backend (PipeWire, shortcuts, tray, IPC commands)
-- `src/` — Svelte frontend (sound grid, settings, config panels)
-- `static/` — Icons, assets
+- `src/` — All Rust source (app, UI, audio, tray, state)
+- `src/ui/` — Iced GUI components (sound grid, search, volume, theme)
+- `src/audio/` — PipeWire engine, symphonia decoder, playback
+- `src/tray/` — System tray (tray-icon + muda)
+- `src/state/` — Config, sound library, slot assignments
+- `assets/` — Icons
 - `packaging/` — Flatpak, AUR, DEB, RPM, Nix, AppImage build configs
 
 ## Conventions
 
 - Rust: strict clippy lints (see below), no unsafe unless absolutely necessary
-- Frontend: Svelte 5 runes, TypeScript strict
+- No frontend framework — UI is Iced components (Rust functions returning `Element<Message>`)
 - No X11 code. Wayland-native only.
 - No PulseAudio direct calls. PipeWire only (pulse compat layer handles legacy).
 - Commit format: `type(scope): description` (feat, fix, refactor, docs, test, chore)
 - Functions: max 50 lines. Files: max 400 lines. Split when approaching limits.
+- Immutable patterns: new state objects in Iced update(), never mutate in place.
 
 ## Error Handling — Context Chains
 
@@ -54,13 +60,13 @@ Every error must carry full context from origin to surface. Never lose the "why"
 
 **Two crates, different roles:**
 - `thiserror` — typed error enums at module boundaries (AudioError, PortalError, ConfigError)
-- `anyhow` — `.context("what was happening")` at every call site within command handlers / top-level glue
+- `anyhow` — `.context("what was happening")` at every call site within app.rs / top-level glue
 
 **Rules:**
 - Every module (`audio/`, `shortcuts/`, `state/`) exports its own error enum via `thiserror`
 - No `String` errors crossing module boundaries. No `.unwrap()` in non-test code. No `panic!()`.
 - Use `.context()` or `.with_context(|| format!(...))` at every `?` propagation where the caller adds meaning
-- Tauri command handlers catch errors with `anyhow` and surface the full chain to the frontend for debugging
+- App-level code catches errors and surfaces them as `Message::AudioEvent(AudioEvent::Error(..))` to the UI
 
 **Example of correct error propagation:**
 ```rust
@@ -120,50 +126,44 @@ type-complexity-threshold = 200
 | `cargo bloat --release` | Binary size breakdown | Pre-release |
 | `cargo udeps` | Unused transitive deps | Weekly / pre-release |
 
-### Frontend Linting
-
-```json
-// .eslintrc — strict complexity rules
-{
-  "rules": {
-    "complexity": ["error", 10],
-    "max-lines-per-function": ["error", 50],
-    "max-depth": ["error", 3],
-    "max-params": ["error", 4]
-  }
-}
-```
-
 ## Module Boundaries
 
 Each Rust module is a self-contained unit with a typed error, a public API, and no leaking internals.
 
 ```
-src-tauri/src/
+src/
+├── main.rs             # Entry point, renderer selection
+├── app.rs              # Iced Application impl (state, update, view)
+├── ui/
+│   ├── mod.rs          # Re-exports
+│   ├── sound_grid.rs   # Grid of sound cards
+│   ├── sound_card.rs   # Individual sound button/card
+│   ├── search_bar.rs   # Search input
+│   ├── volume.rs       # Volume slider
+│   └── theme.rs        # Custom theme (colors, spacing)
 ├── audio/
 │   ├── mod.rs          # pub use, re-exports
 │   ├── error.rs        # AudioError enum (thiserror)
-│   ├── engine.rs       # PipeWire lifecycle (init, shutdown)
+│   ├── engine.rs       # PipeWire lifecycle (init, shutdown, virtual sink)
 │   ├── decoder.rs      # symphonia file → PCM samples
 │   ├── mixer.rs        # Mix mic + playback into virtual sink
 │   └── playback.rs     # Play sound to sink + monitor output
-├── shortcuts/
+├── tray/
+│   ├── mod.rs
+│   └── icon.rs         # tray-icon setup, menu, quit handler
+├── shortcuts/          # Phase 2
 │   ├── mod.rs
 │   ├── error.rs        # PortalError enum
 │   └── portal.rs       # ashpd GlobalShortcuts session
-├── tray/
-│   ├── mod.rs
-│   └── icon.rs         # ksni StatusNotifierItem
-├── state/
-│   ├── mod.rs
-│   ├── error.rs        # ConfigError enum
-│   ├── config.rs       # App settings (serde JSON)
-│   ├── library.rs      # Sound file index + metadata
-│   └── slots.rs        # Hotkey slot ↔ sound mapping
-└── commands.rs          # Tauri IPC handlers (thin glue only)
+└── state/
+    ├── mod.rs
+    ├── error.rs        # ConfigError enum
+    ├── config.rs       # App settings (serde JSON)
+    ├── library.rs      # Sound file index + metadata
+    └── slots.rs        # Hotkey slot ↔ sound mapping (Phase 2)
 ```
 
-**`commands.rs` is glue only.** It calls module APIs and translates errors. No business logic lives here.
+**`app.rs` is the Iced Application.** It holds state, handles Messages, and composes UI. No business logic — delegates to module APIs.
 
 ## Architecture Decision Records (ADRs)
 
@@ -171,10 +171,11 @@ When a non-obvious decision is made, record it. Future agents and contributors n
 
 ```
 docs/adr/
-  001-tauri-over-electron.md
+  001-iced-over-tauri-svelte.md
   002-pipewire-only-no-pulseaudio.md
   003-fixed-slot-hotkey-model.md
   004-persistent-sink-no-per-sound-nodes.md
+  005-tray-icon-over-ksni.md
   ...
 ```
 
@@ -202,19 +203,19 @@ Write an ADR when: choosing between two viable approaches, rejecting a popular a
 - **Feature requests go to a backlog issue.** They don't get planned until the current phase ships.
 - **"Not now" is a valid answer.** If a feature doesn't serve the current phase's sub-MVP, it waits.
 - **Every plan states what is OUT of scope** — explicitly. "This PR does NOT add hotkey support" prevents drift.
-- **Dependency additions require justification.** New crate/npm package = comment in PR explaining why existing deps or stdlib can't do it.
+- **Dependency additions require justification.** New crate = comment in PR explaining why existing deps or stdlib can't do it.
 
 ## Multi-DE Rules
 
 All desktop integration MUST go through xdg-desktop-portal D-Bus APIs:
-- Shortcuts: `org.freedesktop.portal.GlobalShortcuts` (via ashpd crate)
-- File dialogs: `org.freedesktop.portal.FileChooser` (via ashpd or Tauri)
+- Shortcuts: `org.freedesktop.portal.GlobalShortcuts` (via ashpd crate) — Phase 2
+- File dialogs: `org.freedesktop.portal.FileChooser` (via ashpd)
 - Notifications: `org.freedesktop.portal.Notification`
 - Background/Autostart: `org.freedesktop.portal.Background`
 
 Never use KDE-specific, GNOME-specific, or compositor-specific APIs directly. The portal abstraction is what makes one binary work on KDE, GNOME, Hyprland, Sway, etc.
 
-System tray uses StatusNotifierItem (SNI) protocol — the cross-DE standard for Wayland. No XEmbed.
+System tray uses StatusNotifierItem (SNI) protocol via tray-icon crate — the cross-DE standard for Wayland. No XEmbed.
 
 ## Packaging Rules
 
@@ -240,7 +241,7 @@ Every PR must have a single, demonstrable outcome. Not "progress toward Phase 1"
 **Rules:**
 - **500 LOC max per PR** (excluding generated files, lockfiles, test fixtures). If a PR exceeds this, split it. No exceptions.
 - **Each PR = one sub-MVP.** A sub-MVP is the smallest unit of work that a human reviewer can understand, test, and verify in isolation. Examples:
-  - "Tauri v2 + Svelte skeleton builds and shows empty window" — sub-MVP
+  - "Iced window + tray builds and shows empty window with quit" — sub-MVP
   - "PipeWire virtual sink creates and appears in `wpctl status`" — sub-MVP
   - "Sound grid renders file list from directory" — sub-MVP
   - "Phase 1 MVP" — NOT a sub-MVP. Too big. Break it down.
@@ -263,29 +264,21 @@ No long-lived feature branches. Branch from main, PR back to main, delete branch
 
 Every plan and every PR follows Red-Green-Refactor. No implementation code without a failing test first.
 
-**Rust backend:**
 1. Write a failing test (`cargo test` → red)
 2. Write minimal code to pass (`cargo test` → green)
 3. Refactor if needed, tests stay green
 4. Commit
 
-**Svelte frontend:**
-1. Write component test or integration test (vitest/playwright → red)
-2. Implement component (→ green)
-3. Refactor, tests stay green
-4. Commit
-
 **What gets tested:**
 - Audio engine: virtual sink creation, playback routing, mic passthrough, cleanup on shutdown
 - Config/state: serialization, slot assignment, library indexing
-- Shortcuts: portal registration, slot activation signals
-- Frontend: component rendering, IPC command wiring, user interactions
+- App update function: state transitions for each Message variant
 - Integration: full play-sound-to-virtual-mic pipeline (requires PipeWire in CI)
 
 **What does NOT get tested (waste of time):**
-- Tauri boilerplate / auto-generated code
-- CSS styling
+- Iced view rendering (framework responsibility)
 - Third-party library internals
+- Tray icon appearance
 
 ### CI/CD Pipeline
 
@@ -297,16 +290,14 @@ jobs:
   lint:
     - cargo clippy -- -D warnings
     - cargo fmt -- --check
-    - npm run check          # Svelte/TS type check
-    - npm run lint           # eslint
 
   test:
     - cargo test
-    - npm run test           # vitest
+    - cargo test --features pipewire-test  # when PipeWire available
 
   build:
-    - cargo tauri build      # must succeed
-    - binary size check      # alert if > 50MB
+    - cargo build --release
+    - binary size check (alert if > 30MB)
 
   loc-check:
     - diff --stat main...HEAD | check LOC delta <= 500
@@ -340,10 +331,9 @@ This project uses multi-agent workflows. Model selection by task:
 
 ## Testing
 
-- `cargo test` — Rust unit tests (audio engine, config, slot logic)
+- `cargo test` — Rust unit tests (audio engine, config, library, app state)
+- `cargo test --features pipewire-test` — Integration tests requiring PipeWire
 - `cargo clippy -- -D warnings` — lint must pass with zero warnings
-- `npm run check` — Svelte/TypeScript type checking
-- `npm run test` — vitest for frontend component/integration tests
 - Package smoke tests run in CI containers (Arch, Fedora, Ubuntu)
-- PipeWire tests require a running PipeWire instance (use `pipewire -c pipewire.conf` in CI or skip with `#[cfg(test)]` mocks)
-- **Coverage target: 80%+** for Rust backend. Frontend coverage is best-effort (UI-heavy code is hard to unit test meaningfully).
+- PipeWire tests require a running PipeWire instance (skip with feature gate in CI without PipeWire)
+- **Coverage target: 80%+** for non-UI code. View functions validated manually.
