@@ -11,6 +11,7 @@ repository = "https://github.com/thewrz/HonkHonk"
 iced = { version = "0.13", features = ["tokio", "tiny-skia"] }
 tray-icon = "0.19"
 muda = "0.15"
+gtk = "0.18"
 tokio = { version = "1", features = ["full"] }
 
 [features]

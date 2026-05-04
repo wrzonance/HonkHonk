@@ -4,6 +4,11 @@
 // There is no runtime renderer selection in Iced 0.13.
 
 fn main() -> iced::Result {
+    if let Err(e) = gtk::init() {
+        eprintln!("fatal: failed to initialize GTK (required for system tray): {e}");
+        std::process::exit(1);
+    }
+
     let tray_handle = match honkhonk::tray::build_tray() {
         Ok(handle) => handle,
         Err(e) => {
