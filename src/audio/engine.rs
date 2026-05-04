@@ -52,9 +52,38 @@ pub fn spawn() -> Result<AudioHandle, AudioError> {
 }
 
 fn run_engine(
-    _cmd_rx: pipewire::channel::Receiver<AudioCommand>,
+    cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
 ) -> Result<(), AudioError> {
-    let _ = evt_tx.send(AudioEvent::Error("not implemented".into()));
+    let mainloop = pipewire::main_loop::MainLoopRc::new(None)
+        .map_err(|e| AudioError::PipeWireInit(format!("main loop: {e}")))?;
+
+    let context = pipewire::context::ContextRc::new(&mainloop, None)
+        .map_err(|e| AudioError::PipeWireInit(format!("context: {e}")))?;
+
+    let core = context
+        .connect_rc(None)
+        .map_err(|e| AudioError::PipeWireInit(format!("core connect: {e}")))?;
+
+    let sink_props = pipewire::properties::properties! {
+        "factory.name" => "support.null-audio-sink",
+        "node.name" => SINK_NODE_NAME,
+        "node.description" => SINK_DESCRIPTION,
+        "media.class" => "Audio/Sink/Virtual",
+        "audio.position" => "[FL,FR]",
+        "object.linger" => "false",
+    };
+    let _sink: pipewire::node::Node = core
+        .create_object("adapter", &sink_props)
+        .map_err(|e| AudioError::VirtualSinkCreation(e.to_string()))?;
+
+    let mainloop_quit = mainloop.clone();
+    let _cmd_listener = cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
+        AudioCommand::Shutdown => mainloop_quit.quit(),
+    });
+
+    let _ = evt_tx.send(AudioEvent::Ready);
+    mainloop.run();
+
     Ok(())
 }
