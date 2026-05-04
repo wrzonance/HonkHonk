@@ -75,3 +75,51 @@ fn decode_mono_wav_samples_in_valid_range() {
         );
     }
 }
+
+#[test]
+fn decode_mp3_returns_correct_metadata() {
+    let path = Path::new("tests/fixtures/sine_mono.mp3");
+    let audio = decode(path).expect("decode MP3 failed");
+
+    assert_eq!(audio.sample_rate, 48000);
+    assert_eq!(audio.channels, 1);
+    assert!(!audio.samples.is_empty());
+
+    let duration_secs = audio.duration.as_secs_f64();
+    assert!(
+        (duration_secs - 1.0).abs() < 0.15,
+        "expected ~1.0s, got {duration_secs}s (MP3 framing tolerance)"
+    );
+}
+
+#[test]
+fn decode_ogg_returns_correct_metadata() {
+    let path = Path::new("tests/fixtures/sine_mono.ogg");
+    let audio = decode(path).expect("decode OGG failed");
+
+    assert_eq!(audio.sample_rate, 48000);
+    assert_eq!(audio.channels, 1);
+    assert!(!audio.samples.is_empty());
+
+    let duration_secs = audio.duration.as_secs_f64();
+    assert!(
+        (duration_secs - 1.0).abs() < 0.1,
+        "expected ~1.0s, got {duration_secs}s"
+    );
+}
+
+#[test]
+fn decode_flac_returns_correct_metadata() {
+    let path = Path::new("tests/fixtures/sine_mono.flac");
+    let audio = decode(path).expect("decode FLAC failed");
+
+    assert_eq!(audio.sample_rate, 48000);
+    assert_eq!(audio.channels, 1);
+    assert!(!audio.samples.is_empty());
+
+    let duration_secs = audio.duration.as_secs_f64();
+    assert!(
+        (duration_secs - 1.0).abs() < 0.05,
+        "expected ~1.0s, got {duration_secs}s (FLAC is lossless, tight tolerance)"
+    );
+}
