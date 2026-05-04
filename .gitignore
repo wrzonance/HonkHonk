@@ -2,25 +2,71 @@
 target/
 Cargo.lock
 
-# Node
-node_modules/
-dist/
-.svelte-kit/
-
-# Tauri
-src-tauri/target/
-src-tauri/gen/
-
 # IDE
 .vscode/
 .idea/
 *.swp
 *~
+.helix/
+.zed/
 
 # OS
 .DS_Store
 Thumbs.db
+.directory
 
-# Environment
+# Environment / Secrets
 .env
 .env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.secret
+
+# Credentials / PII
+credentials.json
+secrets.json
+token.json
+*.credential
+auth.json
+
+# Debug / profiling
+perf.data
+perf.data.old
+flamegraph.svg
+*.profraw
+*.profdata
+callgrind.out.*
+cachegrind.out.*
+
+# Coverage
+tarpaulin-report.html
+lcov.info
+coverage/
+
+# Flatpak build
+.flatpak-builder/
+builddir/
+repo/
+*.flatpak
+
+# AppImage build
+*.AppImage
+AppDir/
+
+# Package build artifacts
+*.deb
+*.rpm
+*.pkg.tar.*
+*.snap
+
+# Test fixtures (large audio files)
+tests/fixtures/*.wav
+tests/fixtures/*.mp3
+tests/fixtures/*.flac
+tests/fixtures/*.ogg
+!tests/fixtures/.gitkeep
+
+# User sound library (never commit user audio)
+sounds/
