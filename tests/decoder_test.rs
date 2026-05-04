@@ -123,3 +123,39 @@ fn decode_flac_returns_correct_metadata() {
         "expected ~1.0s, got {duration_secs}s (FLAC is lossless, tight tolerance)"
     );
 }
+
+#[test]
+fn decode_stereo_wav_returns_two_channels() {
+    let path = Path::new("tests/fixtures/sine_stereo.wav");
+    let audio = decode(path).expect("decode stereo WAV failed");
+
+    assert_eq!(audio.sample_rate, 48000);
+    assert_eq!(audio.channels, 2);
+
+    // Stereo: samples are interleaved [L, R, L, R, ...]
+    // 1 second * 48kHz * 2 channels = 96000 samples
+    let expected = 96000;
+    let tolerance = expected / 10;
+    let diff = (audio.samples.len() as i64 - expected as i64).unsigned_abs() as usize;
+    assert!(
+        diff < tolerance,
+        "expected ~{expected} interleaved samples, got {}",
+        audio.samples.len()
+    );
+}
+
+#[test]
+fn decode_stereo_wav_duration_matches_mono() {
+    let mono = decode(Path::new("tests/fixtures/sine_mono.wav"))
+        .expect("decode mono failed");
+    let stereo = decode(Path::new("tests/fixtures/sine_stereo.wav"))
+        .expect("decode stereo failed");
+
+    let diff = (mono.duration.as_secs_f64() - stereo.duration.as_secs_f64()).abs();
+    assert!(
+        diff < 0.05,
+        "mono ({:.3}s) and stereo ({:.3}s) durations should match",
+        mono.duration.as_secs_f64(),
+        stereo.duration.as_secs_f64()
+    );
+}
