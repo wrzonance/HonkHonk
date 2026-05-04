@@ -20,6 +20,145 @@ The key technical blocker — global hotkeys on Wayland — is now solved via `x
 4. **Look good.** The UI is the product. A soundboard with an ugly UI is a soundboard nobody uses.
 5. **Single toolchain.** Pure Rust. One language, one build system, minimal external dependencies.
 
+## UI Vision — "Confetti" Direction
+
+The UI follows Design Direction C ("Confetti") — the most expressive of three explored directions. Each sound tile carries its own color personality, hand-stickered feel, and playful goose mascot moments throughout.
+
+### Design Language
+
+- **Warm, papery surfaces** — cream/warm-white light mode (`#f4efe4` bg, `#fffaf0` panels), rich dark mode (`#171410` bg, `#1f1c16` panels)
+- **Per-sound color identity via Tone** — each sound assigned one of 10 tones (Amber, Orange, Yellow, Lime, Cyan, Blue, Pink, Red, Purple, Gray) that tints its tile background and sticker
+- **Sticker thumbnails** — circular disc with radial gloss + hand-drawn glyph per sound (goose, boom rings, note, arrow, scream face, star, etc.)
+- **Hand-drawn wonkiness** — every tile rotates ±3° on a deterministic seed, stickers tilt 1.5×, hover amplifies rotation, active chips tilt. Stop-all button sits at -1°
+- **Goose mascot moments** — peeking goose in header corner, conic-gradient logo badge, goose-themed category chip, bespoke goose glyphs for Honk category sounds
+- **Typography** — Inter, weight 700-800 for labels/names, italic for brand name. Bold category labels, monospace hotkey badges
+- **Spacing/radius** — generous padding (16-24px), large tile radii (20px), pill-shaped buttons (999px radius), 6px progress bars
+
+### Color Palette (implemented in `src/ui/theme.rs`)
+
+```
+Light Mode:                    Dark Mode:
+bg:        #f4efe4             bg:        #171410
+panel:     #fffaf0             panel:     #1f1c16
+ink:       #1a1208             ink:       #fbf3df
+inkDim:    #6a553a             inkDim:    #a39377
+inkFaint:  #a8957a             inkFaint:  #6a5b46
+accent:    #f59e0b             accent:    #fbbf24
+accentDeep:#b45309             accentDeep:#f59e0b
+good:      #16a34a             good:      #4ade80
+hairline:  rgba(0,0,0,0.06)   hairline:  rgba(1,1,1,0.06)
+```
+
+### Tone Palette (per-sound color identity)
+
+| Tone | Hue | Sat | Light | Use Case |
+|------|-----|-----|-------|----------|
+| Amber | 38° | 95% | 55% | Goose sounds, warm effects |
+| Orange | 22° | 90% | 56% | Alert-type sounds |
+| Yellow | 50° | 95% | 55% | Bright effects |
+| Lime | 95° | 65% | 50% | Success sounds |
+| Cyan | 190° | 75% | 50% | Calm/ambient |
+| Blue | 220° | 70% | 56% | Discord/system |
+| Pink | 340° | 80% | 60% | Music clips |
+| Red | 0° | 75% | 55% | Danger/intense |
+| Purple | 270° | 60% | 60% | Reactions |
+| Gray | 220° | 8% | 55% | Utility/SFX |
+
+### Layout Structure (Main Window)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ [Goose Logo Badge -5°] HonkHonk  ···  [Search pill] [Stop-all -1°] [⚙] │
+├─────────────────────────────────────────────────────────────┤
+│ [★ Favorites] [All] [Honk 🪿] [Memes] [Reactions] [Voicelines] [Music] [SFX] │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐  │
+│  │ CAT    │ │ CAT    │ │ CAT    │ │ CAT    │ │ CAT    │  │
+│  │[sticker]│ │[sticker]│ │[sticker]│ │[sticker]│ │[sticker]│  │
+│  │  Name  │ │  Name  │ │  Name  │ │  Name  │ │  Name  │  │
+│  │dur  [▶]│ │dur [F1]│ │dur  [▶]│ │dur [F2]│ │dur  [▶]│  │
+│  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘  │
+│   (tiles rotated ±3° each, tinted by tone)                  │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│ [Sticker -4°] "Goose Honk" · HONKING NOW  [▓▓▓░░] [🔊 ─●── 85%] │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Per-Phase Visual Targets
+
+**Phase 1 — Foundation + Click-to-Play:**
+- Theme system (`theme.rs`) with Light/Dark, full Tone palette, spacing/radius constants
+- Basic tile rendering (tinted background, name, duration badge) — NO canvas stickers yet
+- Header with logo text + search bar + stop button
+- Category chip bar (no Favorites yet — just "All" + real categories)
+- Bottom now-playing bar (sticker area is placeholder circle, name, progress bar, volume)
+- Grid layout with responsive columns (5 default, 4 comfy, 6 compact)
+- Density support in tile dimensions (compact: 156px, regular: 192px, comfy: 224px)
+
+**Structural decisions Phase 1 must make for future phases:**
+- `Theme` enum + `Hh` trait — all colors accessed via trait methods, never hardcoded
+- `Tone` enum with `sticker()`, `highlight()`, `tile_tint()` — ready for canvas tiles
+- Spacing/radius as constants in `theme::space` and `theme::radius` modules
+- Tile widget designed as a function returning `Element` (easily swappable for `canvas::Program` later)
+- View mode enum (Grid/List) in app state even if only Grid ships
+
+**Phase 2 — Hotkey Slots:**
+- Hotkey badge on tiles (monospace, slight tilt)
+- Slot manager as full-window swap (stream-deck 4×5 grid)
+- KDE portal flow UI (pre-empt strip, resolved states)
+- Right-click context menu ("Bind to slot" submenu)
+
+**Phase 3 — Polish + Canvas Tiles:**
+- Full `SoundTile` as `canvas::Program` — radial gradient sticker, hand-drawn glyphs, rotation
+- ±3° tile rotation with hover amplification
+- Goose mascot moments (peeking goose, conic logo badge)
+- Favorites tab with star markers
+- Per-sound editor sheet (inline rename, color swatches, trim handles)
+- Bulk import review screen
+- Appearance settings (theme/density/view/accent intensity)
+- List view alternative
+
+**Phase 4 — Advanced:**
+- App audio passthrough UI
+- Per-app routing panel
+- Sound effect controls (reverb, pitch)
+
+### Iced Implementation Notes (from design mockup)
+
+The Confetti design pushes past Iced's built-in widgets in Phase 3:
+
+| Feature | Iced Approach | Phase |
+|---------|---------------|-------|
+| Tinted tile backgrounds | `container` with `style()` closure | 1 |
+| Rounded pill buttons | `button` with custom style + large radius | 1 |
+| Category chips | `button` row with active/inactive styles | 1 |
+| Search bar | `text_input` in styled container | 1 |
+| Volume slider | `slider` with custom style | 1 |
+| Progress bar | `progress_bar` or `container` with width % | 1 |
+| Responsive grid | `iced::widget::responsive` + `row`/`column` | 1 |
+| Sticker disc + radial gloss | `canvas::Program` with `Path::circle` + fill | 3 |
+| Hand-drawn glyphs | `canvas::Program` with `quadratic_curve_to` | 3 |
+| Tile rotation (±3°) | `canvas::Program` with `frame.rotate()` | 3 |
+| Right-click menu | `mouse_area` + overlay/popup pattern | 2 |
+| Window-swap (settings) | Conditional view — swap entire `view()` output | 2 |
+
+### Design Reference Files
+
+The complete HTML/JSX mockup lives in the design handoff bundle (exported from claude.ai/design). Key files:
+- `honkhonk-direction-c.jsx` — main window (Confetti), tile component, list row component
+- `honkhonk-shared.jsx` — sound data, tone palette, waveform generator, icon set, goose mark
+- `honkhonk-settings.jsx` — settings panel (5 sections, sidebar nav)
+- `honkhonk-slots.jsx` — slot manager (4×5 stream-deck)
+- `honkhonk-tray.jsx` — tray menu (Breeze-chrome, native-feeling)
+- `honkhonk-context.jsx` — right-click context menu
+- `honkhonk-portal.jsx` — KDE portal flow (3-frame storyboard)
+- `honkhonk-import.jsx` — bulk import review screen
+- `honkhonk-editor.jsx` — per-sound editor sheet
+- `src-rust/ui/theme.rs` — ready-to-use Iced theme tokens
+- `src-rust/ui/sound_tile.rs` — ready-to-use `canvas::Program` for Phase 3
+
 ## Tech Stack
 
 | Component | Technology | Why |

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>HonkHonk — Soundboard mockup</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  html, body { margin:0; padding:0; background:#f0eee9; font-family:'Inter', system-ui, sans-serif; color:#2a251f; }
+  * { box-sizing: border-box; }
+  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .9em; background: rgba(0,0,0,.06); padding: 1px 4px; border-radius: 3px; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="honkhonk-shared.jsx"></script>
+<script type="text/babel" src="honkhonk-direction-c.jsx"></script>
+<script type="text/babel" src="honkhonk-settings.jsx"></script>
+<script type="text/babel" src="honkhonk-empty.jsx"></script>
+<script type="text/babel" src="honkhonk-editor.jsx"></script>
+<script type="text/babel" src="honkhonk-slots.jsx"></script>
+<script type="text/babel" src="honkhonk-tray.jsx"></script>
+<script type="text/babel" src="honkhonk-context.jsx"></script>
+<script type="text/babel" src="honkhonk-portal.jsx"></script>
+<script type="text/babel" src="honkhonk-import.jsx"></script>
+<script type="text/babel" src="honkhonk-handoff.jsx"></script>
+
+<script type="text/babel">
+const HH_TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "dark": false,
+  "density": "regular",
+  "view": "grid"
+}/*EDITMODE-END*/;
+
+function NotesCard({ title, body }) {
+  return (
+    <div style={{
+      width: 280, padding: '14px 16px', background: '#fef4a8', color: '#5a4a2a',
+      borderRadius: 6, fontSize: 12.5, lineHeight: 1.5,
+      boxShadow: '0 6px 14px rgba(0,0,0,.08), 0 1px 0 rgba(255,255,255,.5) inset',
+      transform: 'rotate(-1deg)', fontFamily: 'inherit',
+    }}>
+      <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6, color: '#7a5d1f' }}>{title}</div>
+      <div style={{ whiteSpace: 'pre-wrap' }}>{body}</div>
+    </div>
+  );
+}
+
+function App() {
+  const [t, setTweak] = useTweaks(HH_TWEAK_DEFAULTS);
+
+  return (
+    <DesignCanvas>
+      {/* SECTION 1 — Main window */}
+      <DCSection id="main" title="HonkHonk · Confetti" subtitle="The chosen direction. Sticker thumbnails per sound, hand-drawn wonkiness, Favorites tab, mascot moments. Tweak panel switches theme / density / grid-list across all artboards.">
+        <DCArtboard id="C" label="Main window" width={1180} height={760}>
+          <DirectionC dark={t.dark} density={t.density} view={t.view}/>
+        </DCArtboard>
+      </DCSection>
+
+      {/* SECTION 2 — New screens */}
+      <DCSection id="screens" title="New screens" subtitle="Settings (full-window swap), first-run empty state, and the per-sound editor sheet.">
+        <DCArtboard id="settings" label="Settings · full-window swap · 5 sections (Audio active)" width={1180} height={760}>
+          <SettingsPanel dark={t.dark} density={t.density} view={t.view}/>
+        </DCArtboard>
+
+        <DCArtboard id="empty" label="First-run · empty state" width={1180} height={760}>
+          <EmptyState dark={t.dark}/>
+        </DCArtboard>
+
+        <DCArtboard id="editor" label="Per-sound editor · sheet over main window" width={1180} height={760}>
+          <PerSoundEditor dark={t.dark}/>
+        </DCArtboard>
+      </DCSection>
+
+      {/* SECTION 2.5 — Phase 2 + system surfaces */}
+      <DCSection id="system" title="Phase 2 & system surfaces" subtitle="Slot manager (20 fixed slots + KDE binding), tray menu (native KDE feel), and the right-click context menu on a tile.">
+        <DCArtboard id="slots" label="Slot manager · 4×5 board · KDE hotkey binding" width={1180} height={760}>
+          <SlotManager dark={t.dark}/>
+        </DCArtboard>
+
+        <DCArtboard id="tray" label="System tray · KDE Plasma Breeze" width={1180} height={760}>
+          <TrayMenu dark={t.dark}/>
+        </DCArtboard>
+
+        <DCArtboard id="context" label="Right-click context menu on a tile" width={1180} height={760}>
+          <ContextMenu dark={t.dark}/>
+        </DCArtboard>
+      </DCSection>
+
+      {/* SECTION 2.7 — Onboarding & flows */}
+      <DCSection id="flows" title="Onboarding & flows" subtitle="KDE permission flow (3-frame storyboard) and the bulk-import review screen.">
+        <DCArtboard id="portal" label="KDE GlobalShortcuts portal · 3 frames stacked" width={1180} height={2304}>
+          <PortalFlow dark={t.dark}/>
+        </DCArtboard>
+
+        <DCArtboard id="import" label="Bulk import review · 47 sounds found" width={1180} height={760}>
+          <BulkImport dark={t.dark}/>
+        </DCArtboard>
+      </DCSection>
+
+      {/* SECTION 2.9 — Rust handoff */}
+      <DCSection id="handoff" title="Developer handoff" subtitle="The Confetti palette and SoundTile widget as drop-in Rust starters. Browse them inline, then grab the .rs files from the project tree.">
+        <DCArtboard id="rust" label="src/ui/ — theme.rs + sound_tile.rs + mod.rs" width={1180} height={760}>
+          <HandoffPanel dark={t.dark}/>
+        </DCArtboard>
+      </DCSection>
+
+      {/* SECTION 3 — Notes */}
+      <DCSection id="notes" title="Design notes" subtitle="What I committed to in C, and where Iced 0.13 will push back.">
+        <DCArtboard id="notes-c" label="C · Confetti recap" width={420} height={420}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.5, color:'#2a251f', overflow:'auto', border:'2px solid #f59e0b' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+              <div style={{ width:32, height:32, borderRadius:14, background:'conic-gradient(from 200deg at 60% 40%,#f59e0b,#b45309,#f59e0b)', display:'flex', alignItems:'center', justifyContent:'center', transform:'rotate(-4deg)' }}>
+                <GooseMark size={20} color="#1a1208" accent="#fffbeb"/>
+              </div>
+              <b style={{ fontSize:15 }}>C · Confetti</b>
+              <span style={{ marginLeft:'auto', fontSize:10.5, fontWeight:800, color:'#b45309', background:'#fef4a8', padding:'3px 8px', borderRadius:999, letterSpacing:'.06em' }}>CHOSEN</span>
+            </div>
+            <p style={{ margin:'0 0 10px' }}><b>Stickers:</b> hand-drawn SVG glyph per sound. Glossy radial-gradient shape, subtle white highlight, deterministic per-sound rotation.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Mascot moments:</b> peeking goose in header corner, conic-gradient logo with tilt, Honk-category chip carries a goose, three sound glyphs are bespoke geese.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Wonkiness:</b> tiles ±3° on seed, stickers 1.5× of that, hover amplifies, Stop-all at -1°, chips tilt when active.</p>
+            <p style={{ margin:0 }}><b>Favorites:</b> leftmost chip with star + count; tile and row markers.</p>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="notes-settings" label="On Settings" width={420} height={420}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.5, color:'#2a251f', overflow:'auto', border:'1px solid rgba(0,0,0,.08)' }}>
+            <b style={{ fontSize:14 }}>Settings · full-window swap</b>
+            <p style={{ margin:'10px 0' }}><b>Why full-window:</b> Phase 1 has zero competing context — there's no playback to keep visible. Modal would be a worse fit; reach for a panel/modal in Phase 3 when overlap audio means you might want settings + grid simultaneously.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Sections:</b> Audio (virtual mic, monitor, passthrough, renderer) · Library (folders, scan, formats) · Hotkeys (KDE portal status + bindings) · Appearance (theme, density, view, accent, wonkiness slider) · About.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Iced map:</b> sidebar = <code>column!</code> of <code>button</code>s. Body = <code>scrollable</code>. Toggles are styled <code>button</code>s. Selects = <code>pick_list</code>. Sliders = <code>slider</code>. The "engine running" widget at the bottom of the sidebar is <code>row!</code> + dot.</p>
+            <p style={{ margin:0 }}><b>Cheap wins:</b> the wonkiness slider in Appearance is a real toggle in the spec — 0% = pixel-aligned for screenshot mode.</p>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="notes-empty" label="On Empty / first-run" width={420} height={420}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.5, color:'#2a251f', overflow:'auto', border:'1px solid rgba(0,0,0,.08)' }}>
+            <b style={{ fontSize:14 }}>First-run · empty state</b>
+            <p style={{ margin:'10px 0' }}><b>One job:</b> get a folder. Everything else is noise. The big mascot + speech bubble + dashed drop zone make the action obvious in 1 second.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Portal warning:</b> the blue strip explains the KDE permission ask <i>before</i> it happens, not in a separate modal. If they say no, the next launch lands them back on this screen with the warning expanded.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Iced map:</b> mostly <code>container</code>s with backgrounds + borders. The dashed border on the drop zone is one <code>border::dashed</code> call. The confetti dots are eight <code>container</code>s with radial-gradient placeholders (or just solid color in Iced — gradient via <code>canvas::</code> if we want the gloss).</p>
+            <p style={{ margin:0 }}><b>Skip link:</b> grants the user permission to leave; the main window then shows its own "no sounds" hint instead of this screen.</p>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="notes-editor" label="On Per-sound editor" width={420} height={420}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.5, color:'#2a251f', overflow:'auto', border:'1px solid rgba(0,0,0,.08)' }}>
+            <b style={{ fontSize:14 }}>Per-sound editor · sheet</b>
+            <p style={{ margin:'10px 0' }}><b>Why a sheet (not a panel):</b> editing one sound is a focused, modal task. Backgrounding it would let you click another tile and lose your edits. The dimmed-blur backdrop + slight rotation make it feel like a sticker dropped on top.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Fields:</b> name (inline-edit in header) · color (10 sticker swatches, picks <code>tone</code>) · favorite · global hotkey (with KDE rebind flow) · per-sound volume · trim (waveform with two handles).</p>
+            <p style={{ margin:'0 0 10px' }}><b>Iced map:</b> sheet = <code>container</code> with <code>shadow</code>. Backdrop blur isn't possible — substitute solid 50% scrim. Trim widget = <code>canvas::Program</code> (waveform + two handle hit-rects). Color swatches = a <code>row!</code> of styled <code>button</code>s.</p>
+            <p style={{ margin:0 }}><b>Open question:</b> trim writes back to a TOML sidecar, or to a re-encoded file? I'd vote sidecar — non-destructive, and you can adjust later.</p>
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      {/* SECTION 3.5 — Notes on the new system surfaces */}
+      <DCSection id="notes-system" title="Notes on system surfaces" subtitle="What I committed to in the slot manager, tray, and context menu.">
+        <DCArtboard id="notes-slots" label="On the slot manager" width={420} height={420}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.5, color:'#2a251f', overflow:'auto', border:'1px solid rgba(0,0,0,.08)' }}>
+            <b style={{ fontSize:14 }}>Slot manager · 4×5 stream-deck</b>
+            <p style={{ margin:'10px 0' }}><b>Why 4×5:</b> matches how people think about hotkey banks (and most stream decks). The fixed grid is the point — slot #13 stays #13 forever, so muscle memory holds even after you swap a sound out.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Right side panel:</b> selection-driven detail. Shows the bound sound (or a drop hint), KDE portal status (registered via <code>kglobalaccel</code>), the current hotkey, and an explicit conflict warning when KDE has already claimed it.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Conflict story:</b> <code>Meta+P</code> shown red because it's bound to "Print Screen." User picks a new combo or overrides in KDE settings — we don't fight the OS.</p>
+            <p style={{ margin:0 }}><b>Iced map:</b> outer = <code>row!</code> with sidebar. Board = 4 <code>row!</code>s of 5 styled <code>button</code>s. Sticker on each = <code>canvas::Program</code> (or pre-rendered to <code>image::Handle</code> on first load).</p>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="notes-tray" label="On the tray menu" width={420} height={420}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.5, color:'#2a251f', overflow:'auto', border:'1px solid rgba(0,0,0,.08)' }}>
+            <b style={{ fontSize:14 }}>Tray · native KDE Breeze</b>
+            <p style={{ margin:'10px 0' }}><b>Not us:</b> the tray menu isn't drawn by Iced — it's a real KDE Plasma menu rendered by the system. So the mockup uses Breeze chrome (Breeze blue hover, system fonts, 4px radius) on purpose. <b>Our job is the icon</b> + the menu structure.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Structure:</b> live-status header → Stop all (always at top) → Recently played 5 → window controls → Slot manager / Settings → Quit. Recents carry their sticker thumbnails so the menu doesn't lose the brand.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Live dot</b> on the tray icon when audio is playing — visible at 22px even on busy tray rows.</p>
+            <p style={{ margin:0 }}><b>Iced map:</b> built via <code>tray-icon</code> crate or <code>ksni</code> binding, fed a static menu spec. The icon itself is generated from the same <code>GooseGlyph</code> we use everywhere else, exported to PNG @ 22/32/48px.</p>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="notes-context" label="On the context menu" width={420} height={420}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.5, color:'#2a251f', overflow:'auto', border:'1px solid rgba(0,0,0,.08)' }}>
+            <b style={{ fontSize:14 }}>Tile context menu</b>
+            <p style={{ margin:'10px 0' }}><b>Brand-owned, unlike tray:</b> this is in our window so we get to render it. Soft shadow, hairline border, sticker header, the same -1° tilt as everything else in C.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Order matters:</b> Play first (you right-clicked a sound, you probably want to hear it). Then identity (favorite/edit/bind). Then file-system actions. Delete last and red.</p>
+            <p style={{ margin:'0 0 10px' }}><b>Hotkey badges</b> on shortcut-bearing items so users learn the keyboard alternatives passively.</p>
+            <p style={{ margin:0 }}><b>Iced map:</b> <code>mouse_area</code> on the tile catches right-click → opens a popup positioned at the cursor. <code>container</code> with shadow + items as <code>button</code>s with custom hover styling. Submenus (Bind to slot, Pick color) anchor to the right.</p>
+          </div>
+        </DCArtboard>
+      </DCSection>
+
+      {/* SECTION 4 — Next */}
+      <DCSection id="next" title="What's next" subtitle="Phase 1 design coverage looks complete. Open questions to call before engineering picks it up.">
+        <DCArtboard id="next-list" label="Open questions for engineering" width={520} height={360}>
+          <div style={{ width:'100%', height:'100%', padding:24, background:'#fffaf0', borderRadius:14, fontSize:13, lineHeight:1.55, color:'#2a251f', overflow:'auto', border:'1px solid rgba(0,0,0,.08)' }}>
+            <ul style={{ paddingLeft:18, margin:0 }}>
+              <li style={{ marginBottom:8 }}><b>Trim writes:</b> sidecar TOML or re-encoded file? My vote is sidecar.</li>
+              <li style={{ marginBottom:8 }}><b>Sticker caching:</b> render once to <code>image::Handle</code> per (sound, theme, state) on first paint, or repaint every frame? Worth profiling at 5×4 grid before deciding.</li>
+              <li style={{ marginBottom:8 }}><b>Volume normalization:</b> "Normalize volume" in the import toolbar — true loudness target (-16 LUFS) or peak-normalize? LUFS is correct, peak is what people expect.</li>
+              <li style={{ marginBottom:8 }}><b>Hotkey conflict UX:</b> we show "Print Screen" conflict inline, but should we offer to release KDE's binding (we can't), or just instruct? Currently instruct.</li>
+              <li><b>Splash on first launch:</b> still optional. Tell me if you want one before the empty state.</li>
+            </ul>
+          </div>
+        </DCArtboard>
+
+        <NotesCard title="P.S." body={`Tweak panel (bottom-right) flips theme/density/view across all artboards. Tray menu uses native KDE Breeze styling on purpose — we don't draw it, the system does. Slot manager's right panel responds to slot selection. The Rust starter files live at src-rust/ui/ in the project tree — pull them down with the download button or copy the contents straight from the handoff artboard.`}/>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <App/>
+);
+
+// Tweaks panel — registered AFTER the App so its protocol listener exists.
+const TweaksRoot = () => {
+  const [t, setTweak] = useTweaks(HH_TWEAK_DEFAULTS);
+  return (
+    <TweaksPanel>
+      <TweakSection label="Theme"/>
+      <TweakToggle label="Dark mode" value={t.dark} onChange={v => setTweak('dark', v)}/>
+      <TweakSection label="Layout"/>
+      <TweakRadio label="Density" value={t.density} options={['compact','regular','comfy']} onChange={v => setTweak('density', v)}/>
+      <TweakRadio label="View" value={t.view} options={['grid','list']} onChange={v => setTweak('view', v)}/>
+    </TweaksPanel>
+  );
+};
+const tweaksHost = document.createElement('div');
+document.body.appendChild(tweaksHost);
+ReactDOM.createRoot(tweaksHost).render(<TweaksRoot/>);
+</script>
+</body>
+</html>

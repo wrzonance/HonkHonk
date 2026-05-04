@@ -4,6 +4,27 @@
 
 Phase 1 delivers a click-to-play soundboard that routes audio to a PipeWire virtual mic (for Discord/voice chat) and local headset (for self-monitoring). Pure Rust application using Iced for GUI. No hotkeys — click-to-play only.
 
+## UI Vision Reference
+
+Phase 1 follows the "Confetti" design direction (see ARCHITECTURE.md → UI Vision). Full mockups in `docs/design-reference/`. Starter Rust files (`theme.rs`, `sound_tile.rs`) in `docs/design-reference/src-rust/ui/`.
+
+**Phase 1 visual targets:**
+- Theme system with Light/Dark + full Tone palette (10 colors) — ALL colors via `Theme` trait, never hardcoded
+- Basic tile rendering with tinted backgrounds (no canvas stickers yet — Phase 3)
+- Warm papery surfaces (`#f4efe4` light bg, `#171410` dark bg)
+- Header: logo text + search pill + stop-all button (with -1° tilt) + settings gear
+- Category chip bar: "All" + real categories (no Favorites yet)
+- Bottom now-playing bar: placeholder sticker area, name, progress bar, volume slider
+- Responsive grid: 5 columns default, 4 comfy, 6 compact
+- Tile density: compact 156px, regular 192px, comfy 224px
+
+**Structural decisions that support future phases:**
+- `Theme` enum + `Hh` trait pattern — Phase 3 themes plug in without refactoring
+- `Tone` enum with `sticker()`, `highlight()`, `tile_tint()` — ready for canvas tiles
+- Spacing/radius as constants — density switch is a constant swap, not a rewrite
+- Tile as function → `Element` — swappable for `canvas::Program` in Phase 3
+- View mode enum (Grid/List) in state now, even if only Grid ships
+
 ## Tech Stack
 
 | Component | Technology | Why |
