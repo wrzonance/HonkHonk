@@ -6,7 +6,7 @@ pub enum AudioError {
     FileOpen(#[source] std::io::Error),
 
     #[error("unsupported audio format")]
-    UnsupportedFormat,
+    UnsupportedFormat(#[source] symphonia::core::errors::Error),
 
     #[error("no audio track found in file")]
     NoTrack,

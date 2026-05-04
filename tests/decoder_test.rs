@@ -10,9 +10,13 @@ fn audio_error_file_open_displays_path_context() {
 
 #[test]
 fn audio_error_unsupported_format_displays() {
-    let err = AudioError::UnsupportedFormat;
+    use symphonia::core::errors::Error as SymphoniaError;
+    let err = AudioError::UnsupportedFormat(SymphoniaError::Unsupported("test format"));
     let msg = err.to_string();
-    assert!(msg.contains("unsupported") || msg.contains("format"), "got: {msg}");
+    assert!(
+        msg.contains("unsupported") || msg.contains("format"),
+        "got: {msg}"
+    );
 }
 
 #[test]
@@ -146,10 +150,8 @@ fn decode_stereo_wav_returns_two_channels() {
 
 #[test]
 fn decode_stereo_wav_duration_matches_mono() {
-    let mono = decode(Path::new("tests/fixtures/sine_mono.wav"))
-        .expect("decode mono failed");
-    let stereo = decode(Path::new("tests/fixtures/sine_stereo.wav"))
-        .expect("decode stereo failed");
+    let mono = decode(Path::new("tests/fixtures/sine_mono.wav")).expect("decode mono failed");
+    let stereo = decode(Path::new("tests/fixtures/sine_stereo.wav")).expect("decode stereo failed");
 
     let diff = (mono.duration.as_secs_f64() - stereo.duration.as_secs_f64()).abs();
     assert!(
@@ -175,7 +177,10 @@ fn decode_nonexistent_file_returns_file_open_error() {
 #[test]
 fn decode_corrupt_file_returns_error() {
     let result = decode(Path::new("tests/fixtures/corrupt.mp3"));
-    assert!(result.is_err(), "corrupt file should not decode successfully");
+    assert!(
+        result.is_err(),
+        "corrupt file should not decode successfully"
+    );
 }
 
 #[test]
@@ -186,8 +191,7 @@ fn decode_empty_file_returns_error() {
 
 #[test]
 fn decode_wav_samples_contain_nonzero_signal() {
-    let audio = decode(Path::new("tests/fixtures/sine_mono.wav"))
-        .expect("decode failed");
+    let audio = decode(Path::new("tests/fixtures/sine_mono.wav")).expect("decode failed");
 
     let max_abs = audio
         .samples

@@ -33,7 +33,7 @@ pub fn decode(path: &Path) -> Result<DecodedAudio, AudioError> {
             &FormatOptions::default(),
             &MetadataOptions::default(),
         )
-        .map_err(|_| AudioError::UnsupportedFormat)?;
+        .map_err(AudioError::UnsupportedFormat)?;
 
     let mut format = probed.format;
 
@@ -95,8 +95,13 @@ fn decode_packets(
         let spec = *decoded.spec();
         let capacity = decoded.capacity();
 
-        let buf = sample_buf
-            .get_or_insert_with(|| SampleBuffer::<f32>::new(capacity as u64, spec));
+        if sample_buf
+            .as_ref()
+            .map_or(true, |b| capacity > b.capacity())
+        {
+            sample_buf = Some(SampleBuffer::<f32>::new(capacity as u64, spec));
+        }
+        let buf = sample_buf.as_mut().expect("buffer just initialized");
 
         buf.copy_interleaved_ref(decoded);
         all_samples.extend_from_slice(buf.samples());
