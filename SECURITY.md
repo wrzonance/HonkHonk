@@ -12,7 +12,9 @@ If you discover a security vulnerability in HonkHonk, please report it responsib
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email: **djfreaq@gmail.com**
+Instead, use [GitHub's private vulnerability reporting](https://github.com/thewrz/HonkHonk/security/advisories/new) to submit a report directly through the repository.
+
+Alternatively, email: **djfreaq@gmail.com**
 
 Include:
 - Description of the vulnerability
