@@ -1,3 +1,3 @@
 fn main() {
-    println!("HonkHonk");
+    println!("HonkHonk - tray module compiled");
 }
