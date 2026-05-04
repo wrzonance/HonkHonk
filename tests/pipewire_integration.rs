@@ -92,3 +92,30 @@ fn mic_linked_to_virtual_sink() {
     handle.shutdown();
     std::thread::sleep(Duration::from_millis(500));
 }
+
+#[test]
+fn engine_cleans_up_on_shutdown() {
+    pipewire::init();
+
+    let handle = honkhonk::audio::spawn().expect("spawn failed");
+    let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
+
+    std::thread::sleep(Duration::from_millis(500));
+    let output = Command::new("wpctl").arg("status").output().unwrap();
+    let status = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        status.contains("HonkHonk Mix"),
+        "Sink should exist before shutdown"
+    );
+
+    handle.shutdown();
+    std::thread::sleep(Duration::from_secs(1));
+
+    let output = Command::new("wpctl").arg("status").output().unwrap();
+    let status = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !status.contains("HonkHonk Mix"),
+        "Sink should be destroyed after shutdown"
+    );
+}
