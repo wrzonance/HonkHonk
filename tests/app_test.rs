@@ -28,3 +28,11 @@ fn tray_event_toggle_maps_to_toggle_message() {
     let msg = Message::from_tray_event(honkhonk::tray::TrayEvent::ToggleVisibility);
     assert_eq!(msg, Message::ToggleVisibility);
 }
+
+#[test]
+fn toggle_visibility_does_not_exit() {
+    let mut app = HonkHonk::new_for_test();
+    let _task = app.update(Message::ToggleVisibility);
+    assert!(!app.should_exit());
+    assert!(!app.is_visible());
+}
