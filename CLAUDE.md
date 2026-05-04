@@ -204,6 +204,7 @@ Write an ADR when: choosing between two viable approaches, rejecting a popular a
 - **"Not now" is a valid answer.** If a feature doesn't serve the current phase's sub-MVP, it waits.
 - **Every plan states what is OUT of scope** — explicitly. "This PR does NOT add hotkey support" prevents drift.
 - **Dependency additions require justification.** New crate = comment in PR explaining why existing deps or stdlib can't do it.
+- **New system library deps must update CI.** If a new crate requires a system `-dev` package (e.g. `libpipewire-0.3-dev`), update all GitHub Actions workflow files (`.github/workflows/*.yml`) in the same PR. CI must not break on the PR that adds the dependency.
 
 ## Multi-DE Rules
 
