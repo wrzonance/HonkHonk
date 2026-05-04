@@ -159,3 +159,27 @@ fn decode_stereo_wav_duration_matches_mono() {
         stereo.duration.as_secs_f64()
     );
 }
+
+#[test]
+fn decode_nonexistent_file_returns_file_open_error() {
+    let result = decode(Path::new("tests/fixtures/does_not_exist.wav"));
+    assert!(result.is_err());
+
+    let err = result.err().expect("already checked is_err");
+    assert!(
+        matches!(err, AudioError::FileOpen(_)),
+        "expected FileOpen, got: {err}"
+    );
+}
+
+#[test]
+fn decode_corrupt_file_returns_error() {
+    let result = decode(Path::new("tests/fixtures/corrupt.mp3"));
+    assert!(result.is_err(), "corrupt file should not decode successfully");
+}
+
+#[test]
+fn decode_empty_file_returns_error() {
+    let result = decode(Path::new("tests/fixtures/empty.wav"));
+    assert!(result.is_err(), "empty file should not decode successfully");
+}
