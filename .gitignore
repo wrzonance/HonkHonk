@@ -9,6 +9,8 @@ Cargo.lock
 *~
 .helix/
 .zed/
+.aider*
+.claude/
 
 # OS
 .DS_Store
