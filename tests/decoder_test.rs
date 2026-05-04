@@ -183,3 +183,41 @@ fn decode_empty_file_returns_error() {
     let result = decode(Path::new("tests/fixtures/empty.wav"));
     assert!(result.is_err(), "empty file should not decode successfully");
 }
+
+#[test]
+fn decode_wav_samples_contain_nonzero_signal() {
+    let audio = decode(Path::new("tests/fixtures/sine_mono.wav"))
+        .expect("decode failed");
+
+    let max_abs = audio
+        .samples
+        .iter()
+        .map(|s| s.abs())
+        .fold(0.0_f32, f32::max);
+
+    // 440Hz sine wave should have significant amplitude
+    assert!(
+        max_abs > 0.5,
+        "expected peak amplitude > 0.5, got {max_abs} — signal may be silent or corrupt"
+    );
+}
+
+#[test]
+fn decode_all_formats_produce_similar_sample_counts() {
+    let wav = decode(Path::new("tests/fixtures/sine_mono.wav")).expect("WAV");
+    let mp3 = decode(Path::new("tests/fixtures/sine_mono.mp3")).expect("MP3");
+    let ogg = decode(Path::new("tests/fixtures/sine_mono.ogg")).expect("OGG");
+    let flac = decode(Path::new("tests/fixtures/sine_mono.flac")).expect("FLAC");
+
+    // All should be ~48000 samples (1s * 48kHz * 1ch)
+    // MP3 has encoder padding so wider tolerance
+    let expected = 48000_usize;
+    for (name, audio) in [("WAV", &wav), ("MP3", &mp3), ("OGG", &ogg), ("FLAC", &flac)] {
+        let diff = (audio.samples.len() as i64 - expected as i64).unsigned_abs() as usize;
+        assert!(
+            diff < 7000,
+            "{name}: expected ~{expected} samples, got {} (diff {diff})",
+            audio.samples.len()
+        );
+    }
+}
