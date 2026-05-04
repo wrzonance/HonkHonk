@@ -61,12 +61,8 @@ AppDir/
 *.pkg.tar.*
 *.snap
 
-# Test fixtures (large audio files)
-tests/fixtures/*.wav
-tests/fixtures/*.mp3
-tests/fixtures/*.flac
-tests/fixtures/*.ogg
-!tests/fixtures/.gitkeep
+# Test fixtures — small generated files, committed for reproducible tests
+# (regenerate via: ffmpeg -f lavfi -i "sine=frequency=440:duration=1:sample_rate=48000" ...)
 
 # User sound library (never commit user audio)
 sounds/
