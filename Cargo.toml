@@ -1,0 +1,21 @@
+[package]
+name = "honkhonk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+description = "Wayland-native Linux soundboard"
+repository = "https://github.com/thewrz/HonkHonk"
+
+[dependencies]
+iced = { version = "0.13", features = ["tokio", "tiny-skia"] }
+tray-icon = "0.19"
+muda = "0.15"
+tokio = { version = "1", features = ["full"] }
+
+[features]
+default = []
+
+[profile.release]
+lto = true
+strip = true
