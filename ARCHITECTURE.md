@@ -488,6 +488,15 @@ wayland-devel / libwayland-dev (headers)
 clang / gcc
 ```
 
+### CI Workflow Sync
+
+When adding a new Cargo dependency that requires a system `-dev` package (anything that triggers a `pkg-config` lookup at build time), the same PR **must** update all GitHub Actions workflow files in `.github/workflows/` to install that package. CI builds run on bare `ubuntu-latest` runners — missing system libraries cause build failures that block the PR.
+
+Checklist for new system deps:
+1. Add the `-dev` package to the `apt-get install` step in every workflow that builds or lints the project
+2. Verify the package name exists in Ubuntu's default repos (check with `apt-cache search`)
+3. If the package isn't available on Ubuntu, add a PPA or a manual install step
+
 ### Explicitly Not Targeting
 
 X11-only sessions, PulseAudio-only systems (no PipeWire), Windows, macOS.
