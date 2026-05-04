@@ -8,5 +8,5 @@ pub struct DecodedAudio {
 }
 
 pub fn decode(_path: &std::path::Path) -> Result<DecodedAudio, AudioError> {
-    Err(AudioError::Todo)
+    Err(AudioError::UnsupportedFormat)
 }
