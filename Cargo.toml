@@ -15,9 +15,11 @@ gtk = "0.18"
 tokio = { version = "1", features = ["full"] }
 symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
 thiserror = "2"
+pipewire = "0.9"
 
 [features]
 default = []
+pipewire-test = []
 
 [profile.release]
 lto = true

@@ -19,4 +19,16 @@ pub enum AudioError {
 
     #[error("decode error")]
     Decode(#[source] symphonia::core::errors::Error),
+
+    #[error("failed to initialize PipeWire: {0}")]
+    PipeWireInit(String),
+
+    #[error("failed to create virtual sink: {0}")]
+    VirtualSinkCreation(String),
+
+    #[error("failed to create audio link: {0}")]
+    LinkCreation(String),
+
+    #[error("failed to spawn audio thread")]
+    ThreadSpawn(#[source] std::io::Error),
 }
