@@ -10,6 +10,7 @@ pub enum Message {
     Quit,
     TrayEvent(TrayEvent),
     TrayPoll,
+    AudioEvent(crate::audio::AudioEvent),
 }
 
 impl Message {
@@ -26,16 +27,18 @@ pub struct HonkHonk {
     exit: bool,
     tray_rx: Arc<Mutex<Receiver<TrayEvent>>>,
     _tray: Option<TrayHandle>,
+    audio: Option<crate::audio::AudioHandle>,
 }
 
 impl HonkHonk {
-    pub fn new(mut tray: TrayHandle) -> Self {
+    pub fn new(mut tray: TrayHandle, audio: crate::audio::AudioHandle) -> Self {
         let rx = tray.take_rx();
         Self {
             visible: true,
             exit: false,
             tray_rx: Arc::new(Mutex::new(rx)),
             _tray: Some(tray),
+            audio: Some(audio),
         }
     }
 
@@ -46,6 +49,7 @@ impl HonkHonk {
             exit: false,
             tray_rx: Arc::new(Mutex::new(rx)),
             _tray: None,
+            audio: None,
         }
     }
 
@@ -64,6 +68,9 @@ impl HonkHonk {
                 Task::none()
             }
             Message::Quit => {
+                if let Some(ref audio) = self.audio {
+                    audio.shutdown();
+                }
                 self.exit = true;
                 iced::exit()
             }
@@ -78,14 +85,29 @@ impl HonkHonk {
                 }
 
                 let event = self.tray_rx.lock().ok().and_then(|rx| rx.try_recv().ok());
-
-                match event {
-                    Some(e) => {
-                        let msg = Message::from_tray_event(e);
-                        self.update(msg)
-                    }
-                    None => Task::none(),
+                if let Some(e) = event {
+                    let msg = Message::from_tray_event(e);
+                    return self.update(msg);
                 }
+
+                if let Some(ref audio) = self.audio {
+                    if let Some(event) = audio.try_recv() {
+                        return self.update(Message::AudioEvent(event));
+                    }
+                }
+
+                Task::none()
+            }
+            Message::AudioEvent(event) => {
+                match event {
+                    crate::audio::AudioEvent::Ready => {
+                        eprintln!("honkhonk: audio engine ready");
+                    }
+                    crate::audio::AudioEvent::Error(e) => {
+                        eprintln!("honkhonk: audio error: {e}");
+                    }
+                }
+                Task::none()
             }
         }
     }

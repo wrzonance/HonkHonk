@@ -1,4 +1,6 @@
 fn main() -> iced::Result {
+    pipewire::init();
+
     if let Err(e) = gtk::init() {
         eprintln!("fatal: failed to initialize GTK (required for system tray): {e}");
         std::process::exit(1);
@@ -12,16 +14,30 @@ fn main() -> iced::Result {
         }
     };
 
+    let audio_handle = match honkhonk::audio::spawn() {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("fatal: failed to start audio engine: {e}");
+            std::process::exit(1);
+        }
+    };
+
     let tray_handle = std::sync::Mutex::new(Some(tray_handle));
+    let audio_handle = std::sync::Mutex::new(Some(audio_handle));
 
     iced::application(
         move || {
-            let handle = tray_handle
+            let tray = tray_handle
                 .lock()
                 .expect("tray mutex poisoned")
                 .take()
                 .expect("boot called more than once");
-            honkhonk::app::HonkHonk::new(handle)
+            let audio = audio_handle
+                .lock()
+                .expect("audio mutex poisoned")
+                .take()
+                .expect("boot called more than once");
+            honkhonk::app::HonkHonk::new(tray, audio)
         },
         honkhonk::app::HonkHonk::update,
         honkhonk::app::HonkHonk::view,
