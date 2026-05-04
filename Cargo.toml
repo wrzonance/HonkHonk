@@ -8,9 +8,9 @@ description = "Wayland-native Linux soundboard"
 repository = "https://github.com/thewrz/HonkHonk"
 
 [dependencies]
-iced = { version = "0.13", features = ["tokio", "tiny-skia"] }
-tray-icon = "0.19"
-muda = "0.15"
+iced = { version = "0.14", features = ["tokio", "tiny-skia"] }
+tray-icon = "0.23"
+muda = "0.19"
 gtk = "0.18"
 tokio = { version = "1", features = ["full"] }
 symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
