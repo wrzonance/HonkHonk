@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::mpsc;
 
 use super::error::AudioError;
@@ -51,6 +53,46 @@ pub fn spawn() -> Result<AudioHandle, AudioError> {
     Ok(AudioHandle { cmd_tx, evt_rx })
 }
 
+#[derive(Default)]
+struct RegistryState {
+    sink_node_id: Option<u32>,
+    sink_input_ports: Vec<u32>,
+    source_node_id: Option<u32>,
+    source_output_ports: Vec<u32>,
+    links_created: bool,
+}
+
+fn try_create_links(
+    state: &mut RegistryState,
+    core: &pipewire::core::Core,
+    links: &mut Vec<pipewire::link::Link>,
+) {
+    if state.links_created {
+        return;
+    }
+    if state.sink_input_ports.len() < 2 || state.source_output_ports.len() < 2 {
+        return;
+    }
+
+    state.links_created = true;
+
+    for (src_port, sink_port) in state
+        .source_output_ports
+        .iter()
+        .zip(state.sink_input_ports.iter())
+    {
+        let link_props = pipewire::properties::properties! {
+            "link.output.port" => src_port.to_string(),
+            "link.input.port" => sink_port.to_string(),
+            "object.linger" => "false",
+        };
+        match core.create_object::<pipewire::link::Link>("link-factory", &link_props) {
+            Ok(link) => links.push(link),
+            Err(e) => eprintln!("honkhonk: failed to create mic passthrough link: {e}"),
+        }
+    }
+}
+
 fn run_engine(
     cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
@@ -77,6 +119,58 @@ fn run_engine(
         .create_object("adapter", &sink_props)
         .map_err(|e| AudioError::VirtualSinkCreation(e.to_string()))?;
 
+    let state = Rc::new(RefCell::new(RegistryState::default()));
+    let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let registry = core
+        .get_registry()
+        .map_err(|e| AudioError::PipeWireInit(format!("registry: {e}")))?;
+
+    let state_ref = state.clone();
+    let links_ref = mic_links.clone();
+    let core_ref = core.clone();
+    let _reg_listener = registry
+        .add_listener_local()
+        .global(move |global| {
+            let props = match global.props {
+                Some(p) => p,
+                None => return,
+            };
+
+            let mut s = state_ref.borrow_mut();
+
+            match global.type_ {
+                pipewire::types::ObjectType::Node => {
+                    let name = props.get("node.name").unwrap_or("");
+                    let class = props.get("media.class").unwrap_or("");
+
+                    if name == SINK_NODE_NAME {
+                        s.sink_node_id = Some(global.id);
+                    } else if class == "Audio/Source" && s.source_node_id.is_none() {
+                        s.source_node_id = Some(global.id);
+                    }
+                }
+                pipewire::types::ObjectType::Port => {
+                    let node_id: u32 = props
+                        .get("node.id")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    let direction = props.get("port.direction").unwrap_or("");
+
+                    if Some(node_id) == s.sink_node_id && direction == "in" {
+                        s.sink_input_ports.push(global.id);
+                    } else if Some(node_id) == s.source_node_id && direction == "out" {
+                        s.source_output_ports.push(global.id);
+                    }
+                }
+                _ => {}
+            }
+
+            let mut link_store = links_ref.borrow_mut();
+            try_create_links(&mut s, &core_ref, &mut link_store);
+        })
+        .register();
+
     let mainloop_quit = mainloop.clone();
     let _cmd_listener = cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
         AudioCommand::Shutdown => mainloop_quit.quit(),
@@ -84,6 +178,9 @@ fn run_engine(
 
     let _ = evt_tx.send(AudioEvent::Ready);
     mainloop.run();
+
+    drop(_reg_listener);
+    drop(mic_links);
 
     Ok(())
 }
