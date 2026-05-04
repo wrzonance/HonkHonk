@@ -68,6 +68,11 @@ impl HonkHonk {
                 self.update(msg)
             }
             Message::TrayPoll => {
+                // Pump GTK events so tray-icon's D-Bus registration completes
+                while gtk::events_pending() {
+                    gtk::main_iteration_do(false);
+                }
+
                 let event = self.tray_rx.lock().ok().and_then(|rx| rx.try_recv().ok());
 
                 match event {
