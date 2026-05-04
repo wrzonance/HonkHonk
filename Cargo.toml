@@ -13,6 +13,8 @@ tray-icon = "0.19"
 muda = "0.15"
 gtk = "0.18"
 tokio = { version = "1", features = ["full"] }
+symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
+thiserror = "2"
 
 [features]
 default = []
