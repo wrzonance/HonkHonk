@@ -4,7 +4,13 @@
 // There is no runtime renderer selection in Iced 0.13.
 
 fn main() -> iced::Result {
-    let tray_handle = honkhonk::tray::build_tray().expect("failed to initialize system tray");
+    let tray_handle = match honkhonk::tray::build_tray() {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("fatal: failed to initialize system tray: {e}");
+            std::process::exit(1);
+        }
+    };
 
     iced::application(
         "HonkHonk",

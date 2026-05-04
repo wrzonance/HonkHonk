@@ -90,6 +90,7 @@ impl HonkHonk {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
+        // TODO: replace polling with async stream subscription for zero-idle-cost tray events
         iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll)
     }
 }
