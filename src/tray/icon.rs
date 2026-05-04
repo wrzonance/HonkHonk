@@ -9,10 +9,16 @@ pub enum TrayEvent {
 }
 
 pub struct TrayHandle {
-    pub event_rx: Receiver<TrayEvent>,
+    event_rx: Option<Receiver<TrayEvent>>,
     _icon: TrayIcon,
     _show_hide_id: muda::MenuId,
     _quit_id: muda::MenuId,
+}
+
+impl TrayHandle {
+    pub fn take_rx(&mut self) -> Receiver<TrayEvent> {
+        self.event_rx.take().expect("take_rx called more than once")
+    }
 }
 
 pub fn build_tray() -> Result<TrayHandle, Box<dyn std::error::Error>> {
@@ -48,7 +54,7 @@ pub fn build_tray() -> Result<TrayHandle, Box<dyn std::error::Error>> {
     }));
 
     Ok(TrayHandle {
-        event_rx,
+        event_rx: Some(event_rx),
         _icon: tray,
         _show_hide_id: show_hide_id,
         _quit_id: quit_id,

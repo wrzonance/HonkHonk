@@ -1,4 +1,4 @@
-use crate::tray::TrayEvent;
+use crate::tray::{TrayEvent, TrayHandle};
 use iced::widget::{center, text};
 use iced::{Element, Subscription, Task, Theme};
 use std::sync::mpsc::Receiver;
@@ -25,14 +25,17 @@ pub struct HonkHonk {
     visible: bool,
     exit: bool,
     tray_rx: Arc<Mutex<Receiver<TrayEvent>>>,
+    _tray: Option<TrayHandle>,
 }
 
 impl HonkHonk {
-    pub fn new(tray_rx: Receiver<TrayEvent>) -> Self {
+    pub fn new(mut tray: TrayHandle) -> Self {
+        let rx = tray.take_rx();
         Self {
             visible: true,
             exit: false,
-            tray_rx: Arc::new(Mutex::new(tray_rx)),
+            tray_rx: Arc::new(Mutex::new(rx)),
+            _tray: Some(tray),
         }
     }
 
@@ -42,6 +45,7 @@ impl HonkHonk {
             visible: true,
             exit: false,
             tray_rx: Arc::new(Mutex::new(rx)),
+            _tray: None,
         }
     }
 

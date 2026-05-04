@@ -26,7 +26,7 @@ fn main() -> iced::Result {
     .theme(honkhonk::app::HonkHonk::theme)
     .run_with(move || {
         (
-            honkhonk::app::HonkHonk::new(tray_handle.event_rx),
+            honkhonk::app::HonkHonk::new(tray_handle),
             iced::Task::none(),
         )
     })
