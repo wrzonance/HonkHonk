@@ -6,6 +6,22 @@ fn main() -> iced::Result {
         std::process::exit(1);
     }
 
+    let config = match honkhonk::state::AppConfig::load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("warning: failed to load config, using defaults: {e}");
+            honkhonk::state::AppConfig::default()
+        }
+    };
+
+    let sounds = match honkhonk::state::Library::scan(&config.sound_directories) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("warning: failed to scan sound library: {e}");
+            Vec::new()
+        }
+    };
+
     let tray_handle = match honkhonk::tray::build_tray() {
         Ok(handle) => handle,
         Err(e) => {
@@ -24,6 +40,8 @@ fn main() -> iced::Result {
 
     let tray_handle = std::sync::Mutex::new(Some(tray_handle));
     let audio_handle = std::sync::Mutex::new(Some(audio_handle));
+    let sounds = std::sync::Mutex::new(Some(sounds));
+    let config = std::sync::Mutex::new(Some(config));
 
     iced::application(
         move || {
@@ -37,7 +55,17 @@ fn main() -> iced::Result {
                 .expect("audio mutex poisoned")
                 .take()
                 .expect("boot called more than once");
-            honkhonk::app::HonkHonk::new(tray, audio)
+            let sounds = sounds
+                .lock()
+                .expect("sounds mutex poisoned")
+                .take()
+                .expect("boot called more than once");
+            let config = config
+                .lock()
+                .expect("config mutex poisoned")
+                .take()
+                .expect("boot called more than once");
+            honkhonk::app::HonkHonk::new(tray, audio, sounds, config)
         },
         honkhonk::app::HonkHonk::update,
         honkhonk::app::HonkHonk::view,
