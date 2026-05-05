@@ -119,3 +119,93 @@ fn engine_cleans_up_on_shutdown() {
         "Sink should be destroyed after shutdown"
     );
 }
+
+#[test]
+fn play_sound_emits_started_and_finished_events() {
+    pipewire::init();
+
+    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no Ready event");
+    assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
+
+    // Wait for registry to discover sink node ID
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Decode a short test fixture
+    let decoded = honkhonk::audio::decode(
+        std::path::Path::new("tests/fixtures/sine_mono.wav")
+    ).expect("decode failed");
+
+    let samples = std::sync::Arc::new(decoded.samples);
+
+    handle.send(honkhonk::audio::AudioCommand::Play {
+        sound_id: "test-sine".into(),
+        samples,
+        sample_rate: decoded.sample_rate,
+        channels: decoded.channels,
+    });
+
+    // Should get PlaybackStarted
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no PlaybackStarted event");
+    assert!(
+        matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { ref sound_id } if sound_id == "test-sine"),
+        "expected PlaybackStarted, got: {event:?}"
+    );
+
+    // Should get PlaybackFinished within a few seconds (short audio file)
+    let event = handle
+        .recv_timeout(Duration::from_secs(10))
+        .expect("no PlaybackFinished event");
+    assert!(
+        matches!(event, honkhonk::audio::AudioEvent::PlaybackFinished { ref sound_id } if sound_id == "test-sine"),
+        "expected PlaybackFinished, got: {event:?}"
+    );
+
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}
+
+#[test]
+fn stop_command_halts_playback() {
+    pipewire::init();
+
+    let handle = honkhonk::audio::spawn().expect("spawn failed");
+    let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
+
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Use a long synthetic sound (~5 seconds stereo)
+    let samples = std::sync::Arc::new(vec![0.3f32; 48000 * 5 * 2]);
+
+    handle.send(honkhonk::audio::AudioCommand::Play {
+        sound_id: "long-sound".into(),
+        samples,
+        sample_rate: 48000,
+        channels: 2,
+    });
+
+    let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(
+        matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { ref sound_id } if sound_id == "long-sound"),
+        "expected PlaybackStarted for long-sound, got: {event:?}"
+    );
+
+    // Stop after 500ms
+    std::thread::sleep(Duration::from_millis(500));
+    handle.send(honkhonk::audio::AudioCommand::Stop);
+
+    let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(
+        matches!(event, honkhonk::audio::AudioEvent::PlaybackFinished { ref sound_id } if sound_id == "long-sound"),
+        "expected PlaybackFinished after stop, got: {event:?}"
+    );
+
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}

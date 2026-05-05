@@ -1,20 +1,33 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::mpsc;
+use std::sync::Arc;
 
 use super::error::AudioError;
+use super::playback::{self, PlaybackState};
+use super::registry::setup_registry_listener;
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SINK_DESCRIPTION: &str = "HonkHonk Mix";
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
+    Play {
+        sound_id: String,
+        samples: Arc<Vec<f32>>,
+        sample_rate: u32,
+        channels: u16,
+    },
+    Stop,
+    SetVolume(f32),
     Shutdown,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
     Ready,
+    PlaybackStarted { sound_id: String },
+    PlaybackFinished { sound_id: String },
     Error(String),
 }
 
@@ -30,6 +43,10 @@ impl AudioHandle {
 
     pub fn recv_timeout(&self, timeout: std::time::Duration) -> Option<AudioEvent> {
         self.evt_rx.recv_timeout(timeout).ok()
+    }
+
+    pub fn send(&self, cmd: AudioCommand) {
+        let _ = self.cmd_tx.send(cmd);
     }
 
     pub fn shutdown(&self) {
@@ -53,48 +70,19 @@ pub fn spawn() -> Result<AudioHandle, AudioError> {
     Ok(AudioHandle { cmd_tx, evt_rx })
 }
 
-#[derive(Default)]
-struct RegistryState {
-    sink_node_id: Option<u32>,
-    sink_input_ports: Vec<u32>,
-    source_node_id: Option<u32>,
-    source_output_ports: Vec<u32>,
-    links_created: bool,
+struct ActivePlayback {
+    sound_id: String,
+    sink_state: Rc<RefCell<PlaybackState>>,
+    monitor_state: Rc<RefCell<PlaybackState>>,
+    _sink_stream: playback::PlaybackStream,
+    _monitor_stream: playback::PlaybackStream,
 }
 
-fn try_create_links(
-    state: &mut RegistryState,
-    core: &pipewire::core::Core,
-    links: &mut Vec<pipewire::link::Link>,
-) {
-    if state.links_created {
-        return;
-    }
-    if state.sink_input_ports.is_empty() || state.source_output_ports.is_empty() {
-        return;
-    }
-
-    let mut all_ok = true;
-    for (src_port, sink_port) in state
-        .source_output_ports
-        .iter()
-        .zip(state.sink_input_ports.iter())
-    {
-        let link_props = pipewire::properties::properties! {
-            "link.output.port" => src_port.to_string(),
-            "link.input.port" => sink_port.to_string(),
-            "object.linger" => "false",
-        };
-        match core.create_object::<pipewire::link::Link>("link-factory", &link_props) {
-            Ok(link) => links.push(link),
-            Err(e) => {
-                eprintln!("honkhonk: failed to create mic passthrough link: {e}");
-                all_ok = false;
-            }
-        }
-    }
-
-    state.links_created = all_ok;
+struct EngineCtx {
+    registry_sink_id: Rc<Cell<Option<u32>>>,
+    core: pipewire::core::CoreRc,
+    active: Rc<RefCell<Option<ActivePlayback>>>,
+    evt_tx: mpsc::Sender<AudioEvent>,
 }
 
 fn create_virtual_sink(
@@ -112,78 +100,45 @@ fn create_virtual_sink(
         .map_err(|e| AudioError::VirtualSinkCreation(e.to_string()))
 }
 
-fn handle_registry_global(
-    global: &pipewire::registry::GlobalObject<&pipewire::spa::utils::dict::DictRef>,
-    state: &mut RegistryState,
-) {
-    let props = match global.props {
-        Some(p) => p,
-        None => return,
-    };
+fn setup_completion_timer(
+    pw_loop: &pipewire::loop_::Loop,
+    active_timer: Rc<RefCell<Option<ActivePlayback>>>,
+    evt_tx_timer: mpsc::Sender<AudioEvent>,
+) -> Result<pipewire::loop_::TimerSource<'_>, AudioError> {
+    let timer = pw_loop.add_timer(move |_expirations| {
+        let done = {
+            let borrow = active_timer.borrow();
+            if let Some(ref ap) = *borrow {
+                let sink_done = !ap.sink_state.borrow().is_active();
+                let mon_done = !ap.monitor_state.borrow().is_active();
+                sink_done && mon_done
+            } else {
+                false
+            }
+        };
 
-    match global.type_ {
-        pipewire::types::ObjectType::Node => {
-            let name = props.get("node.name").unwrap_or("");
-            let class = props.get("media.class").unwrap_or("");
-
-            if name == SINK_NODE_NAME {
-                state.sink_node_id = Some(global.id);
-            } else if class == "Audio/Source" && state.source_node_id.is_none() {
-                state.source_node_id = Some(global.id);
+        if done {
+            if let Some(ap) = active_timer.borrow_mut().take() {
+                let _ = evt_tx_timer.send(AudioEvent::PlaybackFinished {
+                    sound_id: ap.sound_id,
+                });
             }
         }
-        pipewire::types::ObjectType::Port => {
-            let node_id: u32 = props
-                .get("node.id")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
-            let direction = props.get("port.direction").unwrap_or("");
+    });
 
-            if Some(node_id) == state.sink_node_id && direction == "in" {
-                state.sink_input_ports.push(global.id);
-            } else if Some(node_id) == state.source_node_id && direction == "out" {
-                state.source_output_ports.push(global.id);
-            }
-        }
-        _ => {}
+    if let Err(e) = timer
+        .update_timer(
+            Some(std::time::Duration::from_millis(100)),
+            Some(std::time::Duration::from_millis(100)),
+        )
+        .into_result()
+    {
+        return Err(AudioError::PipeWireInit(format!(
+            "arm completion timer: {e}"
+        )));
     }
-}
 
-struct RegistryGuard<'a> {
-    _registry: pipewire::registry::RegistryBox<'a>,
-    _listener: pipewire::registry::Listener,
-    _links: Rc<RefCell<Vec<pipewire::link::Link>>>,
-}
-
-fn setup_registry_listener(
-    core: &pipewire::core::CoreRc,
-) -> Result<RegistryGuard<'_>, AudioError> {
-    let state = Rc::new(RefCell::new(RegistryState::default()));
-    let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> =
-        Rc::new(RefCell::new(Vec::new()));
-
-    let registry = core
-        .get_registry()
-        .map_err(|e| AudioError::PipeWireInit(format!("registry: {e}")))?;
-
-    let state_ref = state.clone();
-    let links_ref = mic_links.clone();
-    let core_ref = core.clone();
-    let listener = registry
-        .add_listener_local()
-        .global(move |global| {
-            let mut s = state_ref.borrow_mut();
-            handle_registry_global(global, &mut s);
-            let mut link_store = links_ref.borrow_mut();
-            try_create_links(&mut s, &core_ref, &mut link_store);
-        })
-        .register();
-
-    Ok(RegistryGuard {
-        _registry: registry,
-        _listener: listener,
-        _links: mic_links,
-    })
+    Ok(timer)
 }
 
 fn run_engine(
@@ -201,15 +156,121 @@ fn run_engine(
         .map_err(|e| AudioError::PipeWireInit(format!("core connect: {e}")))?;
 
     let _sink = create_virtual_sink(&core)?;
-    let _registry_guard = setup_registry_listener(&core)?;
+
+    let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
+    let _registry_guard = setup_registry_listener(&core, registry_sink_id.clone())?;
+
+    let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
+
+    let ctx = EngineCtx {
+        registry_sink_id,
+        core: core.clone(),
+        active: active.clone(),
+        evt_tx: evt_tx.clone(),
+    };
+
+    let active_timer = active;
+    let evt_tx_timer = evt_tx.clone();
+    let pw_loop = mainloop.loop_();
+    let _completion_timer = setup_completion_timer(pw_loop, active_timer, evt_tx_timer)?;
 
     let mainloop_quit = mainloop.clone();
     let _cmd_listener = cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
-        AudioCommand::Shutdown => mainloop_quit.quit(),
+        AudioCommand::Play {
+            sound_id,
+            samples,
+            sample_rate,
+            channels,
+        } => {
+            handle_play(&ctx, sound_id, samples, sample_rate, channels);
+        }
+        AudioCommand::Stop => {
+            let prev = ctx.active.borrow_mut().take();
+            if let Some(ap) = prev {
+                let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
+                    sound_id: ap.sound_id,
+                });
+            }
+        }
+        AudioCommand::SetVolume(v) => {
+            if let Some(ref ap) = *ctx.active.borrow() {
+                ap.sink_state.borrow_mut().set_volume(v);
+                ap.monitor_state.borrow_mut().set_volume(v);
+            }
+        }
+        AudioCommand::Shutdown => {
+            let _ = ctx.active.borrow_mut().take();
+            mainloop_quit.quit();
+        }
     });
 
     let _ = evt_tx.send(AudioEvent::Ready);
     mainloop.run();
 
     Ok(())
+}
+
+fn handle_play(
+    ctx: &EngineCtx,
+    sound_id: String,
+    samples: Arc<Vec<f32>>,
+    sample_rate: u32,
+    channels: u16,
+) {
+    let sink_id = match ctx.registry_sink_id.get() {
+        Some(id) => id,
+        None => {
+            let _ = ctx
+                .evt_tx
+                .send(AudioEvent::Error("virtual sink not yet registered".into()));
+            return;
+        }
+    };
+
+    let prev = ctx.active.borrow_mut().take();
+    if let Some(ap) = prev {
+        let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
+            sound_id: ap.sound_id,
+        });
+    }
+
+    let sink_state = Rc::new(RefCell::new(PlaybackState::new()));
+    sink_state
+        .borrow_mut()
+        .start(sound_id.clone(), samples.clone(), sample_rate, channels);
+
+    let mon_state = Rc::new(RefCell::new(PlaybackState::new()));
+    mon_state
+        .borrow_mut()
+        .start(sound_id.clone(), samples, sample_rate, channels);
+
+    let sink_stream = playback::create_sink_stream(
+        ctx.core.clone(),
+        sink_state.clone(),
+        sink_id,
+        sample_rate,
+        channels,
+    );
+    let mon_stream = playback::create_monitor_stream(
+        ctx.core.clone(),
+        mon_state.clone(),
+        sample_rate,
+        channels,
+    );
+
+    match (sink_stream, mon_stream) {
+        (Ok(sink_s), Ok(mon_s)) => {
+            *ctx.active.borrow_mut() = Some(ActivePlayback {
+                sound_id: sound_id.clone(),
+                sink_state,
+                monitor_state: mon_state,
+                _sink_stream: sink_s,
+                _monitor_stream: mon_s,
+            });
+            let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
+        }
+        (Err(e), _) | (_, Err(e)) => {
+            let _ = ctx.evt_tx.send(AudioEvent::Error(e.to_string()));
+        }
+    }
 }
