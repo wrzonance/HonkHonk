@@ -193,6 +193,59 @@ fn sink_stream_reaches_virtual_sink() {
 }
 
 #[test]
+fn audio_pipeline_end_to_end() {
+    pipewire::init();
+    let handle = spawn_engine_and_wait();
+
+    let samples = std::sync::Arc::new(vec![0.5f32; 48000 * 3 * 2]);
+    handle.send(honkhonk::audio::AudioCommand::Play {
+        sound_id: "e2e-test".into(),
+        samples,
+        sample_rate: 48000,
+        channels: 2,
+    });
+
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no PlaybackStarted event");
+    assert!(matches!(
+        event,
+        honkhonk::audio::AudioEvent::PlaybackStarted { .. }
+    ));
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    let links = get_pw_links();
+
+    let fl_sink_to_source = links.contains("honkhonk-mix:capture_FL")
+        && links.contains("honkhonk-mic:input_FL");
+    let fr_sink_to_source = links.contains("honkhonk-mix:capture_FR")
+        && links.contains("honkhonk-mic:input_FR");
+
+    assert!(fl_sink_to_source, "FL sink→source link missing.\n{links}");
+    assert!(fr_sink_to_source, "FR sink→source link missing.\n{links}");
+
+    let mix_input_section: Vec<&str> = links
+        .lines()
+        .skip_while(|l| !l.starts_with("honkhonk-mix:input_FL"))
+        .take_while(|l| l.starts_with("honkhonk-mix:input") || l.starts_with("  |"))
+        .collect();
+
+    let playback_reaches_sink = mix_input_section
+        .iter()
+        .any(|l| l.contains("|<-") && !l.contains("alsa_input"));
+
+    assert!(
+        playback_reaches_sink,
+        "Full pipeline broken: playback stream not connected to virtual sink.\n{links}"
+    );
+
+    handle.send(honkhonk::audio::AudioCommand::Stop);
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}
+
+#[test]
 fn engine_cleans_up_on_shutdown() {
     pipewire::init();
 
