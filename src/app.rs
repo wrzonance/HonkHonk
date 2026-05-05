@@ -535,4 +535,20 @@ mod tests {
         assert_eq!(app.filtered_sounds().len(), 1);
         assert_eq!(app.filtered_sounds()[0].id, "aaa");
     }
+
+    #[test]
+    fn volume_changed_persists_in_config_across_sounds() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::VolumeChanged(0.15));
+        assert!((app.config.volume - 0.15).abs() < f32::EPSILON);
+
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            sound_id: "old".into(),
+        }));
+
+        assert!(
+            (app.config.volume - 0.15).abs() < f32::EPSILON,
+            "config.volume should survive playback cycle"
+        );
+    }
 }
