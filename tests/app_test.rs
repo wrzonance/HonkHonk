@@ -38,21 +38,59 @@ fn toggle_visibility_does_not_exit() {
 }
 
 #[test]
-fn audio_playback_started_event_is_handled() {
+fn audio_playback_started_sets_playing() {
     let mut app = HonkHonk::new_for_test();
     let event = honkhonk::audio::AudioEvent::PlaybackStarted {
-        sound_id: "test".into(),
+        sound_id: "test-id".into(),
     };
     let _task = app.update(Message::AudioEvent(event));
-    assert!(!app.should_exit());
+    assert_eq!(app.playing(), Some("test-id"));
 }
 
 #[test]
-fn audio_playback_finished_event_is_handled() {
+fn audio_playback_finished_clears_playing() {
     let mut app = HonkHonk::new_for_test();
-    let event = honkhonk::audio::AudioEvent::PlaybackFinished {
-        sound_id: "test".into(),
+    let started = honkhonk::audio::AudioEvent::PlaybackStarted {
+        sound_id: "test-id".into(),
     };
-    let _task = app.update(Message::AudioEvent(event));
-    assert!(!app.should_exit());
+    let _task = app.update(Message::AudioEvent(started));
+    assert_eq!(app.playing(), Some("test-id"));
+
+    let finished = honkhonk::audio::AudioEvent::PlaybackFinished {
+        sound_id: "test-id".into(),
+    };
+    let _task = app.update(Message::AudioEvent(finished));
+    assert_eq!(app.playing(), None);
+}
+
+#[test]
+fn stop_all_clears_playing() {
+    let mut app = HonkHonk::new_for_test();
+    let started = honkhonk::audio::AudioEvent::PlaybackStarted {
+        sound_id: "x".into(),
+    };
+    let _task = app.update(Message::AudioEvent(started));
+    assert!(app.playing().is_some());
+
+    let _task = app.update(Message::StopAll);
+    assert_eq!(app.playing(), None);
+}
+
+#[test]
+fn select_category_updates_state() {
+    let mut app = HonkHonk::new_for_test();
+    assert_eq!(app.active_category(), None);
+
+    let _task = app.update(Message::SelectCategory(Some("Memes".into())));
+    assert_eq!(app.active_category(), Some("Memes"));
+
+    let _task = app.update(Message::SelectCategory(None));
+    assert_eq!(app.active_category(), None);
+}
+
+#[test]
+fn play_sound_with_no_matching_id_does_not_crash() {
+    let mut app = HonkHonk::new_for_test();
+    let _task = app.update(Message::PlaySound("nonexistent".into()));
+    assert_eq!(app.playing(), None);
 }
