@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use super::error::AudioError;
@@ -6,8 +7,8 @@ use super::error::AudioError;
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SOURCE_NODE_NAME: &str = "honkhonk-mic";
 
-#[derive(Default)]
 struct RegistryState {
+    preferred_source_name: Option<String>,
     sink_node_id: Option<u32>,
     sink_input_ports: Vec<u32>,
     sink_output_ports: Vec<u32>,
@@ -15,8 +16,7 @@ struct RegistryState {
     vsource_input_ports: Vec<u32>,
     mic_node_id: Option<u32>,
     mic_output_ports: Vec<u32>,
-    mic_links_created: bool,
-    monitor_links_created: bool,
+    linked_pairs: HashSet<(u32, u32)>,
 }
 
 fn try_create_mic_links(
@@ -24,9 +24,6 @@ fn try_create_mic_links(
     core: &pipewire::core::Core,
     links: &mut Vec<pipewire::link::Link>,
 ) {
-    if state.mic_links_created {
-        return;
-    }
     let mic_node = match state.mic_node_id {
         Some(id) => id,
         None => return,
@@ -35,16 +32,15 @@ fn try_create_mic_links(
         Some(id) => id,
         None => return,
     };
-    if state.mic_output_ports.is_empty() || state.sink_input_ports.is_empty() {
-        return;
-    }
 
-    let mut all_ok = true;
     for (mic_port, sink_port) in state
         .mic_output_ports
         .iter()
         .zip(state.sink_input_ports.iter())
     {
+        if state.linked_pairs.contains(&(*mic_port, *sink_port)) {
+            continue;
+        }
         let link_props = pipewire::properties::properties! {
             "link.output.node" => mic_node.to_string(),
             "link.output.port" => mic_port.to_string(),
@@ -53,15 +49,15 @@ fn try_create_mic_links(
             "object.linger" => "false",
         };
         match core.create_object::<pipewire::link::Link>("link-factory", &link_props) {
-            Ok(link) => links.push(link),
+            Ok(link) => {
+                state.linked_pairs.insert((*mic_port, *sink_port));
+                links.push(link);
+            }
             Err(e) => {
                 eprintln!("honkhonk: failed to create mic passthrough link: {e}");
-                all_ok = false;
             }
         }
     }
-
-    state.mic_links_created = all_ok;
 }
 
 fn try_create_monitor_links(
@@ -69,9 +65,6 @@ fn try_create_monitor_links(
     core: &pipewire::core::Core,
     links: &mut Vec<pipewire::link::Link>,
 ) {
-    if state.monitor_links_created {
-        return;
-    }
     let sink_node = match state.sink_node_id {
         Some(id) => id,
         None => return,
@@ -80,16 +73,15 @@ fn try_create_monitor_links(
         Some(id) => id,
         None => return,
     };
-    if state.sink_output_ports.is_empty() || state.vsource_input_ports.is_empty() {
-        return;
-    }
 
-    let mut all_ok = true;
     for (sink_out, vsource_in) in state
         .sink_output_ports
         .iter()
         .zip(state.vsource_input_ports.iter())
     {
+        if state.linked_pairs.contains(&(*sink_out, *vsource_in)) {
+            continue;
+        }
         let link_props = pipewire::properties::properties! {
             "link.output.node" => sink_node.to_string(),
             "link.output.port" => sink_out.to_string(),
@@ -98,15 +90,15 @@ fn try_create_monitor_links(
             "object.linger" => "false",
         };
         match core.create_object::<pipewire::link::Link>("link-factory", &link_props) {
-            Ok(link) => links.push(link),
+            Ok(link) => {
+                state.linked_pairs.insert((*sink_out, *vsource_in));
+                links.push(link);
+            }
             Err(e) => {
                 eprintln!("honkhonk: failed to create monitor→source link: {e}");
-                all_ok = false;
             }
         }
     }
-
-    state.monitor_links_created = all_ok;
 }
 
 fn handle_registry_global(
@@ -127,8 +119,17 @@ fn handle_registry_global(
                 state.sink_node_id = Some(global.id);
             } else if name == SOURCE_NODE_NAME {
                 state.vsource_node_id = Some(global.id);
-            } else if class == "Audio/Source" && state.mic_node_id.is_none() {
-                state.mic_node_id = Some(global.id);
+            } else if class == "Audio/Source" && name != SOURCE_NODE_NAME {
+                match &state.preferred_source_name {
+                    Some(pref) if pref == name => {
+                        state.mic_node_id = Some(global.id);
+                    }
+                    Some(_) => {}
+                    None if state.mic_node_id.is_none() => {
+                        state.mic_node_id = Some(global.id);
+                    }
+                    None => {}
+                }
             }
         }
         pipewire::types::ObjectType::Port => {
@@ -163,8 +164,19 @@ pub struct RegistryGuard<'a> {
 pub fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
     shared_sink_id: Rc<Cell<Option<u32>>>,
+    default_source_name: Option<String>,
 ) -> Result<RegistryGuard<'_>, AudioError> {
-    let state = Rc::new(RefCell::new(RegistryState::default()));
+    let state = Rc::new(RefCell::new(RegistryState {
+        preferred_source_name: default_source_name,
+        sink_node_id: None,
+        sink_input_ports: Vec::new(),
+        sink_output_ports: Vec::new(),
+        vsource_node_id: None,
+        vsource_input_ports: Vec::new(),
+        mic_node_id: None,
+        mic_output_ports: Vec::new(),
+        linked_pairs: HashSet::new(),
+    }));
     let all_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
 
     let registry = core

@@ -59,46 +59,197 @@ fn virtual_sink_appears_in_wpctl() {
     );
 }
 
+fn get_default_source_name() -> Option<String> {
+    let output = Command::new("pw-metadata")
+        .args(["0", "default.audio.source"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .split("\"name\":\"")
+        .nth(1)?
+        .split('"')
+        .next()
+        .map(String::from)
+}
+
 #[test]
-fn mic_linked_to_virtual_sink() {
+fn default_mic_linked_to_virtual_sink() {
     pipewire::init();
+    let handle = spawn_engine_and_wait();
 
-    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+    let default_source = match get_default_source_name() {
+        Some(name) => name,
+        None => {
+            handle.shutdown();
+            return;
+        }
+    };
 
-    let event = handle
-        .recv_timeout(Duration::from_secs(5))
-        .expect("no event received within 5s");
+    let links = get_pw_links();
 
-    assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
+    let mix_input_section: String = links
+        .lines()
+        .skip_while(|l| !l.starts_with("honkhonk-mix:input_FL"))
+        .take_while(|l| l.starts_with("honkhonk-mix:input") || l.starts_with("  |"))
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    // Wait for registry discovery + link creation
-    std::thread::sleep(Duration::from_secs(2));
+    let default_linked = mix_input_section.contains(&default_source);
 
+    assert!(
+        default_linked,
+        "Default source '{default_source}' should be linked to honkhonk-mix.\npw-link:\n{links}"
+    );
+
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}
+
+fn get_pw_links() -> String {
     let output = Command::new("pw-link")
         .arg("--links")
         .output()
         .expect("pw-link not found");
+    assert!(
+        output.status.success(),
+        "pw-link --links failed (exit {:?}):\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).to_string()
+}
 
-    let links = String::from_utf8_lossy(&output.stdout);
+fn spawn_engine_and_wait() -> honkhonk::audio::AudioHandle {
+    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no Ready event within 5s");
+    assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
+    std::thread::sleep(Duration::from_secs(2));
+    handle
+}
 
-    let has_sink = links.contains("honkhonk-mix");
+#[test]
+fn both_stereo_channels_linked_sink_to_source() {
+    pipewire::init();
+    let handle = spawn_engine_and_wait();
 
-    // Check if any audio source exists in the system
-    let wpctl = Command::new("wpctl")
-        .arg("status")
-        .output()
-        .expect("wpctl failed");
-    let status = String::from_utf8_lossy(&wpctl.stdout);
-    let has_source = status.contains("Sources:");
+    let links = get_pw_links();
 
-    if has_source {
-        assert!(
-            has_sink,
-            "Expected links to honkhonk-mix when audio sources exist.\n\
-             pw-link output:\n{links}"
-        );
-    }
+    let fl_linked =
+        links.contains("honkhonk-mix:capture_FL") && links.contains("honkhonk-mic:input_FL");
+    let fr_linked =
+        links.contains("honkhonk-mix:capture_FR") && links.contains("honkhonk-mic:input_FR");
 
+    assert!(
+        fl_linked,
+        "FL link missing between sink capture and source input.\npw-link:\n{links}"
+    );
+    assert!(
+        fr_linked,
+        "FR link missing between sink capture and source input.\npw-link:\n{links}"
+    );
+
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}
+
+#[test]
+fn sink_stream_reaches_virtual_sink() {
+    pipewire::init();
+    let handle = spawn_engine_and_wait();
+
+    let samples = std::sync::Arc::new(vec![0.5f32; 48000 * 5 * 2]);
+    handle.send(honkhonk::audio::AudioCommand::Play {
+        sound_id: "routing-test".into(),
+        samples,
+        sample_rate: 48000,
+        channels: 2,
+    });
+
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no PlaybackStarted event");
+    assert!(matches!(
+        event,
+        honkhonk::audio::AudioEvent::PlaybackStarted { .. }
+    ));
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    let links = get_pw_links();
+
+    let mix_input_section: Vec<&str> = links
+        .lines()
+        .skip_while(|l| !l.starts_with("honkhonk-mix:input_FL"))
+        .take_while(|l| l.starts_with("honkhonk-mix:input") || l.starts_with("  |"))
+        .collect();
+
+    let has_non_mic_source = mix_input_section
+        .iter()
+        .any(|l| l.contains("|<-") && !l.contains("alsa_input"));
+
+    assert!(
+        has_non_mic_source,
+        "playback stream should be connected to honkhonk-mix:input, \
+         but only mic passthrough found.\npw-link:\n{links}"
+    );
+
+    handle.send(honkhonk::audio::AudioCommand::Stop);
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}
+
+#[test]
+fn audio_pipeline_end_to_end() {
+    pipewire::init();
+    let handle = spawn_engine_and_wait();
+
+    let samples = std::sync::Arc::new(vec![0.5f32; 48000 * 3 * 2]);
+    handle.send(honkhonk::audio::AudioCommand::Play {
+        sound_id: "e2e-test".into(),
+        samples,
+        sample_rate: 48000,
+        channels: 2,
+    });
+
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no PlaybackStarted event");
+    assert!(matches!(
+        event,
+        honkhonk::audio::AudioEvent::PlaybackStarted { .. }
+    ));
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    let links = get_pw_links();
+
+    let fl_sink_to_source =
+        links.contains("honkhonk-mix:capture_FL") && links.contains("honkhonk-mic:input_FL");
+    let fr_sink_to_source =
+        links.contains("honkhonk-mix:capture_FR") && links.contains("honkhonk-mic:input_FR");
+
+    assert!(fl_sink_to_source, "FL sink→source link missing.\n{links}");
+    assert!(fr_sink_to_source, "FR sink→source link missing.\n{links}");
+
+    let mix_input_section: Vec<&str> = links
+        .lines()
+        .skip_while(|l| !l.starts_with("honkhonk-mix:input_FL"))
+        .take_while(|l| l.starts_with("honkhonk-mix:input") || l.starts_with("  |"))
+        .collect();
+
+    let playback_reaches_sink = mix_input_section
+        .iter()
+        .any(|l| l.contains("|<-") && !l.contains("alsa_input"));
+
+    assert!(
+        playback_reaches_sink,
+        "Full pipeline broken: playback stream not connected to virtual sink.\n{links}"
+    );
+
+    handle.send(honkhonk::audio::AudioCommand::Stop);
     handle.shutdown();
     std::thread::sleep(Duration::from_millis(500));
 }
