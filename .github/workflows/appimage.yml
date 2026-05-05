@@ -11,6 +11,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Pinned digests — update intentionally when upgrading these tools.
+  # Recompute: sha256sum <downloaded-file>
+  LINUXDEPLOY_SHA256: eb1cf4c2ef45ac66fde05fb82b1adbbb0096a5cb741f1123ca644ce800f816ff
+  APPIMAGETOOL_SHA256: a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0
 
 jobs:
   build-appimage:
@@ -41,10 +45,11 @@ jobs:
       - name: Stage binary into AppDir
         run: cp target/release/honkhonk packaging/appimage/HonkHonk.AppDir/usr/bin/honkhonk
 
-      - name: Download linuxdeploy
+      - name: Download and verify linuxdeploy
         run: |
           curl -fsSL -o linuxdeploy \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          echo "${LINUXDEPLOY_SHA256}  linuxdeploy" | sha256sum --check --strict
           chmod +x linuxdeploy
 
       - name: Bundle shared libraries with linuxdeploy
@@ -55,10 +60,11 @@ jobs:
             --desktop-file assets/honkhonk.desktop \
             --icon-file assets/icons/hicolor/256x256/apps/honkhonk.png
 
-      - name: Download appimagetool
+      - name: Download and verify appimagetool
         run: |
           curl -fsSL -o appimagetool \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          echo "${APPIMAGETOOL_SHA256}  appimagetool" | sha256sum --check --strict
           chmod +x appimagetool
 
       - name: Build AppImage
