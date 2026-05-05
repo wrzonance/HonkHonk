@@ -218,6 +218,8 @@ Never use KDE-specific, GNOME-specific, or compositor-specific APIs directly. Th
 
 System tray uses StatusNotifierItem (SNI) protocol via tray-icon crate — the cross-DE standard for Wayland. No XEmbed.
 
+**Known warning:** `tray-icon` → `libappindicator` → `libayatana-appindicator` emits a deprecation warning on stderr at runtime. This is upstream — not suppressible or actionable from our code. Ignore it.
+
 ## Packaging Rules
 
 - Runtime deps are NOT bundled (except in AppImage/Flatpak). Packages declare deps and let the package manager resolve.

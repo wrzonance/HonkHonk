@@ -525,6 +525,8 @@ StatusNotifierItem (SNI) is the standard. Implementation via `tray-icon` crate:
 3. Events communicated to Iced via channel → Subscription
 4. No legacy XEmbed tray support
 
+**Known warning:** `tray-icon` depends on `libappindicator` which loads `libayatana-appindicator` at runtime. This produces a harmless deprecation warning on stderr: `libayatana-appindicator is deprecated. Please use libayatana-appindicator-glib in newly written code.` This is an upstream issue in the `libappindicator` crate — not actionable from our code. Do not suppress it.
+
 ### .desktop File
 
 ```ini
