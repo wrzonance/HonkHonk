@@ -145,6 +145,9 @@ impl HonkHonk {
                     AudioEvent::PlaybackFinished { .. } => {
                         self.playing = None;
                     }
+                    AudioEvent::Progress(_) => {
+                        // TODO(Task 5): wire progress to UI progress bar
+                    }
                     AudioEvent::Error(e) => {
                         eprintln!("honkhonk: audio error: {e}");
                     }

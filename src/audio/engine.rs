@@ -30,6 +30,7 @@ pub enum AudioEvent {
     Ready,
     PlaybackStarted { sound_id: String },
     PlaybackFinished { sound_id: String },
+    Progress(f32),
     Error(String),
 }
 
@@ -121,16 +122,21 @@ fn setup_completion_timer(
     evt_tx_timer: mpsc::Sender<AudioEvent>,
 ) -> Result<pipewire::loop_::TimerSource<'_>, AudioError> {
     let timer = pw_loop.add_timer(move |_expirations| {
-        let done = {
+        let (done, progress) = {
             let borrow = active_timer.borrow();
             if let Some(ref ap) = *borrow {
                 let sink_done = !ap.sink_state.borrow().is_active();
                 let mon_done = !ap.monitor_state.borrow().is_active();
-                sink_done && mon_done
+                let p = ap.sink_state.borrow().progress();
+                (sink_done && mon_done, Some(p))
             } else {
-                false
+                (false, None)
             }
         };
+
+        if let Some(p) = progress {
+            let _ = evt_tx_timer.send(AudioEvent::Progress(p));
+        }
 
         if done {
             if let Some(ap) = active_timer.borrow_mut().take() {
