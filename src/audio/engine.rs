@@ -9,6 +9,8 @@ use super::registry::setup_registry_listener;
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SINK_DESCRIPTION: &str = "HonkHonk Mix";
+const SOURCE_NODE_NAME: &str = "honkhonk-mic";
+const SOURCE_DESCRIPTION: &str = "HonkHonk Mic";
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
@@ -98,6 +100,21 @@ fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::
         .map_err(|e| AudioError::VirtualSinkCreation(e.to_string()))
 }
 
+fn create_virtual_source(
+    core: &pipewire::core::CoreRc,
+) -> Result<pipewire::node::Node, AudioError> {
+    let source_props = pipewire::properties::properties! {
+        "factory.name" => "support.null-audio-sink",
+        "node.name" => SOURCE_NODE_NAME,
+        "node.description" => SOURCE_DESCRIPTION,
+        "media.class" => "Audio/Source/Virtual",
+        "audio.position" => "[FL,FR]",
+        "object.linger" => "false",
+    };
+    core.create_object("adapter", &source_props)
+        .map_err(|e| AudioError::VirtualSourceCreation(e.to_string()))
+}
+
 fn setup_completion_timer(
     pw_loop: &pipewire::loop_::Loop,
     active_timer: Rc<RefCell<Option<ActivePlayback>>>,
@@ -154,6 +171,7 @@ fn run_engine(
         .map_err(|e| AudioError::PipeWireInit(format!("core connect: {e}")))?;
 
     let _sink = create_virtual_sink(&core)?;
+    let _source = create_virtual_source(&core)?;
 
     let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
     let _registry_guard = setup_registry_listener(&core, registry_sink_id.clone())?;

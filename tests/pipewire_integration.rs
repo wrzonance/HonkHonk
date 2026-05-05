@@ -32,6 +32,11 @@ fn virtual_sink_appears_in_wpctl() {
         "Virtual sink 'HonkHonk Mix' not found in wpctl status.\n\
          wpctl output:\n{status}"
     );
+    assert!(
+        status.contains("HonkHonk Mic"),
+        "Virtual source 'HonkHonk Mic' not found in wpctl status.\n\
+         wpctl output:\n{status}"
+    );
 
     handle.shutdown();
     std::thread::sleep(Duration::from_millis(500));
@@ -45,6 +50,11 @@ fn virtual_sink_appears_in_wpctl() {
     assert!(
         !status.contains("HonkHonk Mix"),
         "Virtual sink 'HonkHonk Mix' was NOT cleaned up after shutdown.\n\
+         wpctl output:\n{status}"
+    );
+    assert!(
+        !status.contains("HonkHonk Mic"),
+        "Virtual source 'HonkHonk Mic' was NOT cleaned up after shutdown.\n\
          wpctl output:\n{status}"
     );
 }
