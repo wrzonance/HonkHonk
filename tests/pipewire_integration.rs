@@ -128,10 +128,10 @@ fn both_stereo_channels_linked_sink_to_source() {
 
     let links = get_pw_links();
 
-    let fl_linked = links.contains("honkhonk-mix:capture_FL")
-        && links.contains("honkhonk-mic:input_FL");
-    let fr_linked = links.contains("honkhonk-mix:capture_FR")
-        && links.contains("honkhonk-mic:input_FR");
+    let fl_linked =
+        links.contains("honkhonk-mix:capture_FL") && links.contains("honkhonk-mic:input_FL");
+    let fr_linked =
+        links.contains("honkhonk-mix:capture_FR") && links.contains("honkhonk-mic:input_FR");
 
     assert!(
         fl_linked,
@@ -217,10 +217,10 @@ fn audio_pipeline_end_to_end() {
 
     let links = get_pw_links();
 
-    let fl_sink_to_source = links.contains("honkhonk-mix:capture_FL")
-        && links.contains("honkhonk-mic:input_FL");
-    let fr_sink_to_source = links.contains("honkhonk-mix:capture_FR")
-        && links.contains("honkhonk-mic:input_FR");
+    let fl_sink_to_source =
+        links.contains("honkhonk-mix:capture_FL") && links.contains("honkhonk-mic:input_FL");
+    let fr_sink_to_source =
+        links.contains("honkhonk-mix:capture_FR") && links.contains("honkhonk-mic:input_FR");
 
     assert!(fl_sink_to_source, "FL sink→source link missing.\n{links}");
     assert!(fr_sink_to_source, "FR sink→source link missing.\n{links}");
