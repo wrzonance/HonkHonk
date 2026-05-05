@@ -21,16 +21,16 @@ pub struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
-        let music_dir = directories::UserDirs::new()
-            .and_then(|dirs| dirs.audio_dir().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| {
-                directories::BaseDirs::new()
-                    .map(|b| b.home_dir().join("Music"))
-                    .unwrap_or_else(|| PathBuf::from("/tmp/Music"))
-            });
+        let sound_directories = directories::UserDirs::new()
+            .and_then(|dirs| dirs.audio_dir().map(|p| p.join(SOUND_SUBDIR)))
+            .or_else(|| {
+                directories::BaseDirs::new().map(|b| b.home_dir().join("Music").join(SOUND_SUBDIR))
+            })
+            .into_iter()
+            .collect();
 
         Self {
-            sound_directories: vec![music_dir.join(SOUND_SUBDIR)],
+            sound_directories,
             volume: DEFAULT_VOLUME,
             window_width: DEFAULT_WIDTH,
             window_height: DEFAULT_HEIGHT,
@@ -41,13 +41,8 @@ impl Default for AppConfig {
 impl AppConfig {
     /// Returns the config file path under XDG_CONFIG_HOME.
     fn config_path() -> Result<PathBuf, ConfigError> {
-        let proj_dirs =
-            directories::ProjectDirs::from("", "", CONFIG_DIR_NAME).ok_or_else(|| {
-                ConfigError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "unable to determine XDG config directory",
-                ))
-            })?;
+        let proj_dirs = directories::ProjectDirs::from("", "", CONFIG_DIR_NAME)
+            .ok_or(ConfigError::NoConfigDir)?;
         Ok(proj_dirs.config_dir().join(CONFIG_FILE_NAME))
     }
 
@@ -61,8 +56,15 @@ impl AppConfig {
             return Ok(config);
         }
 
-        let contents = std::fs::read_to_string(&path)?;
-        let config: Self = serde_json::from_str(&contents).map_err(ConfigError::Deserialize)?;
+        let contents = std::fs::read_to_string(&path).map_err(|e| ConfigError::Io {
+            path: path.display().to_string(),
+            source: e,
+        })?;
+        let config: Self =
+            serde_json::from_str(&contents).map_err(|e| ConfigError::Deserialize {
+                path: path.display().to_string(),
+                source: e,
+            })?;
         Ok(config)
     }
 
@@ -77,8 +79,14 @@ impl AppConfig {
             })?;
         }
 
-        let json = serde_json::to_string_pretty(self).map_err(ConfigError::Serialize)?;
-        std::fs::write(&path, json)?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| ConfigError::Serialize {
+            path: path.display().to_string(),
+            source: e,
+        })?;
+        std::fs::write(&path, &json).map_err(|e| ConfigError::Io {
+            path: path.display().to_string(),
+            source: e,
+        })?;
         Ok(())
     }
 
@@ -90,8 +98,15 @@ impl AppConfig {
             return Ok(config);
         }
 
-        let contents = std::fs::read_to_string(path)?;
-        let config: Self = serde_json::from_str(&contents).map_err(ConfigError::Deserialize)?;
+        let contents = std::fs::read_to_string(path).map_err(|e| ConfigError::Io {
+            path: path.display().to_string(),
+            source: e,
+        })?;
+        let config: Self =
+            serde_json::from_str(&contents).map_err(|e| ConfigError::Deserialize {
+                path: path.display().to_string(),
+                source: e,
+            })?;
         Ok(config)
     }
 
@@ -104,8 +119,14 @@ impl AppConfig {
             })?;
         }
 
-        let json = serde_json::to_string_pretty(self).map_err(ConfigError::Serialize)?;
-        std::fs::write(path, json)?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| ConfigError::Serialize {
+            path: path.display().to_string(),
+            source: e,
+        })?;
+        std::fs::write(path, &json).map_err(|e| ConfigError::Io {
+            path: path.display().to_string(),
+            source: e,
+        })?;
         Ok(())
     }
 }
@@ -121,7 +142,6 @@ mod tests {
         assert_eq!(config.volume, 0.85);
         assert_eq!(config.window_width, 900);
         assert_eq!(config.window_height, 600);
-        assert!(!config.sound_directories.is_empty());
     }
 
     #[test]

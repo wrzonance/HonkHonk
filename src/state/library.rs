@@ -92,8 +92,9 @@ impl Library {
 
             let walker = WalkDir::new(dir).follow_links(true);
             for result in walker {
-                let dir_entry =
-                    result.map_err(|e| ConfigError::Io(std::io::Error::other(e.to_string())))?;
+                let Ok(dir_entry) = result else {
+                    continue;
+                };
 
                 if !dir_entry.file_type().is_file() {
                     continue;
