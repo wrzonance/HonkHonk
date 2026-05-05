@@ -28,6 +28,27 @@ pipewire-test = []
 [dev-dependencies]
 tempfile = "3"
 
+[package.metadata.deb]
+maintainer = "thewrz <djfreaq@gmail.com>"
+copyright = "2024-2026, thewrz"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+HonkHonk is a Wayland-native soundboard for Linux.
+Play sounds directly into your microphone via a PipeWire virtual mic —
+works with Discord, Mumble, and any PulseAudio-compatible app."""
+depends = "$auto, pipewire, xdg-desktop-portal"
+recommends = "xdg-desktop-portal-kde | xdg-desktop-portal-gnome | xdg-desktop-portal-wlr"
+section = "sound"
+priority = "optional"
+assets = [
+    # binary
+    ["target/release/honkhonk", "usr/bin/", "755"],
+    # .desktop entry
+    ["assets/honkhonk.desktop", "usr/share/applications/", "644"],
+    # icon
+    ["assets/icons/hicolor/256x256/apps/honkhonk.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+]
+
 [profile.release]
 lto = true
 strip = true
