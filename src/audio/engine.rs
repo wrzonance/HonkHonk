@@ -238,6 +238,10 @@ fn run_engine(
     let active: Rc<RefCell<Option<ActivePlayback>>> =
         Rc::new(RefCell::new(None));
 
+    // Clone before moving into the command closure so the timer can also access it.
+    let active_timer = active.clone();
+    let evt_tx_timer = evt_tx.clone();
+
     let mainloop_quit = mainloop.clone();
     let registry_sink_id_cmd = registry_sink_id;
     let active_cmd = active;
@@ -285,6 +289,35 @@ fn run_engine(
                 mainloop_quit.quit();
             }
         });
+
+    // Poll every 100 ms for playback completion.  When both the sink stream and
+    // the monitor stream have exhausted their samples (is_active() == false),
+    // we emit PlaybackFinished and drop the active playback.
+    let pw_loop = mainloop.loop_();
+    let _completion_timer = pw_loop.add_timer(move |_expirations| {
+        let done = {
+            let borrow = active_timer.borrow();
+            if let Some(ref ap) = *borrow {
+                let sink_done = !ap.sink_state.borrow().is_active();
+                let mon_done = !ap.monitor_state.borrow().is_active();
+                sink_done && mon_done
+            } else {
+                false
+            }
+        };
+
+        if done {
+            if let Some(ap) = active_timer.borrow_mut().take() {
+                let _ = evt_tx_timer.send(AudioEvent::PlaybackFinished {
+                    sound_id: ap.sound_id,
+                });
+            }
+        }
+    });
+    let _ = _completion_timer.update_timer(
+        Some(std::time::Duration::from_millis(100)),
+        Some(std::time::Duration::from_millis(100)),
+    );
 
     let _ = evt_tx.send(AudioEvent::Ready);
     mainloop.run();
