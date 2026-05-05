@@ -9,6 +9,7 @@ use crate::state::{AppConfig, SoundEntry};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
+use crate::ui::{now_playing, search_bar};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
@@ -20,6 +21,9 @@ pub enum Message {
     PlaySound(String),
     StopAll,
     SelectCategory(Option<String>),
+    SearchChanged(String),
+    VolumeChanged(f32),
+    VolumeSaveRequested,
 }
 
 impl Message {
@@ -41,6 +45,8 @@ pub struct HonkHonk {
     playing: Option<String>,
     active_category: Option<String>,
     config: AppConfig,
+    search_query: String,
+    progress: f32,
 }
 
 impl HonkHonk {
@@ -61,6 +67,8 @@ impl HonkHonk {
             playing: None,
             active_category: None,
             config,
+            search_query: String::new(),
+            progress: 0.0,
         }
     }
 
@@ -76,6 +84,8 @@ impl HonkHonk {
             playing: None,
             active_category: None,
             config: AppConfig::default(),
+            search_query: String::new(),
+            progress: 0.0,
         }
     }
 
@@ -93,6 +103,26 @@ impl HonkHonk {
 
     pub fn active_category(&self) -> Option<&str> {
         self.active_category.as_deref()
+    }
+
+    pub fn search_query(&self) -> &str {
+        &self.search_query
+    }
+
+    pub fn progress(&self) -> f32 {
+        self.progress
+    }
+
+    pub fn filtered_sounds(&self) -> Vec<&SoundEntry> {
+        let query = self.search_query.to_lowercase();
+        self.sounds
+            .iter()
+            .filter(|s| match &self.active_category {
+                Some(cat) => s.category == *cat,
+                None => true,
+            })
+            .filter(|s| query.is_empty() || s.name.to_lowercase().contains(&query))
+            .collect()
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -144,6 +174,10 @@ impl HonkHonk {
                     }
                     AudioEvent::PlaybackFinished { .. } => {
                         self.playing = None;
+                        self.progress = 0.0;
+                    }
+                    AudioEvent::Progress(p) => {
+                        self.progress = p;
                     }
                     AudioEvent::Error(e) => {
                         eprintln!("honkhonk: audio error: {e}");
@@ -188,6 +222,23 @@ impl HonkHonk {
                 self.active_category = cat;
                 Task::none()
             }
+            Message::SearchChanged(query) => {
+                self.search_query = query;
+                Task::none()
+            }
+            Message::VolumeChanged(v) => {
+                self.config.volume = v.clamp(0.0, 1.0);
+                if let Some(ref audio) = self.audio {
+                    audio.send(AudioCommand::SetVolume(self.config.volume));
+                }
+                Task::none()
+            }
+            Message::VolumeSaveRequested => {
+                if let Err(e) = self.config.save() {
+                    eprintln!("honkhonk: config save error: {e}");
+                }
+                Task::none()
+            }
         }
     }
 
@@ -195,14 +246,23 @@ impl HonkHonk {
         let t = theme::Theme::Dark;
         let header = self.view_header(t);
         let chips = self.view_category_chips(t);
-        let grid = sound_grid::view_grid(
-            &self.sounds,
+        let filtered = self.filtered_sounds();
+        let grid = sound_grid::view_grid(&filtered, self.playing.as_deref());
+
+        let now_playing = now_playing::view_now_playing(
             self.playing.as_deref(),
-            self.active_category.as_deref(),
+            &self.sounds,
+            self.progress,
+            self.config.volume,
         );
 
-        let content =
-            column![header, chips, scrollable(grid).height(Length::Fill)].spacing(theme::space::MD);
+        let content = column![
+            header,
+            chips,
+            scrollable(grid).height(Length::Fill),
+            now_playing,
+        ]
+        .spacing(theme::space::MD);
 
         container(content)
             .width(Length::Fill)
@@ -218,6 +278,8 @@ impl HonkHonk {
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
         let title = text("HonkHonk").size(24).color(t.ink());
 
+        let search = search_bar::view_search_bar(&self.search_query);
+
         let stop_btn = button(text("Stop All").size(14).color(t.ink()))
             .on_press(Message::StopAll)
             .style(move |_theme, _status| button::Style {
@@ -227,7 +289,8 @@ impl HonkHonk {
                 ..Default::default()
             });
 
-        row![title, space::horizontal(), stop_btn]
+        row![title, space::horizontal(), search, stop_btn]
+            .spacing(theme::space::LG)
             .align_y(iced::Alignment::Center)
             .into()
     }
@@ -370,5 +433,122 @@ mod tests {
             Message::ToggleVisibility
         );
         assert_eq!(Message::from_tray_event(TrayEvent::Quit), Message::Quit);
+    }
+
+    #[test]
+    fn search_changed_updates_query() {
+        let mut app = HonkHonk::new_for_test();
+        assert_eq!(app.search_query(), "");
+        let _ = app.update(Message::SearchChanged("honk".into()));
+        assert_eq!(app.search_query(), "honk");
+    }
+
+    #[test]
+    fn volume_changed_updates_config() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::VolumeChanged(0.42));
+        assert!((app.config.volume - 0.42).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn progress_event_updates_progress() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.65)));
+        assert!((app.progress() - 0.65).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn playback_finished_resets_progress() {
+        let mut app = HonkHonk::new_for_test();
+        app.progress = 0.8;
+        app.playing = Some("test".into());
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            sound_id: "test".into(),
+        }));
+        assert!((app.progress() - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn search_filters_sounds() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![
+            SoundEntry {
+                id: "aaa".into(),
+                name: "Goose Honk".into(),
+                path: "/a.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: Some(1000),
+                category: "Honk".into(),
+            },
+            SoundEntry {
+                id: "bbb".into(),
+                name: "Vine Boom".into(),
+                path: "/b.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: Some(1000),
+                category: "Memes".into(),
+            },
+        ];
+        let _ = app.update(Message::SearchChanged("goose".into()));
+        assert_eq!(app.filtered_sounds().len(), 1);
+        assert_eq!(app.filtered_sounds()[0].id, "aaa");
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "aaa".into(),
+            name: "Goose Honk".into(),
+            path: "/a.mp3".into(),
+            format: crate::state::AudioFormat::Mp3,
+            duration_ms: Some(1000),
+            category: "Honk".into(),
+        }];
+        let _ = app.update(Message::SearchChanged("GOOSE".into()));
+        assert_eq!(app.filtered_sounds().len(), 1);
+    }
+
+    #[test]
+    fn search_and_category_filter_stack() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![
+            SoundEntry {
+                id: "aaa".into(),
+                name: "Goose Honk".into(),
+                path: "/a.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: Some(1000),
+                category: "Honk".into(),
+            },
+            SoundEntry {
+                id: "bbb".into(),
+                name: "Goose Boom".into(),
+                path: "/b.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: Some(1000),
+                category: "Memes".into(),
+            },
+        ];
+        let _ = app.update(Message::SelectCategory(Some("Honk".into())));
+        let _ = app.update(Message::SearchChanged("goose".into()));
+        assert_eq!(app.filtered_sounds().len(), 1);
+        assert_eq!(app.filtered_sounds()[0].id, "aaa");
+    }
+
+    #[test]
+    fn volume_changed_persists_in_config_across_sounds() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::VolumeChanged(0.15));
+        assert!((app.config.volume - 0.15).abs() < f32::EPSILON);
+
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            sound_id: "old".into(),
+        }));
+
+        assert!(
+            (app.config.volume - 0.15).abs() < f32::EPSILON,
+            "config.volume should survive playback cycle"
+        );
     }
 }
