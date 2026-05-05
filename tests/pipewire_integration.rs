@@ -103,6 +103,49 @@ fn mic_linked_to_virtual_sink() {
     std::thread::sleep(Duration::from_millis(500));
 }
 
+fn get_pw_links() -> String {
+    let output = Command::new("pw-link")
+        .arg("--links")
+        .output()
+        .expect("pw-link not found");
+    String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+fn spawn_engine_and_wait() -> honkhonk::audio::AudioHandle {
+    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no Ready event within 5s");
+    assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
+    std::thread::sleep(Duration::from_secs(2));
+    handle
+}
+
+#[test]
+fn both_stereo_channels_linked_sink_to_source() {
+    pipewire::init();
+    let handle = spawn_engine_and_wait();
+
+    let links = get_pw_links();
+
+    let fl_linked = links.contains("honkhonk-mix:capture_FL")
+        && links.contains("honkhonk-mic:input_FL");
+    let fr_linked = links.contains("honkhonk-mix:capture_FR")
+        && links.contains("honkhonk-mic:input_FR");
+
+    assert!(
+        fl_linked,
+        "FL link missing between sink capture and source input.\npw-link:\n{links}"
+    );
+    assert!(
+        fr_linked,
+        "FR link missing between sink capture and source input.\npw-link:\n{links}"
+    );
+
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}
+
 #[test]
 fn engine_cleans_up_on_shutdown() {
     pipewire::init();

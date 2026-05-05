@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use super::error::AudioError;
@@ -15,8 +16,7 @@ struct RegistryState {
     vsource_input_ports: Vec<u32>,
     mic_node_id: Option<u32>,
     mic_output_ports: Vec<u32>,
-    mic_links_created: bool,
-    monitor_links_created: bool,
+    linked_pairs: HashSet<(u32, u32)>,
 }
 
 fn try_create_mic_links(
@@ -24,9 +24,6 @@ fn try_create_mic_links(
     core: &pipewire::core::Core,
     links: &mut Vec<pipewire::link::Link>,
 ) {
-    if state.mic_links_created {
-        return;
-    }
     let mic_node = match state.mic_node_id {
         Some(id) => id,
         None => return,
@@ -35,16 +32,15 @@ fn try_create_mic_links(
         Some(id) => id,
         None => return,
     };
-    if state.mic_output_ports.is_empty() || state.sink_input_ports.is_empty() {
-        return;
-    }
 
-    let mut all_ok = true;
     for (mic_port, sink_port) in state
         .mic_output_ports
         .iter()
         .zip(state.sink_input_ports.iter())
     {
+        if state.linked_pairs.contains(&(*mic_port, *sink_port)) {
+            continue;
+        }
         let link_props = pipewire::properties::properties! {
             "link.output.node" => mic_node.to_string(),
             "link.output.port" => mic_port.to_string(),
@@ -53,15 +49,15 @@ fn try_create_mic_links(
             "object.linger" => "false",
         };
         match core.create_object::<pipewire::link::Link>("link-factory", &link_props) {
-            Ok(link) => links.push(link),
+            Ok(link) => {
+                state.linked_pairs.insert((*mic_port, *sink_port));
+                links.push(link);
+            }
             Err(e) => {
                 eprintln!("honkhonk: failed to create mic passthrough link: {e}");
-                all_ok = false;
             }
         }
     }
-
-    state.mic_links_created = all_ok;
 }
 
 fn try_create_monitor_links(
@@ -69,9 +65,6 @@ fn try_create_monitor_links(
     core: &pipewire::core::Core,
     links: &mut Vec<pipewire::link::Link>,
 ) {
-    if state.monitor_links_created {
-        return;
-    }
     let sink_node = match state.sink_node_id {
         Some(id) => id,
         None => return,
@@ -80,16 +73,15 @@ fn try_create_monitor_links(
         Some(id) => id,
         None => return,
     };
-    if state.sink_output_ports.is_empty() || state.vsource_input_ports.is_empty() {
-        return;
-    }
 
-    let mut all_ok = true;
     for (sink_out, vsource_in) in state
         .sink_output_ports
         .iter()
         .zip(state.vsource_input_ports.iter())
     {
+        if state.linked_pairs.contains(&(*sink_out, *vsource_in)) {
+            continue;
+        }
         let link_props = pipewire::properties::properties! {
             "link.output.node" => sink_node.to_string(),
             "link.output.port" => sink_out.to_string(),
@@ -98,15 +90,15 @@ fn try_create_monitor_links(
             "object.linger" => "false",
         };
         match core.create_object::<pipewire::link::Link>("link-factory", &link_props) {
-            Ok(link) => links.push(link),
+            Ok(link) => {
+                state.linked_pairs.insert((*sink_out, *vsource_in));
+                links.push(link);
+            }
             Err(e) => {
                 eprintln!("honkhonk: failed to create monitor→source link: {e}");
-                all_ok = false;
             }
         }
     }
-
-    state.monitor_links_created = all_ok;
 }
 
 fn handle_registry_global(
