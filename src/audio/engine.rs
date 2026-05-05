@@ -1,9 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::Arc;
 
 use super::error::AudioError;
+use super::playback::{self, PlaybackState};
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SINK_DESCRIPTION: &str = "HonkHonk Mix";
@@ -75,6 +76,14 @@ struct RegistryState {
     source_node_id: Option<u32>,
     source_output_ports: Vec<u32>,
     links_created: bool,
+}
+
+struct ActivePlayback {
+    sound_id: String,
+    sink_state: Rc<RefCell<PlaybackState>>,
+    monitor_state: Rc<RefCell<PlaybackState>>,
+    _sink_stream: playback::PlaybackStream,
+    _monitor_stream: playback::PlaybackStream,
 }
 
 fn try_create_links(
@@ -172,6 +181,7 @@ struct RegistryGuard<'a> {
 
 fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
+    shared_sink_id: Rc<Cell<Option<u32>>>,
 ) -> Result<RegistryGuard<'_>, AudioError> {
     let state = Rc::new(RefCell::new(RegistryState::default()));
     let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> =
@@ -189,6 +199,9 @@ fn setup_registry_listener(
         .global(move |global| {
             let mut s = state_ref.borrow_mut();
             handle_registry_global(global, &mut s);
+            if let Some(id) = s.sink_node_id {
+                shared_sink_id.set(Some(id));
+            }
             let mut link_store = links_ref.borrow_mut();
             try_create_links(&mut s, &core_ref, &mut link_store);
         })
@@ -216,18 +229,146 @@ fn run_engine(
         .map_err(|e| AudioError::PipeWireInit(format!("core connect: {e}")))?;
 
     let _sink = create_virtual_sink(&core)?;
-    let _registry_guard = setup_registry_listener(&core)?;
+
+    let registry_sink_id: Rc<Cell<Option<u32>>> =
+        Rc::new(Cell::new(None));
+    let _registry_guard =
+        setup_registry_listener(&core, registry_sink_id.clone())?;
+
+    let active: Rc<RefCell<Option<ActivePlayback>>> =
+        Rc::new(RefCell::new(None));
 
     let mainloop_quit = mainloop.clone();
-    let _cmd_listener = cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
-        AudioCommand::Play { .. } => {} // wired in Task 4
-        AudioCommand::Stop => {}
-        AudioCommand::SetVolume(_) => {}
-        AudioCommand::Shutdown => mainloop_quit.quit(),
-    });
+    let registry_sink_id_cmd = registry_sink_id;
+    let active_cmd = active;
+    let core_cmd = core.clone();
+    let evt_tx_cmd = evt_tx.clone();
+
+    let _cmd_listener =
+        cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
+            AudioCommand::Play {
+                sound_id,
+                samples,
+                sample_rate,
+                channels,
+            } => {
+                handle_play(
+                    &registry_sink_id_cmd,
+                    &core_cmd,
+                    &active_cmd,
+                    &evt_tx_cmd,
+                    sound_id,
+                    samples,
+                    sample_rate,
+                    channels,
+                );
+            }
+            AudioCommand::Stop => {
+                let prev = active_cmd.borrow_mut().take();
+                if let Some(ap) = prev {
+                    let _ = evt_tx_cmd.send(
+                        AudioEvent::PlaybackFinished {
+                            sound_id: ap.sound_id,
+                        },
+                    );
+                }
+            }
+            AudioCommand::SetVolume(v) => {
+                if let Some(ref ap) = *active_cmd.borrow() {
+                    ap.sink_state.borrow_mut().set_volume(v);
+                    ap.monitor_state.borrow_mut().set_volume(v);
+                }
+            }
+            AudioCommand::Shutdown => {
+                // Drop active playback before quitting the loop.
+                let _ = active_cmd.borrow_mut().take();
+                mainloop_quit.quit();
+            }
+        });
 
     let _ = evt_tx.send(AudioEvent::Ready);
     mainloop.run();
 
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_play(
+    registry_sink_id: &Rc<Cell<Option<u32>>>,
+    core: &pipewire::core::CoreRc,
+    active: &Rc<RefCell<Option<ActivePlayback>>>,
+    evt_tx: &mpsc::Sender<AudioEvent>,
+    sound_id: String,
+    samples: Arc<Vec<f32>>,
+    sample_rate: u32,
+    channels: u16,
+) {
+    let sink_id = match registry_sink_id.get() {
+        Some(id) => id,
+        None => {
+            let _ = evt_tx.send(AudioEvent::Error(
+                "virtual sink not yet registered".into(),
+            ));
+            return;
+        }
+    };
+
+    // Stop any existing playback before starting a new one.
+    let prev = active.borrow_mut().take();
+    if let Some(ap) = prev {
+        let _ = evt_tx.send(AudioEvent::PlaybackFinished {
+            sound_id: ap.sound_id,
+        });
+    }
+
+    // Two independent PlaybackState instances share the same samples
+    // so their cursors advance independently without contention.
+    let sink_state = Rc::new(RefCell::new(PlaybackState::new()));
+    sink_state.borrow_mut().start(
+        sound_id.clone(),
+        samples.clone(),
+        sample_rate,
+        channels,
+    );
+
+    let mon_state = Rc::new(RefCell::new(PlaybackState::new()));
+    mon_state.borrow_mut().start(
+        sound_id.clone(),
+        samples,
+        sample_rate,
+        channels,
+    );
+
+    let sink_stream = playback::create_sink_stream(
+        core.clone(),
+        sink_state.clone(),
+        sink_id,
+        sample_rate,
+        channels,
+    );
+    let mon_stream = playback::create_monitor_stream(
+        core.clone(),
+        mon_state.clone(),
+        sample_rate,
+        channels,
+    );
+
+    match (sink_stream, mon_stream) {
+        (Ok(sink_s), Ok(mon_s)) => {
+            *active.borrow_mut() = Some(ActivePlayback {
+                sound_id: sound_id.clone(),
+                sink_state,
+                monitor_state: mon_state,
+                _sink_stream: sink_s,
+                _monitor_stream: mon_s,
+            });
+            let _ = evt_tx.send(AudioEvent::PlaybackStarted {
+                sound_id,
+            });
+        }
+        (Err(e), _) | (_, Err(e)) => {
+            let _ =
+                evt_tx.send(AudioEvent::Error(e.to_string()));
+        }
+    }
 }
