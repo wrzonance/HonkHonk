@@ -59,45 +59,48 @@ fn virtual_sink_appears_in_wpctl() {
     );
 }
 
+fn get_default_source_name() -> Option<String> {
+    let output = Command::new("pw-metadata")
+        .args(["0", "default.audio.source"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .split("\"name\":\"")
+        .nth(1)?
+        .split('"')
+        .next()
+        .map(String::from)
+}
+
 #[test]
-fn mic_linked_to_virtual_sink() {
+fn default_mic_linked_to_virtual_sink() {
     pipewire::init();
+    let handle = spawn_engine_and_wait();
 
-    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+    let default_source = match get_default_source_name() {
+        Some(name) => name,
+        None => {
+            handle.shutdown();
+            return;
+        }
+    };
 
-    let event = handle
-        .recv_timeout(Duration::from_secs(5))
-        .expect("no event received within 5s");
+    let links = get_pw_links();
 
-    assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
+    let mix_input_section: String = links
+        .lines()
+        .skip_while(|l| !l.starts_with("honkhonk-mix:input_FL"))
+        .take_while(|l| l.starts_with("honkhonk-mix:input") || l.starts_with("  |"))
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    // Wait for registry discovery + link creation
-    std::thread::sleep(Duration::from_secs(2));
+    let default_linked = mix_input_section.contains(&default_source);
 
-    let output = Command::new("pw-link")
-        .arg("--links")
-        .output()
-        .expect("pw-link not found");
-
-    let links = String::from_utf8_lossy(&output.stdout);
-
-    let has_sink = links.contains("honkhonk-mix");
-
-    // Check if any audio source exists in the system
-    let wpctl = Command::new("wpctl")
-        .arg("status")
-        .output()
-        .expect("wpctl failed");
-    let status = String::from_utf8_lossy(&wpctl.stdout);
-    let has_source = status.contains("Sources:");
-
-    if has_source {
-        assert!(
-            has_sink,
-            "Expected links to honkhonk-mix when audio sources exist.\n\
-             pw-link output:\n{links}"
-        );
-    }
+    assert!(
+        default_linked,
+        "Default source '{default_source}' should be linked to honkhonk-mix.\npw-link:\n{links}"
+    );
 
     handle.shutdown();
     std::thread::sleep(Duration::from_millis(500));

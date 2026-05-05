@@ -7,8 +7,8 @@ use super::error::AudioError;
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SOURCE_NODE_NAME: &str = "honkhonk-mic";
 
-#[derive(Default)]
 struct RegistryState {
+    preferred_source_name: Option<String>,
     sink_node_id: Option<u32>,
     sink_input_ports: Vec<u32>,
     sink_output_ports: Vec<u32>,
@@ -119,8 +119,17 @@ fn handle_registry_global(
                 state.sink_node_id = Some(global.id);
             } else if name == SOURCE_NODE_NAME {
                 state.vsource_node_id = Some(global.id);
-            } else if class == "Audio/Source" && state.mic_node_id.is_none() {
-                state.mic_node_id = Some(global.id);
+            } else if class == "Audio/Source" && name != SOURCE_NODE_NAME {
+                match &state.preferred_source_name {
+                    Some(pref) if pref == name => {
+                        state.mic_node_id = Some(global.id);
+                    }
+                    Some(_) => {}
+                    None if state.mic_node_id.is_none() => {
+                        state.mic_node_id = Some(global.id);
+                    }
+                    None => {}
+                }
             }
         }
         pipewire::types::ObjectType::Port => {
@@ -155,8 +164,19 @@ pub struct RegistryGuard<'a> {
 pub fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
     shared_sink_id: Rc<Cell<Option<u32>>>,
+    default_source_name: Option<String>,
 ) -> Result<RegistryGuard<'_>, AudioError> {
-    let state = Rc::new(RefCell::new(RegistryState::default()));
+    let state = Rc::new(RefCell::new(RegistryState {
+        preferred_source_name: default_source_name,
+        sink_node_id: None,
+        sink_input_ports: Vec::new(),
+        sink_output_ports: Vec::new(),
+        vsource_node_id: None,
+        vsource_input_ports: Vec::new(),
+        mic_node_id: None,
+        mic_output_ports: Vec::new(),
+        linked_pairs: HashSet::new(),
+    }));
     let all_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
 
     let registry = core

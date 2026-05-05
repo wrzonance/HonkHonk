@@ -61,16 +61,32 @@ pub fn spawn() -> Result<AudioHandle, AudioError> {
     let (cmd_tx, cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
 
+    let default_source = query_default_source_name();
+
     std::thread::Builder::new()
         .name("honkhonk-pw".into())
         .spawn(move || {
-            if let Err(e) = run_engine(cmd_rx, evt_tx.clone()) {
+            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source) {
                 let _ = evt_tx.send(AudioEvent::Error(e.to_string()));
             }
         })
         .map_err(AudioError::ThreadSpawn)?;
 
     Ok(AudioHandle { cmd_tx, evt_rx })
+}
+
+fn query_default_source_name() -> Option<String> {
+    let output = std::process::Command::new("pw-metadata")
+        .args(["0", "default.audio.source"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .split("\"name\":\"")
+        .nth(1)?
+        .split('"')
+        .next()
+        .map(String::from)
 }
 
 struct ActivePlayback {
@@ -166,6 +182,7 @@ fn setup_completion_timer(
 fn run_engine(
     cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
+    default_source: Option<String>,
 ) -> Result<(), AudioError> {
     let mainloop = pipewire::main_loop::MainLoopRc::new(None)
         .map_err(|e| AudioError::PipeWireInit(format!("main loop: {e}")))?;
@@ -181,7 +198,7 @@ fn run_engine(
     let _source = create_virtual_source(&core)?;
 
     let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
-    let _registry_guard = setup_registry_listener(&core, registry_sink_id.clone())?;
+    let _registry_guard = setup_registry_listener(&core, registry_sink_id.clone(), default_source)?;
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
