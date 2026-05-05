@@ -267,6 +267,13 @@ impl PlaybackState {
         self.volume = v.clamp(0.0, 1.0);
     }
 
+    pub fn progress(&self) -> f32 {
+        match &self.samples {
+            Some(s) if !s.is_empty() => self.cursor as f32 / s.len() as f32,
+            _ => 0.0,
+        }
+    }
+
     pub fn fill_buffer(&mut self, buf: &mut [f32]) -> usize {
         let samples = match &self.samples {
             Some(s) if self.active => s,
@@ -299,5 +306,43 @@ impl PlaybackState {
 impl Default for PlaybackState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_state_at(cursor: usize, total: usize) -> PlaybackState {
+        let samples = Arc::new(vec![0.0_f32; total]);
+        let mut state = PlaybackState::new();
+        state.start("test".into(), samples, 48000, 2);
+        state.cursor = cursor;
+        state
+    }
+
+    #[test]
+    fn progress_at_start_is_zero() {
+        let state = make_state_at(0, 9600);
+        assert_eq!(state.progress(), 0.0);
+    }
+
+    #[test]
+    fn progress_at_midpoint() {
+        let state = make_state_at(4800, 9600);
+        let p = state.progress();
+        assert!((p - 0.5).abs() < f32::EPSILON, "expected ~0.5, got {p}");
+    }
+
+    #[test]
+    fn progress_at_end_is_one() {
+        let state = make_state_at(9600, 9600);
+        assert_eq!(state.progress(), 1.0);
+    }
+
+    #[test]
+    fn progress_with_no_samples_is_zero() {
+        let state = PlaybackState::new();
+        assert_eq!(state.progress(), 0.0);
     }
 }
