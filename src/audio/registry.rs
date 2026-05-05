@@ -97,8 +97,7 @@ pub fn setup_registry_listener(
     shared_sink_id: Rc<Cell<Option<u32>>>,
 ) -> Result<RegistryGuard<'_>, AudioError> {
     let state = Rc::new(RefCell::new(RegistryState::default()));
-    let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
 
     let registry = core
         .get_registry()

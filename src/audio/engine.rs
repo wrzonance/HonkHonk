@@ -85,9 +85,7 @@ struct EngineCtx {
     evt_tx: mpsc::Sender<AudioEvent>,
 }
 
-fn create_virtual_sink(
-    core: &pipewire::core::CoreRc,
-) -> Result<pipewire::node::Node, AudioError> {
+fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::Node, AudioError> {
     let sink_props = pipewire::properties::properties! {
         "factory.name" => "support.null-audio-sink",
         "node.name" => SINK_NODE_NAME,
@@ -251,12 +249,8 @@ fn handle_play(
         sample_rate,
         channels,
     );
-    let mon_stream = playback::create_monitor_stream(
-        ctx.core.clone(),
-        mon_state.clone(),
-        sample_rate,
-        channels,
-    );
+    let mon_stream =
+        playback::create_monitor_stream(ctx.core.clone(), mon_state.clone(), sample_rate, channels);
 
     match (sink_stream, mon_stream) {
         (Ok(sink_s), Ok(mon_s)) => {
