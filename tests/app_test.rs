@@ -36,3 +36,23 @@ fn toggle_visibility_does_not_exit() {
     assert!(!app.should_exit());
     assert!(!app.is_visible());
 }
+
+#[test]
+fn audio_playback_started_event_is_handled() {
+    let mut app = HonkHonk::new_for_test();
+    let event = honkhonk::audio::AudioEvent::PlaybackStarted {
+        sound_id: "test".into(),
+    };
+    let _task = app.update(Message::AudioEvent(event));
+    assert!(!app.should_exit());
+}
+
+#[test]
+fn audio_playback_finished_event_is_handled() {
+    let mut app = HonkHonk::new_for_test();
+    let event = honkhonk::audio::AudioEvent::PlaybackFinished {
+        sound_id: "test".into(),
+    };
+    let _task = app.update(Message::AudioEvent(event));
+    assert!(!app.should_exit());
+}
