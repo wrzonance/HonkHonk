@@ -112,7 +112,7 @@ fn create_virtual_source(
         "object.linger" => "false",
     };
     core.create_object("adapter", &source_props)
-        .map_err(|e| AudioError::VirtualSinkCreation(e.to_string()))
+        .map_err(|e| AudioError::VirtualSourceCreation(e.to_string()))
 }
 
 fn setup_completion_timer(

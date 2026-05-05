@@ -26,6 +26,9 @@ pub enum AudioError {
     #[error("failed to create virtual sink: {0}")]
     VirtualSinkCreation(String),
 
+    #[error("failed to create virtual source: {0}")]
+    VirtualSourceCreation(String),
+
     #[error("failed to create audio link: {0}")]
     LinkCreation(String),
 

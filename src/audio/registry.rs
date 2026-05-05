@@ -27,6 +27,14 @@ fn try_create_mic_links(
     if state.mic_links_created {
         return;
     }
+    let mic_node = match state.mic_node_id {
+        Some(id) => id,
+        None => return,
+    };
+    let sink_node = match state.sink_node_id {
+        Some(id) => id,
+        None => return,
+    };
     if state.mic_output_ports.is_empty() || state.sink_input_ports.is_empty() {
         return;
     }
@@ -38,7 +46,9 @@ fn try_create_mic_links(
         .zip(state.sink_input_ports.iter())
     {
         let link_props = pipewire::properties::properties! {
+            "link.output.node" => mic_node.to_string(),
             "link.output.port" => mic_port.to_string(),
+            "link.input.node" => sink_node.to_string(),
             "link.input.port" => sink_port.to_string(),
             "object.linger" => "false",
         };
@@ -62,6 +72,14 @@ fn try_create_monitor_links(
     if state.monitor_links_created {
         return;
     }
+    let sink_node = match state.sink_node_id {
+        Some(id) => id,
+        None => return,
+    };
+    let vsource_node = match state.vsource_node_id {
+        Some(id) => id,
+        None => return,
+    };
     if state.sink_output_ports.is_empty() || state.vsource_input_ports.is_empty() {
         return;
     }
@@ -73,7 +91,9 @@ fn try_create_monitor_links(
         .zip(state.vsource_input_ports.iter())
     {
         let link_props = pipewire::properties::properties! {
+            "link.output.node" => sink_node.to_string(),
             "link.output.port" => sink_out.to_string(),
+            "link.input.node" => vsource_node.to_string(),
             "link.input.port" => vsource_in.to_string(),
             "object.linger" => "false",
         };
