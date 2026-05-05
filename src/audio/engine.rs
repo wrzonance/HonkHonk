@@ -243,15 +243,12 @@ fn handle_play(
     sample_rate: u32,
     channels: u16,
 ) {
-    let sink_id = match ctx.registry_sink_id.get() {
-        Some(id) => id,
-        None => {
-            let _ = ctx
-                .evt_tx
-                .send(AudioEvent::Error("virtual sink not yet registered".into()));
-            return;
-        }
-    };
+    if ctx.registry_sink_id.get().is_none() {
+        let _ = ctx
+            .evt_tx
+            .send(AudioEvent::Error("virtual sink not yet registered".into()));
+        return;
+    }
 
     let prev = ctx.active.borrow_mut().take();
     if let Some(ap) = prev {
@@ -274,7 +271,7 @@ fn handle_play(
     let sink_stream = playback::create_sink_stream(
         ctx.core.clone(),
         sink_state.clone(),
-        sink_id,
+        SINK_NODE_NAME,
         sample_rate,
         channels,
     );

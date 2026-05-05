@@ -147,6 +147,52 @@ fn both_stereo_channels_linked_sink_to_source() {
 }
 
 #[test]
+fn sink_stream_reaches_virtual_sink() {
+    pipewire::init();
+    let handle = spawn_engine_and_wait();
+
+    let samples = std::sync::Arc::new(vec![0.5f32; 48000 * 5 * 2]);
+    handle.send(honkhonk::audio::AudioCommand::Play {
+        sound_id: "routing-test".into(),
+        samples,
+        sample_rate: 48000,
+        channels: 2,
+    });
+
+    let event = handle
+        .recv_timeout(Duration::from_secs(5))
+        .expect("no PlaybackStarted event");
+    assert!(matches!(
+        event,
+        honkhonk::audio::AudioEvent::PlaybackStarted { .. }
+    ));
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    let links = get_pw_links();
+
+    let mix_input_section: Vec<&str> = links
+        .lines()
+        .skip_while(|l| !l.starts_with("honkhonk-mix:input_FL"))
+        .take_while(|l| l.starts_with("honkhonk-mix:input") || l.starts_with("  |"))
+        .collect();
+
+    let has_non_mic_source = mix_input_section
+        .iter()
+        .any(|l| l.contains("|<-") && !l.contains("alsa_input"));
+
+    assert!(
+        has_non_mic_source,
+        "playback stream should be connected to honkhonk-mix:input, \
+         but only mic passthrough found.\npw-link:\n{links}"
+    );
+
+    handle.send(honkhonk::audio::AudioCommand::Stop);
+    handle.shutdown();
+    std::thread::sleep(Duration::from_millis(500));
+}
+
+#[test]
 fn engine_cleans_up_on_shutdown() {
     pipewire::init();
 

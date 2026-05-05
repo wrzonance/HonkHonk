@@ -86,15 +86,10 @@ fn make_process_closure(
     }
 }
 
-/// Create a PipeWire output stream targeting a specific virtual sink node.
-///
-/// The stream fills PipeWire buffers from `state` on each process callback.
-/// Targeting `sink_node_id` routes audio into the virtual sink so that
-/// applications such as Discord receive it.
 pub fn create_sink_stream(
     core: pw::core::CoreRc,
     state: Rc<RefCell<PlaybackState>>,
-    sink_node_id: u32,
+    target_name: &str,
     sample_rate: u32,
     channels: u16,
 ) -> Result<PlaybackStream, AudioError> {
@@ -105,7 +100,8 @@ pub fn create_sink_stream(
             *pw::keys::MEDIA_TYPE => "Audio",
             *pw::keys::MEDIA_ROLE => "Music",
             *pw::keys::MEDIA_CATEGORY => "Playback",
-            "target.object" => sink_node_id.to_string(),
+            "target.object" => target_name,
+            *pw::keys::NODE_DONT_RECONNECT => "true",
             *pw::keys::AUDIO_CHANNELS => channels.to_string(),
         },
     )
@@ -125,7 +121,7 @@ pub fn create_sink_stream(
     stream
         .connect(
             spa::utils::Direction::Output,
-            Some(sink_node_id),
+            None,
             pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS,
             &mut params,
         )
