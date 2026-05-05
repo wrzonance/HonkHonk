@@ -135,9 +135,8 @@ fn play_sound_emits_started_and_finished_events() {
     std::thread::sleep(Duration::from_secs(2));
 
     // Decode a short test fixture
-    let decoded = honkhonk::audio::decode(
-        std::path::Path::new("tests/fixtures/sine_mono.wav")
-    ).expect("decode failed");
+    let decoded = honkhonk::audio::decode(std::path::Path::new("tests/fixtures/sine_mono.wav"))
+        .expect("decode failed");
 
     let samples = std::sync::Arc::new(decoded.samples);
 
