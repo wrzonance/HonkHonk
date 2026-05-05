@@ -132,7 +132,7 @@ fn play_sound_emits_started_and_finished_events() {
     assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
 
     // Wait for registry to discover sink node ID
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_secs(2));
 
     // Decode a short test fixture
     let decoded = honkhonk::audio::decode(
@@ -178,7 +178,7 @@ fn stop_command_halts_playback() {
     let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
 
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_secs(2));
 
     // Use a long synthetic sound (~5 seconds stereo)
     let samples = std::sync::Arc::new(vec![0.3f32; 48000 * 5 * 2]);
@@ -191,7 +191,10 @@ fn stop_command_halts_playback() {
     });
 
     let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert!(matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { .. }));
+    assert!(
+        matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { ref sound_id } if sound_id == "long-sound"),
+        "expected PlaybackStarted for long-sound, got: {event:?}"
+    );
 
     // Stop after 500ms
     std::thread::sleep(Duration::from_millis(500));
