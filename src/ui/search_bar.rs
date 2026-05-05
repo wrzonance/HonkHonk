@@ -12,7 +12,7 @@ pub fn view_search_bar(query: &str) -> Element<'_, Message> {
         .size(13.5)
         .width(Length::Fixed(300.0))
         .style(move |_theme, _status| text_input::Style {
-            background: theme::bg_color(t.panel()).into(),
+            background: theme::bg_color(t.panel()),
             border: Border {
                 color: t.hairline(),
                 width: 1.0,
