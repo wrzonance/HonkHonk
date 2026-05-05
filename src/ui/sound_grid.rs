@@ -8,10 +8,7 @@ use crate::ui::theme::{self, Hh, Theme, Tone};
 const COLUMNS: usize = 5;
 const TILE_HEIGHT: f32 = 140.0;
 
-pub fn view_grid<'a>(
-    sounds: &[&'a SoundEntry],
-    playing: Option<&str>,
-) -> Element<'a, Message> {
+pub fn view_grid<'a>(sounds: &[&'a SoundEntry], playing: Option<&str>) -> Element<'a, Message> {
     let theme = Theme::Dark;
 
     if sounds.is_empty() {

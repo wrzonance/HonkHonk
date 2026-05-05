@@ -121,9 +121,7 @@ impl HonkHonk {
                 Some(cat) => s.category == *cat,
                 None => true,
             })
-            .filter(|s| {
-                query.is_empty() || s.name.to_lowercase().contains(&query)
-            })
+            .filter(|s| query.is_empty() || s.name.to_lowercase().contains(&query))
             .collect()
     }
 
@@ -249,10 +247,7 @@ impl HonkHonk {
         let header = self.view_header(t);
         let chips = self.view_category_chips(t);
         let filtered = self.filtered_sounds();
-        let grid = sound_grid::view_grid(
-            &filtered,
-            self.playing.as_deref(),
-        );
+        let grid = sound_grid::view_grid(&filtered, self.playing.as_deref());
 
         let now_playing = now_playing::view_now_playing(
             self.playing.as_deref(),
