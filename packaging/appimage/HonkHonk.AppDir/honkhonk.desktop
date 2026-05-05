@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=HonkHonk
+Comment=Wayland-native Linux soundboard
+Exec=honkhonk
+Icon=honkhonk
+Type=Application
+Categories=Audio;AudioVideo;
+Keywords=soundboard;audio;discord;pipewire;
+StartupWMClass=honkhonk

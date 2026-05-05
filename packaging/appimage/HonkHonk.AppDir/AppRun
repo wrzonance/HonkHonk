@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# AppImage entry point for HonkHonk.
+# PipeWire and xdg-desktop-portal are HOST dependencies — not bundled.
+set -euo pipefail
+
+SELF="$(readlink -f "$0")"
+HERE="$(dirname "$SELF")"
+export APPDIR="${HERE}"
+
+# Prepend bundled libs so they take precedence over system libs,
+# but exclude glibc/libstdc++ (always use the host's to avoid ABI breaks).
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH:-}"
+
+exec "${APPDIR}/usr/bin/honkhonk" "$@"
