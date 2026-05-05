@@ -40,6 +40,7 @@ pub struct SoundEntry {
     pub path: PathBuf,
     pub format: AudioFormat,
     pub duration_ms: Option<u64>,
+    pub category: String,
 }
 
 /// Generates a deterministic hex ID from a file path.
@@ -68,12 +69,19 @@ fn entry_from_path(path: &Path) -> Option<SoundEntry> {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
 
+    let category = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "General".into());
+
     Some(SoundEntry {
         id: path_to_id(path),
         name,
         path: path.to_path_buf(),
         format: AudioFormat::from_extension(ext),
         duration_ms: None,
+        category,
     })
 }
 
@@ -219,5 +227,18 @@ mod tests {
         assert_eq!(entry.format, AudioFormat::Wav);
         assert!(entry.duration_ms.is_none());
         assert!(!entry.id.is_empty());
+        assert!(!entry.category.is_empty());
+    }
+
+    #[test]
+    fn scan_derives_category_from_parent_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let memes = dir.path().join("Memes");
+        fs::create_dir(&memes).unwrap();
+        fs::write(memes.join("honk.mp3"), b"data").unwrap();
+
+        let entries = Library::scan(&[dir.path().to_path_buf()]).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].category, "Memes");
     }
 }
