@@ -25,18 +25,31 @@ jobs:
 
       - name: Generate cargo-sources.json
         run: |
+          # flatpak-cargo-generator.py is vendored at packaging/flatpak/ —
+          # no network fetch of untrusted scripts at build time.
           pip3 install aiohttp toml
-          curl -fsSL -o flatpak-cargo-generator.py \
-            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
-          python3 flatpak-cargo-generator.py Cargo.lock \
+          python3 packaging/flatpak/flatpak-cargo-generator.py Cargo.lock \
             -o packaging/flatpak/cargo-sources.json
 
-      - name: Build Flatpak bundle
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: honkhonk.flatpak
-          manifest-path: packaging/flatpak/io.github.thewrz.HonkHonk.yml
-          cache-key: flatpak-builder-${{ github.sha }}
+      - name: Install Rust SDK extension
+        run: |
+          flatpak remote-add --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --noninteractive flathub \
+            org.freedesktop.Sdk.Extension.rust-stable//24.08
+
+      - name: Build with flatpak-builder
+        run: |
+          flatpak-builder \
+            --repo=repo \
+            --install-deps-from=flathub \
+            --force-clean \
+            builddir \
+            packaging/flatpak/io.github.thewrz.HonkHonk.yml
+
+      - name: Bundle
+        run: |
+          flatpak build-bundle repo honkhonk.flatpak io.github.thewrz.HonkHonk
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v4
