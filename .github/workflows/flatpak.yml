@@ -1,0 +1,52 @@
+name: Flatpak
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-flatpak:
+    name: Build Flatpak (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate Flatpak manifest
+        run: bash tests/packaging/flatpak_validate.sh
+
+      - name: Generate cargo-sources.json
+        run: |
+          pip3 install aiohttp toml
+          curl -fsSL -o flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          python3 flatpak-cargo-generator.py Cargo.lock \
+            -o packaging/flatpak/cargo-sources.json
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: honkhonk.flatpak
+          manifest-path: packaging/flatpak/io.github.thewrz.HonkHonk.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: honkhonk-flatpak-${{ github.ref_name }}
+          path: honkhonk.flatpak
+
+      - name: Attach Flatpak to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh release upload "$TAG_NAME" honkhonk.flatpak
