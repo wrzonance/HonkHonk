@@ -61,11 +61,10 @@ pub fn spawn() -> Result<AudioHandle, AudioError> {
     let (cmd_tx, cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
 
-    let default_source = query_default_source_name();
-
     std::thread::Builder::new()
         .name("honkhonk-pw".into())
         .spawn(move || {
+            let default_source = query_default_source_name();
             if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source) {
                 let _ = evt_tx.send(AudioEvent::Error(e.to_string()));
             }

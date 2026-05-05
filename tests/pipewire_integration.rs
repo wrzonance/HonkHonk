@@ -111,6 +111,12 @@ fn get_pw_links() -> String {
         .arg("--links")
         .output()
         .expect("pw-link not found");
+    assert!(
+        output.status.success(),
+        "pw-link --links failed (exit {:?}):\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
