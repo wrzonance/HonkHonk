@@ -23,6 +23,7 @@ pub enum Message {
     SelectCategory(Option<String>),
     SearchChanged(String),
     VolumeChanged(f32),
+    VolumeSaveRequested,
 }
 
 impl Message {
@@ -232,6 +233,9 @@ impl HonkHonk {
                 if let Some(ref audio) = self.audio {
                     audio.send(AudioCommand::SetVolume(self.config.volume));
                 }
+                Task::none()
+            }
+            Message::VolumeSaveRequested => {
                 if let Err(e) = self.config.save() {
                     eprintln!("honkhonk: config save error: {e}");
                 }
@@ -244,11 +248,10 @@ impl HonkHonk {
         let t = theme::Theme::Dark;
         let header = self.view_header(t);
         let chips = self.view_category_chips(t);
+        let filtered = self.filtered_sounds();
         let grid = sound_grid::view_grid(
-            &self.sounds,
+            &filtered,
             self.playing.as_deref(),
-            self.active_category.as_deref(),
-            &self.search_query,
         );
 
         let now_playing = now_playing::view_now_playing(

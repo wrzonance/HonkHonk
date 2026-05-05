@@ -11,17 +11,23 @@ pub fn view_search_bar(query: &str) -> Element<'_, Message> {
         .on_input(Message::SearchChanged)
         .size(13.5)
         .width(Length::Fixed(300.0))
-        .style(move |_theme, _status| text_input::Style {
-            background: theme::bg_color(t.panel()),
-            border: Border {
-                color: t.hairline(),
-                width: 1.0,
-                radius: theme::radius::PILL,
-            },
-            icon: t.ink_dim(),
-            placeholder: t.ink_faint(),
-            value: t.ink(),
-            selection: t.accent(),
+        .style(move |_theme, status| {
+            let border_color = match status {
+                text_input::Status::Focused { .. } => t.accent(),
+                _ => t.hairline(),
+            };
+            text_input::Style {
+                background: theme::bg_color(t.panel()),
+                border: Border {
+                    color: border_color,
+                    width: 1.0,
+                    radius: theme::radius::PILL,
+                },
+                icon: t.ink_dim(),
+                placeholder: t.ink_faint(),
+                value: t.ink(),
+                selection: t.accent(),
+            }
         });
 
     container(input).into()

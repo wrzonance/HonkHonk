@@ -9,26 +9,12 @@ const COLUMNS: usize = 5;
 const TILE_HEIGHT: f32 = 140.0;
 
 pub fn view_grid<'a>(
-    sounds: &'a [SoundEntry],
+    sounds: &[&'a SoundEntry],
     playing: Option<&str>,
-    category: Option<&str>,
-    search_query: &str,
 ) -> Element<'a, Message> {
     let theme = Theme::Dark;
 
-    let filtered: Vec<&SoundEntry> = sounds
-        .iter()
-        .filter(|s| match category {
-            Some(cat) => s.category == cat,
-            None => true,
-        })
-        .filter(|s| {
-            search_query.is_empty()
-                || s.name.to_lowercase().contains(&search_query.to_lowercase())
-        })
-        .collect();
-
-    if filtered.is_empty() {
+    if sounds.is_empty() {
         return container(
             text("No sounds found. Add audio files to your sound directory.")
                 .size(16)
@@ -39,7 +25,7 @@ pub fn view_grid<'a>(
         .into();
     }
 
-    let rows: Vec<Element<'a, Message>> = filtered
+    let rows: Vec<Element<'a, Message>> = sounds
         .chunks(COLUMNS)
         .map(|chunk| {
             let tiles: Vec<Element<'a, Message>> = chunk

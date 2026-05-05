@@ -9,6 +9,7 @@ pub fn view_volume(volume: f32) -> Element<'static, Message> {
     let pct = format!("{}%", (volume * 100.0).round() as u32);
 
     let vol_slider = slider(0.0..=1.0, volume, Message::VolumeChanged)
+        .on_release(Message::VolumeSaveRequested)
         .step(0.01)
         .width(140.0);
 

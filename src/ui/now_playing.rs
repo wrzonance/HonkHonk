@@ -24,37 +24,12 @@ pub fn view_now_playing<'a>(
         None => return Space::new().into(),
     };
 
-    let placeholder = container(Space::new())
-        .width(44.0)
-        .height(44.0)
-        .style(move |_theme| container::Style {
-            background: Some(theme::bg_color(t.bg())),
-            border: Border {
-                color: t.hairline(),
-                width: 1.0,
-                radius: theme::radius::MD,
-            },
-            ..Default::default()
-        });
-
-    let name = text(sound.name.clone()).size(14).color(t.ink());
-    let subtitle = text(format!("HONKING NOW \u{00b7} {}", sound.category))
-        .size(10.5)
-        .color(t.ink_dim());
-    let info = Column::new()
-        .push(name)
-        .push(subtitle)
-        .spacing(theme::space::XS);
-
-    let progress_bar = view_progress_bar(progress, t);
-    let vol_widget = volume::view_volume(vol);
-
     let content = row![
-        placeholder,
-        info,
-        progress_bar,
+        view_placeholder(t),
+        view_sound_info(sound, t),
+        view_progress_bar(progress, t),
         space::horizontal(),
-        vol_widget,
+        volume::view_volume(vol),
     ]
     .spacing(theme::space::LG)
     .align_y(iced::Alignment::Center);
@@ -74,6 +49,34 @@ pub fn view_now_playing<'a>(
         .into()
 }
 
+fn view_placeholder(t: Theme) -> Element<'static, Message> {
+    container(Space::new())
+        .width(44.0)
+        .height(44.0)
+        .style(move |_theme| container::Style {
+            background: Some(theme::bg_color(t.bg())),
+            border: Border {
+                color: t.hairline(),
+                width: 1.0,
+                radius: theme::radius::MD,
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn view_sound_info<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
+    let name = text(sound.name.clone()).size(14).color(t.ink());
+    let subtitle = text(format!("HONKING NOW \u{00b7} {}", sound.category))
+        .size(10.5)
+        .color(t.ink_dim());
+    Column::new()
+        .push(name)
+        .push(subtitle)
+        .spacing(theme::space::XS)
+        .into()
+}
+
 fn view_progress_bar(progress: f32, t: Theme) -> Element<'static, Message> {
     let filled_width = (progress.clamp(0.0, 1.0) * 320.0).round();
 
@@ -89,7 +92,7 @@ fn view_progress_bar(progress: f32, t: Theme) -> Element<'static, Message> {
             ..Default::default()
         });
 
-    let track = container(filled)
+    container(filled)
         .width(320.0)
         .height(6.0)
         .style(move |_theme| container::Style {
@@ -99,7 +102,6 @@ fn view_progress_bar(progress: f32, t: Theme) -> Element<'static, Message> {
                 ..Default::default()
             },
             ..Default::default()
-        });
-
-    track.into()
+        })
+        .into()
 }
