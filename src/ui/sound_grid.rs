@@ -12,6 +12,7 @@ pub fn view_grid<'a>(
     sounds: &'a [SoundEntry],
     playing: Option<&str>,
     category: Option<&str>,
+    search_query: &str,
 ) -> Element<'a, Message> {
     let theme = Theme::Dark;
 
@@ -20,6 +21,10 @@ pub fn view_grid<'a>(
         .filter(|s| match category {
             Some(cat) => s.category == cat,
             None => true,
+        })
+        .filter(|s| {
+            search_query.is_empty()
+                || s.name.to_lowercase().contains(&search_query.to_lowercase())
         })
         .collect();
 
