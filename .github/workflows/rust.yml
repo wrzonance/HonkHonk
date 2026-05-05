@@ -1,10 +1,10 @@
-name: Rust
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -13,18 +13,125 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  # ─── Lint ────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (clippy + fmt)
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v6
-    - name: Install system dependencies
-      run: |
-        sudo apt-get -o Acquire::Retries=3 update
-        sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-          libgtk-3-dev libglib2.0-dev libxdo-dev libpipewire-0.3-dev pkg-config
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+            libgtk-3-dev libglib2.0-dev libxdo-dev libpipewire-0.3-dev pkg-config
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+  # ─── Test ────────────────────────────────────────────────────────────
+  test:
+    name: Test (unit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+            libgtk-3-dev libglib2.0-dev libxdo-dev libpipewire-0.3-dev pkg-config
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run unit tests
+        run: cargo test --verbose
+
+  # ─── Build ──────────────────────────────────────────────────────────
+  build:
+    name: Build (release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+            libgtk-3-dev libglib2.0-dev libxdo-dev libpipewire-0.3-dev pkg-config
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Check binary size
+        run: |
+          BINARY="target/release/honkhonk"
+          SIZE=$(stat --format=%s "$BINARY")
+          SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
+          echo "Binary size: ${SIZE_MB} MB"
+
+          # Fail if binary exceeds 30 MB
+          MAX_BYTES=$((30 * 1048576))
+          if [ "$SIZE" -gt "$MAX_BYTES" ]; then
+            echo "::error::Binary size ${SIZE_MB} MB exceeds 30 MB limit"
+            exit 1
+          fi
+
+  # ─── LOC Check ──────────────────────────────────────────────────────
+  # Only runs on pull requests — measures LOC delta vs base branch.
+  loc-check:
+    name: LOC delta check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute LOC delta
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Count added+removed lines, excluding Cargo.lock, test fixtures, and generated files
+          DELTA=$(git diff --stat "$BASE_SHA"..."$HEAD_SHA" -- \
+            ':!Cargo.lock' \
+            ':!tests/fixtures/**' \
+            ':!src/generated/**' \
+            | tail -1 \
+            | grep -oP '\d+ insertion' | grep -oP '^\d+' || echo 0)
+
+          DELETIONS=$(git diff --stat "$BASE_SHA"..."$HEAD_SHA" -- \
+            ':!Cargo.lock' \
+            ':!tests/fixtures/**' \
+            ':!src/generated/**' \
+            | tail -1 \
+            | grep -oP '\d+ deletion' | grep -oP '^\d+' || echo 0)
+
+          TOTAL=$((DELTA + DELETIONS))
+          echo "LOC delta: +${DELTA} -${DELETIONS} (total churn: ${TOTAL})"
+
+          if [ "$TOTAL" -gt 500 ]; then
+            echo "::warning::LOC delta (${TOTAL}) exceeds 500-line limit. Consider splitting this PR."
+          fi
