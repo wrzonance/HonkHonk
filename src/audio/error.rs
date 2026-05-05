@@ -31,4 +31,7 @@ pub enum AudioError {
 
     #[error("failed to spawn audio thread")]
     ThreadSpawn(#[source] std::io::Error),
+
+    #[error("failed to create playback stream: {0}")]
+    StreamCreation(String),
 }

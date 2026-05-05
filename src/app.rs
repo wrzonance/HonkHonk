@@ -103,6 +103,12 @@ impl HonkHonk {
                     crate::audio::AudioEvent::Ready => {
                         eprintln!("honkhonk: audio engine ready");
                     }
+                    crate::audio::AudioEvent::PlaybackStarted { sound_id } => {
+                        eprintln!("honkhonk: playback started: {sound_id}");
+                    }
+                    crate::audio::AudioEvent::PlaybackFinished { sound_id } => {
+                        eprintln!("honkhonk: playback finished: {sound_id}");
+                    }
                     crate::audio::AudioEvent::Error(e) => {
                         eprintln!("honkhonk: audio error: {e}");
                     }

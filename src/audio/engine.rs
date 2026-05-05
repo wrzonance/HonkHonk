@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc;
+use std::sync::Arc;
 
 use super::error::AudioError;
 
@@ -9,12 +10,22 @@ const SINK_DESCRIPTION: &str = "HonkHonk Mix";
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
+    Play {
+        sound_id: String,
+        samples: Arc<Vec<f32>>,
+        sample_rate: u32,
+        channels: u16,
+    },
+    Stop,
+    SetVolume(f32),
     Shutdown,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
     Ready,
+    PlaybackStarted { sound_id: String },
+    PlaybackFinished { sound_id: String },
     Error(String),
 }
 
@@ -30,6 +41,10 @@ impl AudioHandle {
 
     pub fn recv_timeout(&self, timeout: std::time::Duration) -> Option<AudioEvent> {
         self.evt_rx.recv_timeout(timeout).ok()
+    }
+
+    pub fn send(&self, cmd: AudioCommand) {
+        let _ = self.cmd_tx.send(cmd);
     }
 
     pub fn shutdown(&self) {
@@ -205,6 +220,9 @@ fn run_engine(
 
     let mainloop_quit = mainloop.clone();
     let _cmd_listener = cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
+        AudioCommand::Play { .. } => {} // wired in Task 4
+        AudioCommand::Stop => {}
+        AudioCommand::SetVolume(_) => {}
         AudioCommand::Shutdown => mainloop_quit.quit(),
     });
 
