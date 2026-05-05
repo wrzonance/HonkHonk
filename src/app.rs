@@ -201,8 +201,8 @@ impl HonkHonk {
             self.active_category.as_deref(),
         );
 
-        let content = column![header, chips, scrollable(grid).height(Length::Fill)]
-            .spacing(theme::space::MD);
+        let content =
+            column![header, chips, scrollable(grid).height(Length::Fill)].spacing(theme::space::MD);
 
         container(content)
             .width(Length::Fill)
@@ -235,8 +235,7 @@ impl HonkHonk {
     fn view_category_chips(&self, t: theme::Theme) -> Element<'_, Message> {
         use std::collections::BTreeSet;
 
-        let categories: BTreeSet<&str> =
-            self.sounds.iter().map(|s| s.category.as_str()).collect();
+        let categories: BTreeSet<&str> = self.sounds.iter().map(|s| s.category.as_str()).collect();
 
         let all_chip = self.category_chip("All", self.active_category.is_none(), None, t);
 
@@ -370,9 +369,6 @@ mod tests {
             Message::from_tray_event(TrayEvent::ToggleVisibility),
             Message::ToggleVisibility
         );
-        assert_eq!(
-            Message::from_tray_event(TrayEvent::Quit),
-            Message::Quit
-        );
+        assert_eq!(Message::from_tray_event(TrayEvent::Quit), Message::Quit);
     }
 }

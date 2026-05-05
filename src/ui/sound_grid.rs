@@ -41,8 +41,7 @@ pub fn view_grid<'a>(
                 .iter()
                 .map(|sound| {
                     let is_playing = playing == Some(sound.id.as_str());
-                    let tone_idx =
-                        u64::from_str_radix(&sound.id[..8], 16).unwrap_or(0) as usize;
+                    let tone_idx = u64::from_str_radix(&sound.id[..8], 16).unwrap_or(0) as usize;
                     tile_view(sound, is_playing, Tone::from_index(tone_idx), theme)
                 })
                 .collect();
