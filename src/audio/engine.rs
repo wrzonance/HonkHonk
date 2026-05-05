@@ -86,6 +86,7 @@ struct EngineCtx {
     core: pipewire::core::CoreRc,
     active: Rc<RefCell<Option<ActivePlayback>>>,
     evt_tx: mpsc::Sender<AudioEvent>,
+    engine_volume: Rc<Cell<f32>>,
 }
 
 fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::Node, AudioError> {
@@ -183,12 +184,14 @@ fn run_engine(
     let _registry_guard = setup_registry_listener(&core, registry_sink_id.clone())?;
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
+    let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
 
     let ctx = EngineCtx {
         registry_sink_id,
         core: core.clone(),
         active: active.clone(),
         evt_tx: evt_tx.clone(),
+        engine_volume,
     };
 
     let active_timer = active;
@@ -215,6 +218,7 @@ fn run_engine(
             }
         }
         AudioCommand::SetVolume(v) => {
+            ctx.engine_volume.set(v.clamp(0.0, 1.0));
             if let Some(ref ap) = *ctx.active.borrow() {
                 ap.sink_state.borrow_mut().set_volume(v);
                 ap.monitor_state.borrow_mut().set_volume(v);
@@ -256,12 +260,13 @@ fn handle_play(
         });
     }
 
-    let sink_state = Rc::new(RefCell::new(PlaybackState::new()));
+    let vol = ctx.engine_volume.get();
+    let sink_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
     sink_state
         .borrow_mut()
         .start(sound_id.clone(), samples.clone(), sample_rate, channels);
 
-    let mon_state = Rc::new(RefCell::new(PlaybackState::new()));
+    let mon_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
     mon_state
         .borrow_mut()
         .start(sound_id.clone(), samples, sample_rate, channels);
