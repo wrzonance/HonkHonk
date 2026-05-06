@@ -30,7 +30,10 @@ fn audio_error_no_track_displays() {
 fn audio_error_missing_codec_params_displays() {
     let err = AudioError::MissingCodecParams;
     let msg = err.to_string();
-    assert!(!msg.is_empty());
+    assert!(
+        msg.contains("codec") || msg.contains("parameters"),
+        "expected codec/parameters in error message, got: {msg}"
+    );
 }
 
 use honkhonk::audio::decode;
