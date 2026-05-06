@@ -95,4 +95,5 @@ jobs:
           if [[ "$TAG_NAME" == *"-rc"* ]] || [[ "$TAG_NAME" == *"-alpha"* ]] || [[ "$TAG_NAME" == *"-beta"* ]]; then
             RELEASE_ARGS+=(--prerelease)
           fi
-          gh release create "$TAG_NAME" "${RELEASE_ARGS[@]}"
+          gh release view "$TAG_NAME" >/dev/null 2>&1 \
+            || gh release create "$TAG_NAME" "${RELEASE_ARGS[@]}"
