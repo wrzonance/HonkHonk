@@ -22,7 +22,7 @@ jobs:
 
       - name: Validate Flatpak manifest
         run: |
-          pip3 install pyyaml -q
+          apt-get install -y -q python3-yaml 2>/dev/null || true
           bash tests/packaging/flatpak_validate.sh
 
       - name: Install Rust toolchain
