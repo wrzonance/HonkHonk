@@ -1,0 +1,87 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify version matches tag
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "honkhonk") | .version')
+          TAG_VERSION="${TAG_NAME#v}"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "ERROR: Cargo.toml version ($CARGO_VERSION) != tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Generate release notes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --oneline)
+          else
+            COMMITS=$(git log --oneline -50)
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg commits "$COMMITS" \
+            '{
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 400,
+              messages: [{
+                role: "user",
+                content: ("Write a 2-3 sentence release summary for HonkHonk, a Wayland-native Linux soundboard written in Rust (Iced GUI + PipeWire audio). Be concise and highlight what is new or notable. Commits:\n" + $commits)
+              }]
+            }')
+
+          API_RESPONSE=$(curl -sf https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD") || { echo "ERROR: Anthropic API call failed"; exit 1; }
+
+          AI_SUMMARY=$(echo "$API_RESPONSE" | jq -r '.content[0].text // empty')
+          if [ -z "$AI_SUMMARY" ] || [ "$AI_SUMMARY" = "null" ]; then
+            echo "ERROR: Unexpected API response: $API_RESPONSE"
+            exit 1
+          fi
+
+          GH_NOTES=$(gh api "repos/${REPO}/releases/generate-notes" \
+            -f tag_name="$TAG_NAME" \
+            | jq -r '.body')
+
+          printf '%s\n\n---\n\n%s\n' "$AI_SUMMARY" "$GH_NOTES" > release_body.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          RELEASE_ARGS=(--title "$TAG_NAME" --notes-file release_body.md)
+          if [[ "$TAG_NAME" == *"-rc"* ]] || [[ "$TAG_NAME" == *"-alpha"* ]] || [[ "$TAG_NAME" == *"-beta"* ]]; then
+            RELEASE_ARGS+=(--prerelease)
+          fi
+          gh release create "$TAG_NAME" "${RELEASE_ARGS[@]}"

@@ -92,4 +92,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
-        run: gh release upload "$TAG_NAME" HonkHonk-x86_64.AppImage
+        run: |
+          for i in $(seq 1 30); do
+            gh release view "$TAG_NAME" >/dev/null 2>&1 && break
+            echo "Waiting for release to be created... ($i/30)"
+            sleep 10
+          done
+          gh release view "$TAG_NAME" >/dev/null 2>&1 || { echo "Release not found after 5 minutes"; exit 1; }
+          gh release upload "$TAG_NAME" HonkHonk-x86_64.AppImage
