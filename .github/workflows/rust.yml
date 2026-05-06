@@ -57,6 +57,22 @@ jobs:
           wait-for-processing: true
         if: always()
 
+  # ─── Deny ────────────────────────────────────────────────────────────
+  deny:
+    name: Deny (licenses + advisories + bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Run cargo deny
+        run: cargo deny check
+
   # ─── Test ────────────────────────────────────────────────────────────
   test:
     name: Test (unit)

@@ -36,6 +36,12 @@ jobs:
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
 
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Audit dependencies
+        run: cargo deny check
+
       - name: Validate AppImage prerequisites
         run: bash tests/packaging/appimage_validate.sh
 
