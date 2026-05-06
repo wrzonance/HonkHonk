@@ -32,8 +32,13 @@ jobs:
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-deb
-        run: cargo install cargo-deb --version 3.7.0 --locked
+      - name: Install cargo-deny + cargo-deb
+        run: |
+          cargo install cargo-deny --locked
+          cargo install cargo-deb --version 3.7.0 --locked
+
+      - name: Audit dependencies
+        run: cargo deny check
 
       - name: Validate packaging prerequisites
         run: bash tests/packaging/deb_validate.sh

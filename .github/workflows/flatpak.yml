@@ -23,6 +23,12 @@ jobs:
       - name: Validate Flatpak manifest
         run: bash tests/packaging/flatpak_validate.sh
 
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Audit dependencies
+        run: cargo deny check
+
       - name: Generate cargo-sources.json
         run: |
           # flatpak-cargo-generator.py is vendored at packaging/flatpak/ —

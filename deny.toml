@@ -1,0 +1,60 @@
+# cargo-deny configuration — runs in every CI job
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+]
+
+# ── Advisories ────────────────────────────────────────────────────────────────
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = [
+    # gtk-rs GTK3 crates are unmaintained; they are transitive deps pulled in
+    # by tray-icon → libappindicator. No patched version exists. Tracked for
+    # replacement when tray-icon drops the GTK3 dependency.
+    { id = "RUSTSEC-2024-0412", reason = "transitive via tray-icon/libappindicator, no fix available" },
+    { id = "RUSTSEC-2024-0413", reason = "transitive via tray-icon/libappindicator, no fix available" },
+    { id = "RUSTSEC-2024-0415", reason = "transitive via tray-icon/libappindicator, no fix available" },
+    { id = "RUSTSEC-2024-0416", reason = "transitive via tray-icon/libappindicator, no fix available" },
+    { id = "RUSTSEC-2024-0418", reason = "transitive via tray-icon/libappindicator, no fix available" },
+    { id = "RUSTSEC-2024-0419", reason = "transitive via tray-icon/libappindicator, no fix available" },
+    { id = "RUSTSEC-2024-0420", reason = "transitive via tray-icon/libappindicator, no fix available" },
+    # proc-macro-error is unmaintained; transitive dep, no patched alternative
+    # in use by our direct dependencies yet.
+    { id = "RUSTSEC-2024-0370", reason = "transitive dep, no patched version available upstream" },
+]
+
+# ── Licenses ──────────────────────────────────────────────────────────────────
+[licenses]
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unlicense",
+    "0BSD",
+    "CC0-1.0",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+]
+# OR-expression crates — cargo-deny picks the first allowed license:
+#   self_cell:  Apache-2.0 OR GPL-2.0-only      → Apache-2.0
+#   r-efi:      MIT OR Apache-2.0 OR LGPL-2.1   → MIT
+
+# ── Bans ──────────────────────────────────────────────────────────────────────
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+# ── Sources ───────────────────────────────────────────────────────────────────
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
