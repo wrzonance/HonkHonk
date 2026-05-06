@@ -73,6 +73,7 @@ fn get_default_source_name() -> Option<String> {
         .map(String::from)
 }
 
+// Regression: 9161f77 — engine was linking first-seen source instead of system default mic
 #[test]
 fn default_mic_linked_to_virtual_sink() {
     pipewire::init();
@@ -130,6 +131,7 @@ fn spawn_engine_and_wait() -> honkhonk::audio::AudioHandle {
     handle
 }
 
+// Regression: c297809 — boolean flags missed second port in stereo pair, FR link never created
 #[test]
 fn both_stereo_channels_linked_sink_to_source() {
     pipewire::init();

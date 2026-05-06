@@ -92,6 +92,9 @@ jobs:
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
 
+      # NOTE: PipeWire integration tests (tests/pipewire_integration.rs) require
+      # --features pipewire-test and a live PipeWire session. They are not run here.
+      # Run manually: cargo test --features pipewire-test
       - name: Run unit tests
         run: cargo test --verbose
 
