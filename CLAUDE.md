@@ -332,6 +332,18 @@ This project uses multi-agent workflows. Model selection by task:
 - Plans are reviewed by a separate agent before execution
 - Plans specify exact files, exact test names, exact commands
 
+## Testing philosophy
+
+Every test must justify itself against four properties:
+1. Protects against real regressions (user-visible behavior)
+2. Resists refactoring (doesn't break on internal restructuring)
+3. Fast enough to actually run
+4. Readable and maintainable
+
+Coverage % is a diagnostic, not a target. Tests at module/API boundaries
+beat tests on internals. Mocks belong at process edges, not everywhere.
+Pin every bug-fix with a regression test referencing the commit SHA.
+
 ## Testing
 
 - `cargo test` — Rust unit tests (audio engine, config, library, app state)
@@ -339,4 +351,3 @@ This project uses multi-agent workflows. Model selection by task:
 - `cargo clippy -- -D warnings` — lint must pass with zero warnings
 - Package smoke tests run in CI containers (Arch, Fedora, Ubuntu)
 - PipeWire tests require a running PipeWire instance (skip with feature gate in CI without PipeWire)
-- **Coverage target: 80%+** for non-UI code. View functions validated manually.
