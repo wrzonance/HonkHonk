@@ -71,21 +71,12 @@ jobs:
             -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/repos/$REPO/releases/tags/$TAG_NAME")
 
-          ASSET_ID=$(echo "$RELEASE" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for a in data.get('assets', []):
-    if a['name'] == 'honkhonk.flatpak':
-        print(a['id'])
-        break
-" 2>/dev/null)
+          ASSET_ID=$(echo "$RELEASE" | python3 -c "import sys,json;data=json.load(sys.stdin);print(next((str(a['id']) for a in data.get('assets',[]) if a['name']=='honkhonk.flatpak'),''))" 2>/dev/null)
           [ -n "$ASSET_ID" ] && curl -sf -X DELETE \
             -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID"
 
-          UPLOAD_URL=$(echo "$RELEASE" | python3 -c "
-import sys, json; print(json.load(sys.stdin)['upload_url'].split('{')[0])
-")
+          UPLOAD_URL=$(echo "$RELEASE" | python3 -c "import sys,json;print(json.load(sys.stdin)['upload_url'].split('{')[0])")
           curl -sf \
             -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/octet-stream" \
