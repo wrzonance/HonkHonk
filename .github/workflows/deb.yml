@@ -34,7 +34,7 @@ jobs:
 
       - name: Install cargo-deny + cargo-deb
         run: |
-          cargo install cargo-deny --locked
+          cargo install cargo-deny --version 0.19.4 --locked
           cargo install cargo-deb --version 3.7.0 --locked
 
       - name: Audit dependencies

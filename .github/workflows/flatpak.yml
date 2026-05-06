@@ -23,8 +23,11 @@ jobs:
       - name: Validate Flatpak manifest
         run: bash tests/packaging/flatpak_validate.sh
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny --version 0.19.4 --locked
 
       - name: Audit dependencies
         run: cargo deny check
