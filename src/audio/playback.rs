@@ -316,30 +316,32 @@ impl Default for PlaybackState {
 mod tests {
     use super::*;
 
-    fn make_state_at(cursor: usize, total: usize) -> PlaybackState {
-        let samples = Arc::new(vec![0.0_f32; total]);
-        let mut state = PlaybackState::new();
-        state.start("test".into(), samples, 48000, 2);
-        state.cursor = cursor;
-        state
-    }
-
     #[test]
     fn progress_at_start_is_zero() {
-        let state = make_state_at(0, 9600);
+        let samples = Arc::new(vec![0.0_f32; 20]);
+        let mut state = PlaybackState::new();
+        state.start("test".into(), samples, 48000, 2);
         assert_eq!(state.progress(), 0.0);
     }
 
     #[test]
     fn progress_at_midpoint() {
-        let state = make_state_at(4800, 9600);
+        let samples = Arc::new(vec![0.0_f32; 20]);
+        let mut state = PlaybackState::new();
+        state.start("test".into(), samples, 48000, 2);
+        let mut buf = vec![0.0_f32; 10];
+        state.fill_buffer(&mut buf);
         let p = state.progress();
         assert!((p - 0.5).abs() < f32::EPSILON, "expected ~0.5, got {p}");
     }
 
     #[test]
     fn progress_at_end_is_one() {
-        let state = make_state_at(9600, 9600);
+        let samples = Arc::new(vec![0.0_f32; 20]);
+        let mut state = PlaybackState::new();
+        state.start("test".into(), samples, 48000, 2);
+        let mut buf = vec![0.0_f32; 20];
+        state.fill_buffer(&mut buf);
         assert_eq!(state.progress(), 1.0);
     }
 
