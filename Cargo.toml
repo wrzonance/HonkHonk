@@ -12,7 +12,6 @@ iced = { version = "0.14", features = ["tokio", "tiny-skia"] }
 tray-icon = "0.23"
 muda = "0.19"
 gtk = "0.18"
-tokio = { version = "1", features = ["full"] }
 symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
