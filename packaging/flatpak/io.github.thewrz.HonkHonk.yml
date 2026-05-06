@@ -9,9 +9,11 @@ command: honkhonk
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm18/bin
+  prepend-pkg-config-path: /app/lib/pkgconfig
   env:
     CARGO_HOME: /run/build/honkhonk/cargo
     LIBCLANG_PATH: /usr/lib/sdk/llvm18/lib
+    LIBRARY_PATH: /app/lib
 
 finish-args:
   # Wayland display
