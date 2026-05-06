@@ -28,7 +28,8 @@ jobs:
           flatpak remote-add --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --noninteractive flathub \
-            org.freedesktop.Sdk.Extension.rust-stable//24.08
+            org.freedesktop.Sdk.Extension.rust-stable//24.08 \
+            org.freedesktop.Sdk.Extension.llvm18//24.08
 
       - name: Build with flatpak-builder
         run: |
