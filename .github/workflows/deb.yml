@@ -74,4 +74,4 @@ jobs:
           done
           gh release view "$TAG_NAME" >/dev/null 2>&1 || { echo "Release not found after 5 minutes"; exit 1; }
           DEB=$(ls target/x86_64-unknown-linux-gnu/debian/honkhonk_*.deb | head -1)
-          gh release upload "$TAG_NAME" "$DEB"
+          gh release upload "$TAG_NAME" "$DEB" --clobber

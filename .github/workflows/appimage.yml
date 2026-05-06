@@ -99,4 +99,4 @@ jobs:
             sleep 10
           done
           gh release view "$TAG_NAME" >/dev/null 2>&1 || { echo "Release not found after 5 minutes"; exit 1; }
-          gh release upload "$TAG_NAME" HonkHonk-x86_64.AppImage
+          gh release upload "$TAG_NAME" HonkHonk-x86_64.AppImage --clobber

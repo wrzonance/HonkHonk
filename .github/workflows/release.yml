@@ -20,6 +20,24 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Rust nightly (for cargo-udeps)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install dependency audit tools
+        run: |
+          cargo install cargo-deny --version 0.19.4 --locked
+          cargo install cargo-machete --locked
+          cargo +nightly install cargo-udeps --locked
+
+      - name: Audit dependencies
+        run: cargo deny check
+
+      - name: Detect unused direct dependencies
+        run: cargo machete
+
+      - name: Detect unused transitive dependencies
+        run: cargo +nightly udeps --workspace --all-targets
+
       - name: Verify version matches tag
         env:
           TAG_NAME: ${{ github.ref_name }}
