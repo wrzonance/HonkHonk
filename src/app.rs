@@ -394,7 +394,9 @@ mod tests {
     #[test]
     fn stop_all_clears_playing() {
         let mut app = HonkHonk::new_for_test();
-        app.playing = Some("test-id".into());
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "test-id".into(),
+        }));
         let _ = app.update(Message::StopAll);
         assert!(app.playing().is_none());
     }
@@ -411,7 +413,9 @@ mod tests {
     #[test]
     fn audio_event_playback_finished_clears_playing() {
         let mut app = HonkHonk::new_for_test();
-        app.playing = Some("abc123".into());
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "abc123".into(),
+        }));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "abc123".into(),
         }));
@@ -460,8 +464,10 @@ mod tests {
     #[test]
     fn playback_finished_resets_progress() {
         let mut app = HonkHonk::new_for_test();
-        app.progress = 0.8;
-        app.playing = Some("test".into());
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "test".into(),
+        }));
+        let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "test".into(),
         }));
