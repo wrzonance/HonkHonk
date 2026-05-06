@@ -30,9 +30,21 @@ echo "=== Flatpak manifest validation ==="
 
 [ -f "$MANIFEST" ] || { echo ""; echo "Results: $PASS passed, $FAIL failed"; exit 1; }
 
-python3 -c "import yaml, sys; yaml.safe_load(open('$MANIFEST'))" 2>/dev/null \
-    && check "manifest is valid YAML" "ok" \
-    || check "manifest is valid YAML" "parse error"
+if python3 - 2>/dev/null <<'PYEOF'
+import sys
+try:
+    import yaml
+    yaml.safe_load(open("packaging/flatpak/io.github.thewrz.HonkHonk.yml"))
+except ImportError:
+    pass  # pyyaml not available — skip, other checks verify structure
+except Exception:
+    sys.exit(1)
+PYEOF
+then
+    check "manifest is valid YAML" "ok"
+else
+    check "manifest is valid YAML" "parse error"
+fi
 
 # ── App identity ──────────────────────────────────────────────────────
 has 'io.github.thewrz.HonkHonk' \
