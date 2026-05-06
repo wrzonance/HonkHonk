@@ -23,14 +23,6 @@ jobs:
       - name: Validate Flatpak manifest
         run: bash tests/packaging/flatpak_validate.sh
 
-      - name: Generate cargo-sources.json
-        run: |
-          # flatpak-cargo-generator.py is vendored at packaging/flatpak/ —
-          # no network fetch of untrusted scripts at build time.
-          python3 -m pip install aiohttp tomlkit --break-system-packages
-          python3 packaging/flatpak/flatpak-cargo-generator.py Cargo.lock \
-            -o packaging/flatpak/cargo-sources.json
-
       - name: Install Rust SDK extension
         run: |
           flatpak remote-add --if-not-exists flathub \
