@@ -27,7 +27,7 @@ jobs:
         run: |
           # flatpak-cargo-generator.py is vendored at packaging/flatpak/ —
           # no network fetch of untrusted scripts at build time.
-          pip3 install aiohttp toml
+          pip3 install aiohttp tomlkit
           python3 packaging/flatpak/flatpak-cargo-generator.py Cargo.lock \
             -o packaging/flatpak/cargo-sources.json
 
@@ -62,4 +62,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
-        run: gh release upload "$TAG_NAME" honkhonk.flatpak
+        run: |
+          gh release view "$TAG_NAME" >/dev/null 2>&1 \
+            || gh release create "$TAG_NAME" --generate-notes
+          gh release upload "$TAG_NAME" honkhonk.flatpak --clobber

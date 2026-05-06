@@ -34,18 +34,18 @@ modules:
     build-commands:
       # Build release binary using the vendored cargo sources
       - cargo --offline build --release --target x86_64-unknown-linux-gnu
-      # Install binary
+      # Install binary — /app/bin is on PATH inside the sandbox
       - install -Dm755 target/x86_64-unknown-linux-gnu/release/honkhonk
-          /app/usr/bin/honkhonk
-      # Install .desktop entry
+          /app/bin/honkhonk
+      # Install .desktop entry — /app/share is in XDG_DATA_DIRS
       - install -Dm644 assets/honkhonk.desktop
-          /app/usr/share/applications/io.github.thewrz.HonkHonk.desktop
+          /app/share/applications/io.github.thewrz.HonkHonk.desktop
       # Install icon
       - install -Dm644 assets/icons/hicolor/256x256/apps/honkhonk.png
-          /app/usr/share/icons/hicolor/256x256/apps/honkhonk.png
+          /app/share/icons/hicolor/256x256/apps/honkhonk.png
       # Install AppStream metainfo
       - install -Dm644 packaging/flatpak/io.github.thewrz.HonkHonk.metainfo.xml
-          /app/usr/share/metainfo/io.github.thewrz.HonkHonk.metainfo.xml
+          /app/share/metainfo/io.github.thewrz.HonkHonk.metainfo.xml
     sources:
       - type: dir
         path: ../..

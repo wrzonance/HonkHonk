@@ -73,10 +73,18 @@ has 'rust-stable' \
     && check "uses org.freedesktop.Sdk.Extension.rust-stable" "ok" \
     || check "uses org.freedesktop.Sdk.Extension.rust-stable" "missing"
 
-# ── Module: binary installed ──────────────────────────────────────────
-has 'usr/bin/honkhonk' \
-    && check "binary installed to usr/bin/honkhonk" "ok" \
-    || check "binary installed to usr/bin/honkhonk" "missing"
+# ── Module: binary installed to correct Flatpak path ─────────────────
+has '/app/bin/honkhonk' \
+    && check "binary installed to /app/bin/honkhonk (on PATH)" "ok" \
+    || check "binary installed to /app/bin/honkhonk (on PATH)" "missing"
+
+# /app/usr/{bin,share} are NOT on PATH/XDG_DATA_DIRS inside the sandbox
+if grep -qE '/app/usr/(bin|share)/' "$MANIFEST"; then
+    check "no installs under /app/usr/ (wrong Flatpak path)" \
+        "found /app/usr/ — use /app/bin/ and /app/share/ instead"
+else
+    check "no installs under /app/usr/ (wrong Flatpak path)" "ok"
+fi
 
 # ── Assets: .desktop and icon ─────────────────────────────────────────
 has 'honkhonk.desktop' \

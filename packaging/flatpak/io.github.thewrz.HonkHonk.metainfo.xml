@@ -6,6 +6,10 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
 
+  <developer id="io.github.thewrz">
+    <name>thewrz</name>
+  </developer>
+
   <description>
     <p>
       HonkHonk is a Wayland-native soundboard for Linux. Play sounds directly
@@ -24,9 +28,9 @@
     <category>AudioVideo</category>
   </categories>
 
-  <requires>
+  <recommends>
     <display_length compare="ge">768</display_length>
-  </requires>
+  </recommends>
 
   <releases>
     <release version="0.1.0" date="2026-01-01">
