@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.thewrz.HonkHonk</id>
+  <name>HonkHonk</name>
+  <summary>Wayland-native Linux soundboard</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <developer id="io.github.thewrz">
+    <name>thewrz</name>
+  </developer>
+
+  <description>
+    <p>
+      HonkHonk is a Wayland-native soundboard for Linux. Play sounds directly
+      into your microphone via a PipeWire virtual mic — works with Discord,
+      Mumble, and any PulseAudio-compatible application.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.thewrz.HonkHonk.desktop</launchable>
+
+  <url type="homepage">https://github.com/thewrz/HonkHonk</url>
+  <url type="bugtracker">https://github.com/thewrz/HonkHonk/issues</url>
+
+  <categories>
+    <category>Audio</category>
+    <category>AudioVideo</category>
+  </categories>
+
+  <recommends>
+    <display_length compare="ge">768</display_length>
+  </recommends>
+
+  <releases>
+    <release version="0.1.0" date="2026-01-01">
+      <description><p>Initial release.</p></description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1"/>
+</component>
