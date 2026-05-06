@@ -241,4 +241,23 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].category, "Memes");
     }
+
+    #[test]
+    fn scan_file_at_scan_root_uses_dir_name_as_category() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("toplevel.mp3"), b"data").unwrap();
+
+        let entries = Library::scan(&[dir.path().to_path_buf()]).unwrap();
+        assert_eq!(entries.len(), 1);
+
+        // A file at the root of the scan dir has no subdirectory parent,
+        // so category falls back to the scan directory's own name.
+        let expected = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(entries[0].category, expected);
+    }
 }
