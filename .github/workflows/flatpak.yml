@@ -55,11 +55,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
           for i in $(seq 1 30); do
-            gh release view "$TAG_NAME" >/dev/null 2>&1 && break
-            echo "Waiting for release to be created... ($i/30)"
+            HTTP=$(curl -sf -o /dev/null -w "%{http_code}" \
+              -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/tags/$TAG_NAME")
+            [ "$HTTP" = "200" ] && break
+            echo "Waiting for release... ($i/30)"
             sleep 10
           done
-          gh release view "$TAG_NAME" >/dev/null 2>&1 || { echo "Release not found after 5 minutes"; exit 1; }
-          gh release upload "$TAG_NAME" honkhonk.flatpak --clobber
+          [ "$HTTP" = "200" ] || { echo "Release not found after 5 minutes"; exit 1; }
+
+          RELEASE=$(curl -sf \
+            -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$TAG_NAME")
+
+          ASSET_ID=$(echo "$RELEASE" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for a in data.get('assets', []):
+    if a['name'] == 'honkhonk.flatpak':
+        print(a['id'])
+        break
+" 2>/dev/null)
+          [ -n "$ASSET_ID" ] && curl -sf -X DELETE \
+            -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID"
+
+          UPLOAD_URL=$(echo "$RELEASE" | python3 -c "
+import sys, json; print(json.load(sys.stdin)['upload_url'].split('{')[0])
+")
+          curl -sf \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            "$UPLOAD_URL?name=honkhonk.flatpak" \
+            --data-binary @honkhonk.flatpak
