@@ -1,11 +1,12 @@
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 
-use iced::widget::{button, column, container, row, scrollable, space, text};
+use iced::widget::{button, container, row, scrollable, space, text};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
-use crate::state::{AppConfig, SoundEntry};
+use crate::shortcuts::ShortcutsStatus;
+use crate::state::{AppConfig, SlotMap, SoundEntry};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
@@ -24,6 +25,18 @@ pub enum Message {
     SearchChanged(String),
     VolumeChanged(f32),
     VolumeSaveRequested,
+    // Shortcut lifecycle
+    ShortcutsReady,
+    ShortcutsUnavailable(String),
+    DismissShortcutsWarning,
+    // Shortcut activation
+    ShortcutActivated(u8),
+    // Slot assignment
+    AssignSlot(u8, std::path::PathBuf),
+    ClearSlot(u8),
+    // Context menu
+    OpenContextMenu(String), // sound_id
+    CloseContextMenu,
 }
 
 impl Message {
@@ -47,6 +60,38 @@ pub struct HonkHonk {
     config: AppConfig,
     search_query: String,
     progress: f32,
+    slots: SlotMap,
+    shortcuts_status: ShortcutsStatus,
+    context_menu: Option<String>,
+    shortcuts_warning_dismissed: bool,
+}
+
+fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
+    use iced::futures::SinkExt;
+    use iced::futures::StreamExt;
+    iced::stream::channel(16, async |mut tx| {
+        use crate::shortcuts::{portal, ShortcutEvent};
+        let stream = portal::shortcut_stream();
+        let mut stream = std::pin::pin!(stream);
+        while let Some(ev) = stream.next().await {
+            let msg = match ev {
+                ShortcutEvent::Ready => Message::ShortcutsReady,
+                ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
+                ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
+            };
+            if tx.send(msg).await.is_err() {
+                break;
+            }
+        }
+        // Stream ended unexpectedly (portal crashed mid-session). Notify the UI
+        // so the unavailability banner appears, then park to keep the subscription alive.
+        let _ = tx
+            .send(Message::ShortcutsUnavailable(
+                "portal connection lost".into(),
+            ))
+            .await;
+        iced::futures::future::pending::<()>().await;
+    })
 }
 
 impl HonkHonk {
@@ -55,6 +100,7 @@ impl HonkHonk {
         audio: AudioHandle,
         sounds: Vec<SoundEntry>,
         config: AppConfig,
+        slots: SlotMap,
     ) -> Self {
         let rx = tray.take_rx();
         Self {
@@ -69,6 +115,10 @@ impl HonkHonk {
             config,
             search_query: String::new(),
             progress: 0.0,
+            slots,
+            shortcuts_status: ShortcutsStatus::Initializing,
+            context_menu: None,
+            shortcuts_warning_dismissed: false,
         }
     }
 
@@ -86,6 +136,10 @@ impl HonkHonk {
             config: AppConfig::default(),
             search_query: String::new(),
             progress: 0.0,
+            slots: SlotMap::default(),
+            shortcuts_status: ShortcutsStatus::Initializing,
+            context_menu: None,
+            shortcuts_warning_dismissed: false,
         }
     }
 
@@ -111,6 +165,22 @@ impl HonkHonk {
 
     pub fn progress(&self) -> f32 {
         self.progress
+    }
+
+    pub fn shortcuts_status(&self) -> &ShortcutsStatus {
+        &self.shortcuts_status
+    }
+
+    pub fn slots(&self) -> &SlotMap {
+        &self.slots
+    }
+
+    pub fn context_menu(&self) -> Option<&str> {
+        self.context_menu.as_deref()
+    }
+
+    pub fn shortcuts_warning_dismissed(&self) -> bool {
+        self.shortcuts_warning_dismissed
     }
 
     pub fn filtered_sounds(&self) -> Vec<&SoundEntry> {
@@ -186,29 +256,9 @@ impl HonkHonk {
                 Task::none()
             }
             Message::PlaySound(sound_id) => {
-                let sound = self.sounds.iter().find(|s| s.id == sound_id);
-                let sound = match sound {
-                    Some(s) => s,
-                    None => return Task::none(),
-                };
-
-                let decoded = match crate::audio::decode(&sound.path) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        eprintln!("honkhonk: decode error: {e}");
-                        return Task::none();
-                    }
-                };
-
-                if let Some(ref audio) = self.audio {
-                    audio.send(AudioCommand::Play {
-                        sound_id,
-                        samples: Arc::new(decoded.samples),
-                        sample_rate: decoded.sample_rate,
-                        channels: decoded.channels,
-                    });
+                if let Some(sound) = self.sounds.iter().find(|s| s.id == sound_id) {
+                    self.play_sound_entry(sound, false);
                 }
-
                 Task::none()
             }
             Message::StopAll => {
@@ -239,40 +289,81 @@ impl HonkHonk {
                 }
                 Task::none()
             }
+            Message::ShortcutsReady => {
+                self.shortcuts_status = ShortcutsStatus::Active;
+                Task::none()
+            }
+            Message::ShortcutsUnavailable(reason) => {
+                self.shortcuts_status = ShortcutsStatus::Unavailable(reason);
+                Task::none()
+            }
+            Message::DismissShortcutsWarning => {
+                self.shortcuts_warning_dismissed = true;
+                Task::none()
+            }
+            Message::ShortcutActivated(idx) => {
+                if let Some(path) = self.slots.get(idx).cloned() {
+                    if let Some(sound) = self.sounds.iter().find(|s| s.path == path) {
+                        self.play_sound_entry(sound, true);
+                    } else {
+                        // Path no longer in library (file deleted/moved) — clear stale slot
+                        eprintln!(
+                            "honkhonk: slot {} points to missing file {:?}, clearing",
+                            idx + 1,
+                            path
+                        );
+                        self.slots.clear(idx);
+                        if let Err(e) = self.slots.save() {
+                            eprintln!("honkhonk: slots save error: {e}");
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::AssignSlot(idx, path) => {
+                self.slots.set(idx, path);
+                if let Err(e) = self.slots.save() {
+                    eprintln!("honkhonk: slots save error: {e}");
+                }
+                Task::none()
+            }
+            Message::ClearSlot(idx) => {
+                self.slots.clear(idx);
+                if let Err(e) = self.slots.save() {
+                    eprintln!("honkhonk: slots save error: {e}");
+                }
+                Task::none()
+            }
+            Message::OpenContextMenu(sound_id) => {
+                self.context_menu = Some(sound_id);
+                Task::none()
+            }
+            Message::CloseContextMenu => {
+                self.context_menu = None;
+                Task::none()
+            }
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
-        let t = theme::Theme::Dark;
-        let header = self.view_header(t);
-        let chips = self.view_category_chips(t);
-        let filtered = self.filtered_sounds();
-        let grid = sound_grid::view_grid(&filtered, self.playing.as_deref());
-
-        let now_playing = now_playing::view_now_playing(
-            self.playing.as_deref(),
-            &self.sounds,
-            self.progress,
-            self.config.volume,
-        );
-
-        let content = column![
-            header,
-            chips,
-            scrollable(grid).height(Length::Fill),
-            now_playing,
-        ]
-        .spacing(theme::space::MD);
-
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(theme::space::XL)
-            .style(move |_theme| container::Style {
-                background: Some(theme::bg_color(t.bg())),
-                ..Default::default()
-            })
-            .into()
+    fn play_sound_entry(&self, sound: &SoundEntry, stop_before: bool) {
+        let decoded = match crate::audio::decode(&sound.path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("honkhonk: decode error: {e}");
+                return;
+            }
+        };
+        if let Some(ref audio) = self.audio {
+            if stop_before {
+                audio.send(AudioCommand::Stop);
+            }
+            audio.send(AudioCommand::Play {
+                sound_id: sound.id.clone(),
+                samples: Arc::new(decoded.samples),
+                sample_rate: decoded.sample_rate,
+                channels: decoded.channels,
+            });
+        }
     }
 
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
@@ -355,13 +446,96 @@ impl HonkHonk {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll)
+        let shortcuts = Subscription::run(shortcuts_stream_sub);
+
+        let tray_poll =
+            iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
+
+        Subscription::batch([shortcuts, tray_poll])
+    }
+
+    fn view_shortcuts_banner(&self, t: theme::Theme) -> Option<Element<'_, Message>> {
+        let ShortcutsStatus::Unavailable(ref reason) = self.shortcuts_status else {
+            return None;
+        };
+        if self.shortcuts_warning_dismissed {
+            return None;
+        }
+        let banner = container(
+            row![
+                text(format!(
+                    "Global shortcuts unavailable: {reason}. Check xdg-desktop-portal is running."
+                ))
+                .size(13)
+                .color(iced::Color::from_rgb(0.6, 0.4, 0.0)),
+                space::horizontal(),
+                button(text("×").size(14))
+                    .on_press(Message::DismissShortcutsWarning)
+                    .style(move |_t, _s| button::Style {
+                        background: None,
+                        text_color: t.ink(),
+                        ..Default::default()
+                    }),
+            ]
+            .spacing(theme::space::MD)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding([theme::space::SM, theme::space::LG])
+        .style(move |_t| container::Style {
+            background: Some(theme::bg_color(iced::Color::from_rgb(0.98, 0.92, 0.75))),
+            border: theme::tile_border(iced::Color::from_rgb(0.9, 0.75, 0.3), 1.0),
+            ..Default::default()
+        });
+        Some(banner.into())
+    }
+
+    pub fn view(&self) -> Element<'_, Message> {
+        let t = theme::Theme::Dark;
+        let header = self.view_header(t);
+        let chips = self.view_category_chips(t);
+        let filtered = self.filtered_sounds();
+        let grid = sound_grid::view_grid(
+            &filtered,
+            self.playing.as_deref(),
+            &self.slots,
+            matches!(self.shortcuts_status, ShortcutsStatus::Active),
+            self.context_menu.as_deref(),
+        );
+
+        let now_playing = now_playing::view_now_playing(
+            self.playing.as_deref(),
+            &self.sounds,
+            self.progress,
+            self.config.volume,
+        );
+
+        let mut items: Vec<Element<'_, Message>> = Vec::new();
+        if let Some(banner) = self.view_shortcuts_banner(t) {
+            items.push(banner);
+        }
+        items.push(header);
+        items.push(chips);
+        items.push(scrollable(grid).height(Length::Fill).into());
+        items.push(now_playing);
+
+        let content = iced::widget::Column::with_children(items).spacing(theme::space::MD);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(theme::space::XL)
+            .style(move |_theme| container::Style {
+                background: Some(theme::bg_color(t.bg())),
+                ..Default::default()
+            })
+            .into()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shortcuts::ShortcutsStatus;
 
     #[test]
     fn toggle_visibility_flips_state() {
@@ -556,5 +730,98 @@ mod tests {
             (app.config.volume - 0.15).abs() < f32::EPSILON,
             "config.volume should survive playback cycle"
         );
+    }
+
+    #[test]
+    fn shortcuts_ready_sets_status_active() {
+        let mut app = HonkHonk::new_for_test();
+        assert_eq!(app.shortcuts_status(), &ShortcutsStatus::Initializing);
+        let _ = app.update(Message::ShortcutsReady);
+        assert_eq!(app.shortcuts_status(), &ShortcutsStatus::Active);
+    }
+
+    #[test]
+    fn shortcuts_unavailable_sets_status() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutsUnavailable("portal not found".into()));
+        assert!(matches!(
+            app.shortcuts_status(),
+            ShortcutsStatus::Unavailable(_)
+        ));
+    }
+
+    #[test]
+    fn shortcuts_unavailable_contains_reason() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutsUnavailable("no portal".into()));
+        let ShortcutsStatus::Unavailable(reason) = app.shortcuts_status() else {
+            panic!("expected Unavailable");
+        };
+        assert!(!reason.is_empty());
+    }
+
+    #[test]
+    fn dismiss_warning_sets_flag() {
+        let mut app = HonkHonk::new_for_test();
+        assert!(!app.shortcuts_warning_dismissed());
+        let _ = app.update(Message::DismissShortcutsWarning);
+        assert!(app.shortcuts_warning_dismissed());
+    }
+
+    #[test]
+    fn shortcut_activated_with_empty_slot_is_noop() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutActivated(0));
+        assert!(app.playing().is_none());
+    }
+
+    #[test]
+    fn shortcut_activated_with_assigned_slot_does_not_panic() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/sounds/honk.mp3");
+        app.sounds = vec![SoundEntry {
+            id: "honk-id".into(),
+            name: "Honk".into(),
+            path: path.clone(),
+            format: crate::state::AudioFormat::Mp3,
+            duration_ms: Some(500),
+            category: "Honk".into(),
+        }];
+        let _ = app.update(Message::AssignSlot(0, path.clone()));
+        // audio=None means no audio command is sent; slot must remain assigned after activation
+        let _ = app.update(Message::ShortcutActivated(0));
+        assert_eq!(app.slots().get(0), Some(&path));
+    }
+
+    #[test]
+    fn assign_slot_updates_slot_map() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/sounds/boom.mp3");
+        let _ = app.update(Message::AssignSlot(3, path.clone()));
+        assert_eq!(app.slots().get(3), Some(&path));
+    }
+
+    #[test]
+    fn clear_slot_removes_assignment() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/sounds/boom.mp3");
+        let _ = app.update(Message::AssignSlot(3, path.clone()));
+        let _ = app.update(Message::ClearSlot(3));
+        assert!(app.slots().get(3).is_none());
+    }
+
+    #[test]
+    fn open_context_menu_sets_sound_id() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenContextMenu("some-id".into()));
+        assert_eq!(app.context_menu(), Some("some-id"));
+    }
+
+    #[test]
+    fn close_context_menu_clears_it() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenContextMenu("some-id".into()));
+        let _ = app.update(Message::CloseContextMenu);
+        assert!(app.context_menu().is_none());
     }
 }
