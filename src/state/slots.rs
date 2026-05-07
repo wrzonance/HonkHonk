@@ -56,22 +56,7 @@ impl SlotMap {
     }
 
     pub fn save(&self) -> Result<(), ConfigError> {
-        let path = Self::slots_path()?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| ConfigError::DirectoryCreation {
-                path: parent.display().to_string(),
-                source: e,
-            })?;
-        }
-        let json = serde_json::to_string_pretty(self).map_err(|e| ConfigError::Serialize {
-            path: path.display().to_string(),
-            source: e,
-        })?;
-        std::fs::write(&path, json).map_err(|e| ConfigError::Io {
-            path: path.display().to_string(),
-            source: e,
-        })?;
-        Ok(())
+        self.save_to(&Self::slots_path()?)
     }
 
     pub fn save_to(&self, path: &Path) -> Result<(), ConfigError> {

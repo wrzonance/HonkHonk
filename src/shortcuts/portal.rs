@@ -1,68 +1,72 @@
-use iced::futures::{Stream, StreamExt, stream};
+use iced::futures::{SinkExt, Stream, StreamExt};
 
 use super::ShortcutEvent;
-use crate::shortcuts::error::PortalError;
 
 const SLOT_COUNT: u8 = 20;
 
 /// Returns a stream of shortcut events.
 ///
-/// First yields `ShortcutEvent::Ready` on successful portal session setup,
-/// then `ShortcutEvent::Activated(index)` (0-indexed) for each triggered
-/// shortcut. Yields `ShortcutEvent::Failed(reason)` exactly once on error,
-/// then ends.
-pub async fn shortcut_stream() -> impl Stream<Item = ShortcutEvent> {
-    match init_session().await {
-        Ok(activated_stream) => {
-            let ready = stream::once(async { ShortcutEvent::Ready });
-            let events = activated_stream;
-            ready.chain(events).left_stream()
+/// Yields `ShortcutEvent::Ready` once the portal session is established, then
+/// `ShortcutEvent::Activated(idx)` (0-indexed) on each trigger. Yields
+/// `ShortcutEvent::Failed(reason)` once on error, then ends.
+///
+/// The proxy, session, and activated subscription all live inside the returned
+/// stream's async block — no lifetime borrow escapes the function.
+pub fn shortcut_stream() -> impl Stream<Item = ShortcutEvent> {
+    iced::stream::channel(32, async |mut tx| {
+        use ashpd::desktop::global_shortcuts::{
+            BindShortcutsOptions, GlobalShortcuts, NewShortcut,
+        };
+        use ashpd::desktop::CreateSessionOptions;
+
+        macro_rules! bail {
+            ($err:expr) => {{
+                let _ = tx.send(ShortcutEvent::Failed($err.to_string())).await;
+                return;
+            }};
         }
-        Err(err) => {
-            let msg = err.to_string();
-            stream::once(async move { ShortcutEvent::Failed(msg) }).right_stream()
+
+        let proxy = match GlobalShortcuts::new().await {
+            Ok(p) => p,
+            Err(e) => bail!(e),
+        };
+
+        let session = match proxy.create_session(CreateSessionOptions::default()).await {
+            Ok(s) => s,
+            Err(e) => bail!(e),
+        };
+
+        let shortcuts: Vec<NewShortcut> = (1..=SLOT_COUNT)
+            .map(|n| NewShortcut::new(format!("slot-{n}"), format!("Slot {n}")))
+            .collect();
+
+        match proxy
+            .bind_shortcuts(&session, &shortcuts, None, BindShortcutsOptions::default())
+            .await
+        {
+            Ok(req) => {
+                if let Err(e) = req.response() {
+                    bail!(e);
+                }
+            }
+            Err(e) => bail!(e),
         }
-    }
-}
 
-/// Initialises the GlobalShortcuts portal session and registers 20 slots.
-/// Returns a stream that yields `ShortcutEvent::Activated` on each trigger.
-async fn init_session() -> Result<impl Stream<Item = ShortcutEvent>, PortalError> {
-    use ashpd::desktop::global_shortcuts::{
-        BindShortcutsOptions, GlobalShortcuts, NewShortcut,
-    };
-    use ashpd::desktop::CreateSessionOptions;
+        let mut activated = match proxy.receive_activated().await {
+            Ok(s) => s,
+            Err(e) => bail!(e),
+        };
 
-    let proxy = GlobalShortcuts::new()
-        .await
-        .map_err(PortalError::Connection)?;
+        let _ = tx.send(ShortcutEvent::Ready).await;
 
-    let session = proxy
-        .create_session(CreateSessionOptions::default())
-        .await
-        .map_err(PortalError::Session)?;
-
-    let shortcuts: Vec<NewShortcut> = (1..=SLOT_COUNT)
-        .map(|n| NewShortcut::new(format!("slot-{n}"), format!("Slot {n}")))
-        .collect();
-
-    proxy
-        .bind_shortcuts(&session, &shortcuts, None, BindShortcutsOptions::default())
-        .await
-        .map_err(PortalError::Registration)?
-        .response()
-        .map_err(PortalError::Registration)?;
-
-    let activated_stream = proxy
-        .receive_activated()
-        .await
-        .map_err(PortalError::Registration)?;
-
-    let mapped = activated_stream.filter_map(|event| async move {
-        parse_slot_index(event.shortcut_id()).map(ShortcutEvent::Activated)
-    });
-
-    Ok(mapped)
+        while let Some(event) = activated.next().await {
+            if let Some(idx) = parse_slot_index(event.shortcut_id()) {
+                if tx.send(ShortcutEvent::Activated(idx)).await.is_err() {
+                    break;
+                }
+            }
+        }
+    })
 }
 
 /// Parses "slot-N" → 0-indexed slot index.

@@ -34,7 +34,10 @@ pub fn view_grid<'a>(
         .into();
     }
 
-    let ctx = TileCtx { slots, shortcuts_active };
+    let ctx = TileCtx {
+        slots,
+        shortcuts_active,
+    };
 
     let rows: Vec<Element<'a, Message>> = sounds
         .chunks(COLUMNS)
@@ -43,15 +46,12 @@ pub fn view_grid<'a>(
                 .iter()
                 .map(|sound| {
                     let is_playing = playing == Some(sound.id.as_str());
-                    let tone_idx =
-                        u64::from_str_radix(&sound.id[..8], 16).unwrap_or(0) as usize;
-                    let tile = tile_view(
-                        sound,
-                        is_playing,
-                        Tone::from_index(tone_idx),
-                        theme,
-                        ctx,
-                    );
+                    let tone_idx = sound
+                        .id
+                        .get(..8)
+                        .and_then(|s| u64::from_str_radix(s, 16).ok())
+                        .unwrap_or(0) as usize;
+                    let tile = tile_view(sound, is_playing, Tone::from_index(tone_idx), theme, ctx);
                     mouse_area(tile)
                         .on_right_press(Message::OpenContextMenu(sound.id.clone()))
                         .into()
@@ -118,8 +118,7 @@ fn tile_view<'a>(
         None
     };
 
-    let mut col =
-        column![category_text, name_text, duration_text].spacing(theme::space::SM);
+    let mut col = column![category_text, name_text, duration_text].spacing(theme::space::SM);
     if let Some(badge) = slot_badge {
         col = col.push(badge);
     }

@@ -70,8 +70,8 @@ fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
     use iced::futures::SinkExt;
     use iced::futures::StreamExt;
     iced::stream::channel(16, async |mut tx| {
-        use crate::shortcuts::{ShortcutEvent, portal};
-        let stream = portal::shortcut_stream().await;
+        use crate::shortcuts::{portal, ShortcutEvent};
+        let stream = portal::shortcut_stream();
         let mut stream = std::pin::pin!(stream);
         while let Some(ev) = stream.next().await {
             let msg = match ev {
@@ -250,29 +250,9 @@ impl HonkHonk {
                 Task::none()
             }
             Message::PlaySound(sound_id) => {
-                let sound = self.sounds.iter().find(|s| s.id == sound_id);
-                let sound = match sound {
-                    Some(s) => s,
-                    None => return Task::none(),
-                };
-
-                let decoded = match crate::audio::decode(&sound.path) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        eprintln!("honkhonk: decode error: {e}");
-                        return Task::none();
-                    }
-                };
-
-                if let Some(ref audio) = self.audio {
-                    audio.send(AudioCommand::Play {
-                        sound_id,
-                        samples: Arc::new(decoded.samples),
-                        sample_rate: decoded.sample_rate,
-                        channels: decoded.channels,
-                    });
+                if let Some(sound) = self.sounds.iter().find(|s| s.id == sound_id) {
+                    self.play_sound_entry(sound);
                 }
-
                 Task::none()
             }
             Message::StopAll => {
@@ -317,27 +297,11 @@ impl HonkHonk {
             }
             Message::ShortcutActivated(idx) => {
                 if let Some(path) = self.slots.get(idx).cloned() {
-                    if let Some(ref audio) = self.audio {
-                        audio.send(AudioCommand::Stop);
-                    }
-                    let sound = self.sounds.iter().find(|s| s.path == path);
-                    if let Some(sound) = sound {
-                        let sound_id = sound.id.clone();
-                        let decoded = match crate::audio::decode(&sound.path) {
-                            Ok(d) => d,
-                            Err(e) => {
-                                eprintln!("honkhonk: shortcut decode error: {e}");
-                                return Task::none();
-                            }
-                        };
+                    if let Some(sound) = self.sounds.iter().find(|s| s.path == path) {
                         if let Some(ref audio) = self.audio {
-                            audio.send(AudioCommand::Play {
-                                sound_id,
-                                samples: Arc::new(decoded.samples),
-                                sample_rate: decoded.sample_rate,
-                                channels: decoded.channels,
-                            });
+                            audio.send(AudioCommand::Stop);
                         }
+                        self.play_sound_entry(sound);
                     }
                 }
                 Task::none()
@@ -364,6 +328,24 @@ impl HonkHonk {
                 self.context_menu = None;
                 Task::none()
             }
+        }
+    }
+
+    fn play_sound_entry(&self, sound: &SoundEntry) {
+        let decoded = match crate::audio::decode(&sound.path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("honkhonk: decode error: {e}");
+                return;
+            }
+        };
+        if let Some(ref audio) = self.audio {
+            audio.send(AudioCommand::Play {
+                sound_id: sound.id.clone(),
+                samples: Arc::new(decoded.samples),
+                sample_rate: decoded.sample_rate,
+                channels: decoded.channels,
+            });
         }
     }
 
