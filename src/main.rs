@@ -22,6 +22,8 @@ fn main() -> iced::Result {
         }
     };
 
+    let slots = honkhonk::state::SlotMap::load();
+
     let tray_handle = match honkhonk::tray::build_tray() {
         Ok(handle) => handle,
         Err(e) => {
@@ -42,6 +44,7 @@ fn main() -> iced::Result {
     let audio_handle = std::sync::Mutex::new(Some(audio_handle));
     let sounds = std::sync::Mutex::new(Some(sounds));
     let config = std::sync::Mutex::new(Some(config));
+    let slots = std::sync::Mutex::new(Some(slots));
 
     iced::application(
         move || {
@@ -65,7 +68,12 @@ fn main() -> iced::Result {
                 .expect("config mutex poisoned")
                 .take()
                 .expect("boot called more than once");
-            honkhonk::app::HonkHonk::new(tray, audio, sounds, config)
+            let slots = slots
+                .lock()
+                .expect("slots mutex poisoned")
+                .take()
+                .expect("boot called more than once");
+            honkhonk::app::HonkHonk::new(tray, audio, sounds, config, slots)
         },
         honkhonk::app::HonkHonk::update,
         honkhonk::app::HonkHonk::view,
