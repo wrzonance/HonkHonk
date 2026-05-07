@@ -19,6 +19,7 @@ serde_json = "1"
 directories = "6"
 walkdir = "2"
 pipewire = "0.9"
+ashpd = { version = "0.13", features = ["global_shortcuts"] }
 
 [features]
 default = []
