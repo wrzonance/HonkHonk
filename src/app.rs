@@ -777,7 +777,7 @@ mod tests {
     }
 
     #[test]
-    fn shortcut_activated_with_assigned_slot_updates_playing() {
+    fn shortcut_activated_with_assigned_slot_does_not_panic() {
         let mut app = HonkHonk::new_for_test();
         let path = std::path::PathBuf::from("/sounds/honk.mp3");
         app.sounds = vec![SoundEntry {
@@ -789,8 +789,7 @@ mod tests {
             category: "Honk".into(),
         }];
         let _ = app.update(Message::AssignSlot(0, path.clone()));
-        // ShortcutActivated with audio=None: no audio command sent
-        // Verify no panic and slot is still assigned after activation
+        // audio=None means no audio command is sent; slot must remain assigned after activation
         let _ = app.update(Message::ShortcutActivated(0));
         assert_eq!(app.slots().get(0), Some(&path));
     }

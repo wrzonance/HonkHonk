@@ -3,7 +3,7 @@ pub enum PortalError {
     #[error("portal connection failed: {0}")]
     Connection(#[from] ashpd::Error),
     #[error("session creation failed: {0}")]
-    Session(String),
+    Session(#[source] ashpd::Error),
     #[error("shortcut registration failed: {0}")]
-    Registration(String),
+    Registration(#[source] ashpd::Error),
 }

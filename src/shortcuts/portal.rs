@@ -40,7 +40,7 @@ async fn init_session() -> Result<impl Stream<Item = ShortcutEvent>, PortalError
     let session = proxy
         .create_session(CreateSessionOptions::default())
         .await
-        .map_err(|e| PortalError::Session(e.to_string()))?;
+        .map_err(PortalError::Session)?;
 
     let shortcuts: Vec<NewShortcut> = (1..=SLOT_COUNT)
         .map(|n| NewShortcut::new(format!("slot-{n}"), format!("Slot {n}")))
@@ -49,14 +49,14 @@ async fn init_session() -> Result<impl Stream<Item = ShortcutEvent>, PortalError
     proxy
         .bind_shortcuts(&session, &shortcuts, None, BindShortcutsOptions::default())
         .await
-        .map_err(|e| PortalError::Registration(e.to_string()))?
+        .map_err(PortalError::Registration)?
         .response()
-        .map_err(|e| PortalError::Registration(e.to_string()))?;
+        .map_err(PortalError::Registration)?;
 
     let activated_stream = proxy
         .receive_activated()
         .await
-        .map_err(|e| PortalError::Registration(e.to_string()))?;
+        .map_err(PortalError::Registration)?;
 
     let mapped = activated_stream.filter_map(|event| async move {
         parse_slot_index(event.shortcut_id()).map(ShortcutEvent::Activated)
