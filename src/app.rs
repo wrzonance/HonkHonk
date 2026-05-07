@@ -5,7 +5,8 @@ use iced::widget::{button, column, container, row, scrollable, space, text};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
-use crate::state::{AppConfig, SoundEntry};
+use crate::shortcuts::ShortcutsStatus;
+use crate::state::{AppConfig, SlotMap, SoundEntry};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
@@ -24,6 +25,18 @@ pub enum Message {
     SearchChanged(String),
     VolumeChanged(f32),
     VolumeSaveRequested,
+    // Shortcut lifecycle
+    ShortcutsReady,
+    ShortcutsUnavailable(String),
+    DismissShortcutsWarning,
+    // Shortcut activation
+    ShortcutActivated(u8),
+    // Slot assignment
+    AssignSlot(u8, std::path::PathBuf),
+    ClearSlot(u8),
+    // Context menu
+    OpenContextMenu(String), // sound_id
+    CloseContextMenu,
 }
 
 impl Message {
@@ -47,6 +60,10 @@ pub struct HonkHonk {
     config: AppConfig,
     search_query: String,
     progress: f32,
+    slots: SlotMap,
+    shortcuts_status: ShortcutsStatus,
+    context_menu: Option<String>,
+    shortcuts_warning_dismissed: bool,
 }
 
 impl HonkHonk {
@@ -55,6 +72,7 @@ impl HonkHonk {
         audio: AudioHandle,
         sounds: Vec<SoundEntry>,
         config: AppConfig,
+        slots: SlotMap,
     ) -> Self {
         let rx = tray.take_rx();
         Self {
@@ -69,6 +87,10 @@ impl HonkHonk {
             config,
             search_query: String::new(),
             progress: 0.0,
+            slots,
+            shortcuts_status: ShortcutsStatus::Initializing,
+            context_menu: None,
+            shortcuts_warning_dismissed: false,
         }
     }
 
@@ -86,6 +108,10 @@ impl HonkHonk {
             config: AppConfig::default(),
             search_query: String::new(),
             progress: 0.0,
+            slots: SlotMap::default(),
+            shortcuts_status: ShortcutsStatus::Initializing,
+            context_menu: None,
+            shortcuts_warning_dismissed: false,
         }
     }
 
@@ -111,6 +137,22 @@ impl HonkHonk {
 
     pub fn progress(&self) -> f32 {
         self.progress
+    }
+
+    pub fn shortcuts_status(&self) -> &ShortcutsStatus {
+        &self.shortcuts_status
+    }
+
+    pub fn slots(&self) -> &SlotMap {
+        &self.slots
+    }
+
+    pub fn context_menu(&self) -> Option<&str> {
+        self.context_menu.as_deref()
+    }
+
+    pub fn shortcuts_warning_dismissed(&self) -> bool {
+        self.shortcuts_warning_dismissed
     }
 
     pub fn filtered_sounds(&self) -> Vec<&SoundEntry> {
@@ -239,6 +281,14 @@ impl HonkHonk {
                 }
                 Task::none()
             }
+            Message::ShortcutsReady
+            | Message::ShortcutsUnavailable(_)
+            | Message::DismissShortcutsWarning
+            | Message::ShortcutActivated(_)
+            | Message::AssignSlot(_, _)
+            | Message::ClearSlot(_)
+            | Message::OpenContextMenu(_)
+            | Message::CloseContextMenu => Task::none(), // implemented in Task 5
         }
     }
 
