@@ -83,7 +83,13 @@ fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
                 break;
             }
         }
-        // Stream ended; park forever so the subscription stays alive
+        // Stream ended unexpectedly (portal crashed mid-session). Notify the UI
+        // so the unavailability banner appears, then park to keep the subscription alive.
+        let _ = tx
+            .send(Message::ShortcutsUnavailable(
+                "portal connection lost".into(),
+            ))
+            .await;
         iced::futures::future::pending::<()>().await;
     })
 }
@@ -251,7 +257,7 @@ impl HonkHonk {
             }
             Message::PlaySound(sound_id) => {
                 if let Some(sound) = self.sounds.iter().find(|s| s.id == sound_id) {
-                    self.play_sound_entry(sound);
+                    self.play_sound_entry(sound, false);
                 }
                 Task::none()
             }
@@ -298,10 +304,7 @@ impl HonkHonk {
             Message::ShortcutActivated(idx) => {
                 if let Some(path) = self.slots.get(idx).cloned() {
                     if let Some(sound) = self.sounds.iter().find(|s| s.path == path) {
-                        if let Some(ref audio) = self.audio {
-                            audio.send(AudioCommand::Stop);
-                        }
-                        self.play_sound_entry(sound);
+                        self.play_sound_entry(sound, true);
                     }
                 }
                 Task::none()
@@ -331,7 +334,7 @@ impl HonkHonk {
         }
     }
 
-    fn play_sound_entry(&self, sound: &SoundEntry) {
+    fn play_sound_entry(&self, sound: &SoundEntry, stop_before: bool) {
         let decoded = match crate::audio::decode(&sound.path) {
             Ok(d) => d,
             Err(e) => {
@@ -340,6 +343,9 @@ impl HonkHonk {
             }
         };
         if let Some(ref audio) = self.audio {
+            if stop_before {
+                audio.send(AudioCommand::Stop);
+            }
             audio.send(AudioCommand::Play {
                 sound_id: sound.id.clone(),
                 samples: Arc::new(decoded.samples),
