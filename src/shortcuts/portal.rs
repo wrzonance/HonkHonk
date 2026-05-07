@@ -71,7 +71,7 @@ async fn init_session() -> Result<impl Stream<Item = ShortcutEvent>, PortalError
 fn parse_slot_index(id: &str) -> Option<u8> {
     let n_str = id.strip_prefix("slot-")?;
     let n: u8 = n_str.parse().ok()?;
-    if n < 1 || n > SLOT_COUNT {
+    if !(1..=SLOT_COUNT).contains(&n) {
         return None;
     }
     Some(n - 1)
