@@ -1,7 +1,7 @@
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 
-use iced::widget::{button, column, container, row, scrollable, space, text};
+use iced::widget::{button, container, row, scrollable, space, text};
 use iced::{Element, Length, Subscription, Task, Theme};
 
 use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
@@ -64,6 +64,28 @@ pub struct HonkHonk {
     shortcuts_status: ShortcutsStatus,
     context_menu: Option<String>,
     shortcuts_warning_dismissed: bool,
+}
+
+fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
+    use iced::futures::SinkExt;
+    use iced::futures::StreamExt;
+    iced::stream::channel(16, async |mut tx| {
+        use crate::shortcuts::{ShortcutEvent, portal};
+        let stream = portal::shortcut_stream().await;
+        let mut stream = std::pin::pin!(stream);
+        while let Some(ev) = stream.next().await {
+            let msg = match ev {
+                ShortcutEvent::Ready => Message::ShortcutsReady,
+                ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
+                ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
+            };
+            if tx.send(msg).await.is_err() {
+                break;
+            }
+        }
+        // Stream ended; park forever so the subscription stays alive
+        iced::futures::future::pending::<()>().await;
+    })
 }
 
 impl HonkHonk {
@@ -345,39 +367,6 @@ impl HonkHonk {
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
-        let t = theme::Theme::Dark;
-        let header = self.view_header(t);
-        let chips = self.view_category_chips(t);
-        let filtered = self.filtered_sounds();
-        let grid = sound_grid::view_grid(&filtered, self.playing.as_deref());
-
-        let now_playing = now_playing::view_now_playing(
-            self.playing.as_deref(),
-            &self.sounds,
-            self.progress,
-            self.config.volume,
-        );
-
-        let content = column![
-            header,
-            chips,
-            scrollable(grid).height(Length::Fill),
-            now_playing,
-        ]
-        .spacing(theme::space::MD);
-
-        container(content)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(theme::space::XL)
-            .style(move |_theme| container::Style {
-                background: Some(theme::bg_color(t.bg())),
-                ..Default::default()
-            })
-            .into()
-    }
-
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
         let title = text("HonkHonk").size(24).color(t.ink());
 
@@ -458,7 +447,89 @@ impl HonkHonk {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll)
+        let shortcuts = Subscription::run(shortcuts_stream_sub);
+
+        let tray_poll =
+            iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
+
+        Subscription::batch([shortcuts, tray_poll])
+    }
+
+    fn view_shortcuts_banner(&self, t: theme::Theme) -> Option<Element<'_, Message>> {
+        let ShortcutsStatus::Unavailable(ref reason) = self.shortcuts_status else {
+            return None;
+        };
+        if self.shortcuts_warning_dismissed {
+            return None;
+        }
+        let banner = container(
+            row![
+                text(format!(
+                    "Global shortcuts unavailable: {reason}. Check xdg-desktop-portal is running."
+                ))
+                .size(13)
+                .color(iced::Color::from_rgb(0.6, 0.4, 0.0)),
+                space::horizontal(),
+                button(text("×").size(14))
+                    .on_press(Message::DismissShortcutsWarning)
+                    .style(move |_t, _s| button::Style {
+                        background: None,
+                        text_color: t.ink(),
+                        ..Default::default()
+                    }),
+            ]
+            .spacing(theme::space::MD)
+            .align_y(iced::Alignment::Center),
+        )
+        .padding([theme::space::SM, theme::space::LG])
+        .style(move |_t| container::Style {
+            background: Some(theme::bg_color(iced::Color::from_rgb(0.98, 0.92, 0.75))),
+            border: theme::tile_border(iced::Color::from_rgb(0.9, 0.75, 0.3), 1.0),
+            ..Default::default()
+        });
+        Some(banner.into())
+    }
+
+    pub fn view(&self) -> Element<'_, Message> {
+        let t = theme::Theme::Dark;
+        let header = self.view_header(t);
+        let chips = self.view_category_chips(t);
+        let filtered = self.filtered_sounds();
+        let grid = sound_grid::view_grid(
+            &filtered,
+            self.playing.as_deref(),
+            &self.slots,
+            matches!(self.shortcuts_status, ShortcutsStatus::Active),
+            self.context_menu.as_deref(),
+        );
+
+        let now_playing = now_playing::view_now_playing(
+            self.playing.as_deref(),
+            &self.sounds,
+            self.progress,
+            self.config.volume,
+        );
+
+        let mut items: Vec<Element<'_, Message>> = Vec::new();
+        if let Some(banner) = self.view_shortcuts_banner(t) {
+            items.push(banner);
+        }
+        items.push(header);
+        items.push(chips);
+        items.push(scrollable(grid).height(Length::Fill).into());
+        items.push(now_playing);
+
+        let content = iced::widget::Column::with_children(items).spacing(theme::space::MD);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(theme::space::XL)
+            .style(move |_theme| container::Style {
+                background: Some(theme::bg_color(t.bg())),
+                ..Default::default()
+            })
+            .into()
     }
 }
 
