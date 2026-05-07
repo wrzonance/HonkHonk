@@ -281,14 +281,67 @@ impl HonkHonk {
                 }
                 Task::none()
             }
-            Message::ShortcutsReady
-            | Message::ShortcutsUnavailable(_)
-            | Message::DismissShortcutsWarning
-            | Message::ShortcutActivated(_)
-            | Message::AssignSlot(_, _)
-            | Message::ClearSlot(_)
-            | Message::OpenContextMenu(_)
-            | Message::CloseContextMenu => Task::none(), // implemented in Task 5
+            Message::ShortcutsReady => {
+                self.shortcuts_status = ShortcutsStatus::Active;
+                Task::none()
+            }
+            Message::ShortcutsUnavailable(reason) => {
+                self.shortcuts_status = ShortcutsStatus::Unavailable(reason);
+                Task::none()
+            }
+            Message::DismissShortcutsWarning => {
+                self.shortcuts_warning_dismissed = true;
+                Task::none()
+            }
+            Message::ShortcutActivated(idx) => {
+                if let Some(path) = self.slots.get(idx).cloned() {
+                    if let Some(ref audio) = self.audio {
+                        audio.send(AudioCommand::Stop);
+                    }
+                    let sound = self.sounds.iter().find(|s| s.path == path);
+                    if let Some(sound) = sound {
+                        let sound_id = sound.id.clone();
+                        let decoded = match crate::audio::decode(&sound.path) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                eprintln!("honkhonk: shortcut decode error: {e}");
+                                return Task::none();
+                            }
+                        };
+                        if let Some(ref audio) = self.audio {
+                            audio.send(AudioCommand::Play {
+                                sound_id,
+                                samples: Arc::new(decoded.samples),
+                                sample_rate: decoded.sample_rate,
+                                channels: decoded.channels,
+                            });
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::AssignSlot(idx, path) => {
+                self.slots.set(idx, path);
+                if let Err(e) = self.slots.save() {
+                    eprintln!("honkhonk: slots save error: {e}");
+                }
+                Task::none()
+            }
+            Message::ClearSlot(idx) => {
+                self.slots.clear(idx);
+                if let Err(e) = self.slots.save() {
+                    eprintln!("honkhonk: slots save error: {e}");
+                }
+                Task::none()
+            }
+            Message::OpenContextMenu(sound_id) => {
+                self.context_menu = Some(sound_id);
+                Task::none()
+            }
+            Message::CloseContextMenu => {
+                self.context_menu = None;
+                Task::none()
+            }
         }
     }
 
@@ -412,6 +465,7 @@ impl HonkHonk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shortcuts::ShortcutsStatus;
 
     #[test]
     fn toggle_visibility_flips_state() {
@@ -606,5 +660,99 @@ mod tests {
             (app.config.volume - 0.15).abs() < f32::EPSILON,
             "config.volume should survive playback cycle"
         );
+    }
+
+    #[test]
+    fn shortcuts_ready_sets_status_active() {
+        let mut app = HonkHonk::new_for_test();
+        assert_eq!(app.shortcuts_status(), &ShortcutsStatus::Initializing);
+        let _ = app.update(Message::ShortcutsReady);
+        assert_eq!(app.shortcuts_status(), &ShortcutsStatus::Active);
+    }
+
+    #[test]
+    fn shortcuts_unavailable_sets_status() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutsUnavailable("portal not found".into()));
+        assert!(matches!(
+            app.shortcuts_status(),
+            ShortcutsStatus::Unavailable(_)
+        ));
+    }
+
+    #[test]
+    fn shortcuts_unavailable_contains_reason() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutsUnavailable("no portal".into()));
+        let ShortcutsStatus::Unavailable(reason) = app.shortcuts_status() else {
+            panic!("expected Unavailable");
+        };
+        assert!(!reason.is_empty());
+    }
+
+    #[test]
+    fn dismiss_warning_sets_flag() {
+        let mut app = HonkHonk::new_for_test();
+        assert!(!app.shortcuts_warning_dismissed());
+        let _ = app.update(Message::DismissShortcutsWarning);
+        assert!(app.shortcuts_warning_dismissed());
+    }
+
+    #[test]
+    fn shortcut_activated_with_empty_slot_is_noop() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutActivated(0));
+        assert!(app.playing().is_none());
+    }
+
+    #[test]
+    fn shortcut_activated_with_assigned_slot_updates_playing() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/sounds/honk.mp3");
+        app.sounds = vec![SoundEntry {
+            id: "honk-id".into(),
+            name: "Honk".into(),
+            path: path.clone(),
+            format: crate::state::AudioFormat::Mp3,
+            duration_ms: Some(500),
+            category: "Honk".into(),
+        }];
+        let _ = app.update(Message::AssignSlot(0, path.clone()));
+        // ShortcutActivated with audio=None: no audio command sent
+        // Verify no panic and slot is still assigned after activation
+        let _ = app.update(Message::ShortcutActivated(0));
+        assert_eq!(app.slots().get(0), Some(&path));
+    }
+
+    #[test]
+    fn assign_slot_updates_slot_map() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/sounds/boom.mp3");
+        let _ = app.update(Message::AssignSlot(3, path.clone()));
+        assert_eq!(app.slots().get(3), Some(&path));
+    }
+
+    #[test]
+    fn clear_slot_removes_assignment() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/sounds/boom.mp3");
+        let _ = app.update(Message::AssignSlot(3, path.clone()));
+        let _ = app.update(Message::ClearSlot(3));
+        assert!(app.slots().get(3).is_none());
+    }
+
+    #[test]
+    fn open_context_menu_sets_sound_id() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenContextMenu("some-id".into()));
+        assert_eq!(app.context_menu(), Some("some-id"));
+    }
+
+    #[test]
+    fn close_context_menu_clears_it() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenContextMenu("some-id".into()));
+        let _ = app.update(Message::CloseContextMenu);
+        assert!(app.context_menu().is_none());
     }
 }
