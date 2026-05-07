@@ -305,6 +305,17 @@ impl HonkHonk {
                 if let Some(path) = self.slots.get(idx).cloned() {
                     if let Some(sound) = self.sounds.iter().find(|s| s.path == path) {
                         self.play_sound_entry(sound, true);
+                    } else {
+                        // Path no longer in library (file deleted/moved) — clear stale slot
+                        eprintln!(
+                            "honkhonk: slot {} points to missing file {:?}, clearing",
+                            idx + 1,
+                            path
+                        );
+                        self.slots.clear(idx);
+                        if let Err(e) = self.slots.save() {
+                            eprintln!("honkhonk: slots save error: {e}");
+                        }
                     }
                 }
                 Task::none()
