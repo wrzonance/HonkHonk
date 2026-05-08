@@ -2,7 +2,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 
 use iced::widget::{button, container, row, scrollable, space, text};
-use iced::{Element, Length, Subscription, Task, Theme};
+use iced::{Element, Length, Point, Subscription, Task, Theme};
 
 use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
 use crate::shortcuts::ShortcutsStatus;
@@ -37,6 +37,9 @@ pub enum Message {
     // Context menu
     OpenContextMenu(String), // sound_id
     CloseContextMenu,
+    // Window / cursor
+    CursorMoved(Point),
+    WindowResized(f32, f32),
 }
 
 impl Message {
@@ -63,6 +66,9 @@ pub struct HonkHonk {
     slots: SlotMap,
     shortcuts_status: ShortcutsStatus,
     context_menu: Option<String>,
+    context_menu_pos: Option<Point>,
+    cursor_pos: Point,
+    window_size: (f32, f32),
     shortcuts_warning_dismissed: bool,
 }
 
@@ -118,6 +124,9 @@ impl HonkHonk {
             slots,
             shortcuts_status: ShortcutsStatus::Initializing,
             context_menu: None,
+            context_menu_pos: None,
+            cursor_pos: Point::ORIGIN,
+            window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
         }
     }
@@ -139,6 +148,9 @@ impl HonkHonk {
             slots: SlotMap::default(),
             shortcuts_status: ShortcutsStatus::Initializing,
             context_menu: None,
+            context_menu_pos: None,
+            cursor_pos: Point::ORIGIN,
+            window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
         }
     }
@@ -336,10 +348,20 @@ impl HonkHonk {
             }
             Message::OpenContextMenu(sound_id) => {
                 self.context_menu = Some(sound_id);
+                self.context_menu_pos = Some(self.cursor_pos);
                 Task::none()
             }
             Message::CloseContextMenu => {
                 self.context_menu = None;
+                self.context_menu_pos = None;
+                Task::none()
+            }
+            Message::CursorMoved(pos) => {
+                self.cursor_pos = pos;
+                Task::none()
+            }
+            Message::WindowResized(w, h) => {
+                self.window_size = (w, h);
                 Task::none()
             }
         }
@@ -451,7 +473,21 @@ impl HonkHonk {
         let tray_poll =
             iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
 
-        Subscription::batch([shortcuts, tray_poll])
+        let events = iced::event::listen_with(|event, _, _| match event {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                ..
+            }) => Some(Message::CloseContextMenu),
+            iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                Some(Message::CursorMoved(position))
+            }
+            iced::Event::Window(iced::window::Event::Resized(size)) => {
+                Some(Message::WindowResized(size.width, size.height))
+            }
+            _ => None,
+        });
+
+        Subscription::batch([shortcuts, tray_poll, events])
     }
 
     fn view_shortcuts_banner(&self, t: theme::Theme) -> Option<Element<'_, Message>> {
@@ -499,7 +535,6 @@ impl HonkHonk {
             self.playing.as_deref(),
             &self.slots,
             matches!(self.shortcuts_status, ShortcutsStatus::Active),
-            self.context_menu.as_deref(),
         );
 
         let now_playing = now_playing::view_now_playing(
@@ -520,15 +555,24 @@ impl HonkHonk {
 
         let content = iced::widget::Column::with_children(items).spacing(theme::space::MD);
 
-        container(content)
+        let base = container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(theme::space::XL)
             .style(move |_theme| container::Style {
                 background: Some(theme::bg_color(t.bg())),
                 ..Default::default()
-            })
-            .into()
+            });
+
+        // Overlay context menu at window level so cursor coords map exactly.
+        if let (Some(ref sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
+            let found = self.sounds.iter().find(|s| s.id == *sound_id);
+            let overlay =
+                sound_grid::context_menu_overlay(found, &self.slots, t, pos, self.window_size);
+            iced::widget::stack![base, overlay].into()
+        } else {
+            base.into()
+        }
     }
 }
 

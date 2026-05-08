@@ -19,7 +19,6 @@ pub fn view_grid<'a>(
     playing: Option<&str>,
     slots: &'a crate::state::SlotMap,
     shortcuts_active: bool,
-    context_menu: Option<&'a str>,
 ) -> Element<'a, Message> {
     let theme = Theme::Dark;
 
@@ -70,13 +69,7 @@ pub fn view_grid<'a>(
         .into_iter()
         .fold(column![].spacing(theme::space::LG), |c, r| c.push(r));
 
-    if let Some(sound_id) = context_menu {
-        let found = sounds.iter().find(|s| s.id == sound_id);
-        let overlay = context_menu_overlay(sound_id, found.copied(), slots, theme);
-        iced::widget::stack![grid.width(Length::Fill), overlay].into()
-    } else {
-        grid.width(Length::Fill).into()
-    }
+    grid.width(Length::Fill).into()
 }
 
 fn tile_view<'a>(
@@ -155,11 +148,16 @@ fn tile_view<'a>(
         .into()
 }
 
-fn context_menu_overlay<'a>(
-    _sound_id: &str,
+// Width and estimated max height of the context menu popup.
+const MENU_W: f32 = 200.0;
+const MENU_H: f32 = 340.0;
+
+pub fn context_menu_overlay<'a>(
     sound: Option<&'a SoundEntry>,
     slots: &'a crate::state::SlotMap,
     theme: Theme,
+    pos: iced::Point,
+    window_size: (f32, f32),
 ) -> Element<'a, Message> {
     use iced::widget::Column;
 
@@ -213,30 +211,45 @@ fn context_menu_overlay<'a>(
         .spacing(theme::space::SM)
         .padding(theme::space::MD),
     )
-    .width(200)
+    .width(MENU_W)
     .style(move |_t| container::Style {
         background: Some(theme::bg_color(theme.panel())),
         border: theme::tile_border(theme.hairline(), 1.0),
         ..Default::default()
     });
 
+    // Clamp so menu stays inside window bounds.
+    let (win_w, win_h) = window_size;
+    let left = if pos.x + MENU_W > win_w {
+        (pos.x - MENU_W).max(0.0)
+    } else {
+        pos.x
+    };
+    let top = if pos.y + MENU_H > win_h {
+        (pos.y - MENU_H).max(0.0)
+    } else {
+        pos.y
+    };
+
     let dismiss = mouse_area(
-        container(
-            iced::widget::Space::new()
-                .width(Length::Fill)
-                .height(Length::Fill),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill),
+        container(iced::widget::Space::new())
+            .width(Length::Fill)
+            .height(Length::Fill),
     )
-    .on_press(Message::CloseContextMenu);
+    .on_press(Message::CloseContextMenu)
+    .on_right_press(Message::CloseContextMenu);
 
     container(iced::widget::stack![
         dismiss,
         container(menu)
-            .align_right(Length::Fill)
-            .align_top(Length::Fill)
-            .padding([60u16, 20u16]),
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(iced::Padding {
+                top,
+                left,
+                right: 0.0,
+                bottom: 0.0,
+            }),
     ])
     .width(Length::Fill)
     .height(Length::Fill)
