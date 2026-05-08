@@ -109,7 +109,7 @@ impl Tone {
     pub fn highlight(self, dark: bool) -> Color {
         let (h, s, l) = self.hsl();
         if dark {
-            hsl_to_color(h, s / 100.0, (l - 5.0) / 100.0)
+            hsl_to_color(h, s / 100.0, (l - 5.0).max(0.0) / 100.0)
         } else {
             hsl_to_color(h, s / 100.0, l / 100.0)
         }
