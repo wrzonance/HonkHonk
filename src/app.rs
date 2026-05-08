@@ -481,6 +481,9 @@ impl HonkHonk {
             iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                 Some(Message::CursorMoved(position))
             }
+            iced::Event::Window(iced::window::Event::Opened { size, .. }) => {
+                Some(Message::WindowResized(size.width, size.height))
+            }
             iced::Event::Window(iced::window::Event::Resized(size)) => {
                 Some(Message::WindowResized(size.width, size.height))
             }
