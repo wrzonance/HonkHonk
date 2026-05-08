@@ -10,7 +10,14 @@ use crate::state::{AppConfig, SlotMap, SoundEntry};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
-use crate::ui::{now_playing, search_bar};
+use crate::ui::{now_playing, search_bar, slot_manager};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    #[default]
+    Main,
+    SlotManager,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
@@ -40,6 +47,10 @@ pub enum Message {
     // Window / cursor
     CursorMoved(Point),
     WindowResized(f32, f32),
+    // Navigation
+    ShowSlots,
+    ShowMain,
+    SelectSlot(u8),
 }
 
 impl Message {
@@ -70,6 +81,8 @@ pub struct HonkHonk {
     cursor_pos: Point,
     window_size: (f32, f32),
     shortcuts_warning_dismissed: bool,
+    view_mode: ViewMode,
+    selected_slot: Option<u8>,
 }
 
 fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
@@ -128,6 +141,8 @@ impl HonkHonk {
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
+            view_mode: ViewMode::default(),
+            selected_slot: None,
         }
     }
 
@@ -152,6 +167,8 @@ impl HonkHonk {
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
+            view_mode: ViewMode::default(),
+            selected_slot: None,
         }
     }
 
@@ -189,6 +206,14 @@ impl HonkHonk {
 
     pub fn context_menu(&self) -> Option<&str> {
         self.context_menu.as_deref()
+    }
+
+    pub fn view_mode(&self) -> ViewMode {
+        self.view_mode
+    }
+
+    pub fn selected_slot(&self) -> Option<u8> {
+        self.selected_slot
     }
 
     pub fn shortcuts_warning_dismissed(&self) -> bool {
@@ -364,6 +389,20 @@ impl HonkHonk {
                 self.window_size = (w, h);
                 Task::none()
             }
+            Message::ShowSlots => {
+                self.view_mode = ViewMode::SlotManager;
+                self.selected_slot = None;
+                Task::none()
+            }
+            Message::ShowMain => {
+                self.view_mode = ViewMode::Main;
+                self.selected_slot = None;
+                Task::none()
+            }
+            Message::SelectSlot(idx) => {
+                self.selected_slot = Some(idx);
+                Task::none()
+            }
         }
     }
 
@@ -391,6 +430,15 @@ impl HonkHonk {
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
         let title = text("HonkHonk").size(24).color(t.ink());
 
+        let slots_btn = button(text("Slots").size(14).color(t.ink()))
+            .on_press(Message::ShowSlots)
+            .style(move |_theme, _status| button::Style {
+                background: Some(theme::bg_color(t.panel())),
+                text_color: t.ink(),
+                border: theme::tile_border(t.hairline(), 1.0),
+                ..Default::default()
+            });
+
         let search = search_bar::view_search_bar(&self.search_query);
 
         let stop_btn = button(text("Stop All").size(14).color(t.ink()))
@@ -402,7 +450,7 @@ impl HonkHonk {
                 ..Default::default()
             });
 
-        row![title, space::horizontal(), search, stop_btn]
+        row![title, slots_btn, space::horizontal(), search, stop_btn]
             .spacing(theme::space::LG)
             .align_y(iced::Alignment::Center)
             .into()
@@ -528,7 +576,7 @@ impl HonkHonk {
         Some(banner.into())
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    fn view_main(&self) -> Element<'_, Message> {
         let t = theme::Theme::Dark;
         let header = self.view_header(t);
         let chips = self.view_category_chips(t);
@@ -575,6 +623,16 @@ impl HonkHonk {
             iced::widget::stack![base, overlay].into()
         } else {
             base.into()
+        }
+    }
+
+    pub fn view(&self) -> Element<'_, Message> {
+        match self.view_mode {
+            ViewMode::Main => self.view_main(),
+            ViewMode::SlotManager => {
+                let t = theme::Theme::Dark;
+                slot_manager::view_slot_manager(&self.slots, &self.sounds, self.selected_slot, t)
+            }
         }
     }
 }
@@ -870,5 +928,41 @@ mod tests {
         let _ = app.update(Message::OpenContextMenu("some-id".into()));
         let _ = app.update(Message::CloseContextMenu);
         assert!(app.context_menu().is_none());
+    }
+
+    #[test]
+    fn show_slots_sets_view_mode() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShowSlots);
+        assert_eq!(app.view_mode(), ViewMode::SlotManager);
+        assert!(app.selected_slot().is_none());
+    }
+
+    #[test]
+    fn show_main_resets_view_mode() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SelectSlot(3));
+        let _ = app.update(Message::ShowSlots);
+        let _ = app.update(Message::ShowMain);
+        assert_eq!(app.view_mode(), ViewMode::Main);
+        assert!(app.selected_slot().is_none());
+    }
+
+    #[test]
+    fn select_slot_sets_selected() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SelectSlot(3));
+        assert_eq!(app.selected_slot(), Some(3));
+    }
+
+    #[test]
+    fn clear_slot_keeps_selection_showing_empty_panel() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/test.mp3");
+        let _ = app.update(Message::AssignSlot(3, path.clone()));
+        let _ = app.update(Message::SelectSlot(3));
+        let _ = app.update(Message::ClearSlot(3));
+        assert_eq!(app.selected_slot(), Some(3));
+        assert!(app.slots().get(3).is_none());
     }
 }
