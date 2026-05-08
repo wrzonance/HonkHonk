@@ -396,6 +396,7 @@ impl HonkHonk {
             }
             Message::ShowMain => {
                 self.view_mode = ViewMode::Main;
+                self.selected_slot = None;
                 Task::none()
             }
             Message::SelectSlot(idx) => {
@@ -921,9 +922,11 @@ mod tests {
     #[test]
     fn show_main_resets_view_mode() {
         let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SelectSlot(3));
         let _ = app.update(Message::ShowSlots);
         let _ = app.update(Message::ShowMain);
         assert_eq!(app.view_mode(), ViewMode::Main);
+        assert!(app.selected_slot().is_none());
     }
 
     #[test]
