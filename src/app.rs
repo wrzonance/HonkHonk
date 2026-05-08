@@ -430,6 +430,15 @@ impl HonkHonk {
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
         let title = text("HonkHonk").size(24).color(t.ink());
 
+        let slots_btn = button(text("Slots").size(14).color(t.ink()))
+            .on_press(Message::ShowSlots)
+            .style(move |_theme, _status| button::Style {
+                background: Some(theme::bg_color(t.panel())),
+                text_color: t.ink(),
+                border: theme::tile_border(t.hairline(), 1.0),
+                ..Default::default()
+            });
+
         let search = search_bar::view_search_bar(&self.search_query);
 
         let stop_btn = button(text("Stop All").size(14).color(t.ink()))
@@ -441,7 +450,7 @@ impl HonkHonk {
                 ..Default::default()
             });
 
-        row![title, space::horizontal(), search, stop_btn]
+        row![title, slots_btn, space::horizontal(), search, stop_btn]
             .spacing(theme::space::LG)
             .align_y(iced::Alignment::Center)
             .into()
@@ -567,7 +576,7 @@ impl HonkHonk {
         Some(banner.into())
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    fn view_main(&self) -> Element<'_, Message> {
         let t = theme::Theme::Dark;
         let header = self.view_header(t);
         let chips = self.view_category_chips(t);
@@ -614,6 +623,16 @@ impl HonkHonk {
             iced::widget::stack![base, overlay].into()
         } else {
             base.into()
+        }
+    }
+
+    pub fn view(&self) -> Element<'_, Message> {
+        match self.view_mode {
+            ViewMode::Main => self.view_main(),
+            ViewMode::SlotManager => {
+                // temporary — replaced when slot_manager module is added in Task 4
+                self.view_main()
+            }
         }
     }
 }
