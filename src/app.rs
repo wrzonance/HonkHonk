@@ -10,10 +10,10 @@ use crate::state::{AppConfig, SlotMap, SoundEntry};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
-use crate::ui::{now_playing, search_bar};
+use crate::ui::{now_playing, search_bar, slot_manager};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum ViewMode {
+pub enum ViewMode {
     #[default]
     Main,
     SlotManager,
@@ -630,8 +630,13 @@ impl HonkHonk {
         match self.view_mode {
             ViewMode::Main => self.view_main(),
             ViewMode::SlotManager => {
-                // temporary — replaced when slot_manager module is added in Task 4
-                self.view_main()
+                let t = theme::Theme::Dark;
+                slot_manager::view_slot_manager(
+                    &self.slots,
+                    &self.sounds,
+                    self.selected_slot,
+                    t,
+                )
             }
         }
     }
