@@ -130,6 +130,22 @@ fn slot_tile<'a>(
     }
 }
 
+fn tone_circle<'a>(tone: Tone, size: f32, t: Theme) -> Element<'a, Message> {
+    let r = size / 2.0;
+    container(Space::new())
+        .width(size)
+        .height(size)
+        .style(move |_t| container::Style {
+            background: Some(theme::bg_color(tone.highlight(t.is_dark()))),
+            border: iced::Border {
+                radius: r.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
 fn bound_tile<'a>(
     idx: u8,
     sound: &'a SoundEntry,
@@ -151,23 +167,12 @@ fn bound_tile<'a>(
             radius: 18.0.into(),
         }
     };
-    let circle = container(Space::new())
-        .width(40)
-        .height(40)
-        .style(move |_t| container::Style {
-            background: Some(theme::bg_color(tone.highlight(t.is_dark()))),
-            border: iced::Border {
-                radius: 20.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
     button(
         column![
             text(format!("#{:02}", idx + 1))
                 .size(10)
                 .color(t.ink_faint()),
-            circle,
+            tone_circle(tone, 40.0, t),
             text(sound.name.clone()).size(11).color(t.ink()),
             text("no hotkey").size(10).color(t.ink_faint()),
         ]
@@ -227,17 +232,7 @@ fn empty_tile<'a>(idx: u8, selected: bool, t: Theme) -> Element<'a, Message> {
 
 fn sound_header<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
     let tone = tone_for(sound);
-    let circle = container(Space::new())
-        .width(56)
-        .height(56)
-        .style(move |_t| container::Style {
-            background: Some(theme::bg_color(tone.highlight(t.is_dark()))),
-            border: iced::Border {
-                radius: 28.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+    let circle = tone_circle(tone, 56.0, t);
     let info = column![
         text(sound.name.clone()).size(17).color(t.ink()),
         text(format!(
