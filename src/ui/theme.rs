@@ -105,6 +105,15 @@ impl Tone {
             hsl_to_color(h, s.min(60.0) / 100.0, 0.93)
         }
     }
+
+    pub fn highlight(self, dark: bool) -> Color {
+        let (h, s, l) = self.hsl();
+        if dark {
+            hsl_to_color(h, s / 100.0, (l - 5.0) / 100.0)
+        } else {
+            hsl_to_color(h, s / 100.0, l / 100.0)
+        }
+    }
 }
 
 pub trait Hh {
@@ -114,6 +123,8 @@ pub trait Hh {
     fn ink_dim(self) -> Color;
     fn ink_faint(self) -> Color;
     fn hairline(self) -> Color;
+    fn hairline2(self) -> Color;
+    fn good(self) -> Color;
     fn accent(self) -> Color;
 }
 
@@ -152,6 +163,18 @@ impl Hh for Theme {
         match self {
             Theme::Light => Color::from_rgba(0.0, 0.0, 0.0, 0.06),
             Theme::Dark => Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+        }
+    }
+    fn hairline2(self) -> Color {
+        match self {
+            Theme::Light => Color::from_rgba(0.0, 0.0, 0.0, 0.12),
+            Theme::Dark => Color::from_rgba(1.0, 1.0, 1.0, 0.12),
+        }
+    }
+    fn good(self) -> Color {
+        match self {
+            Theme::Light => hex(0x16a34a),
+            Theme::Dark => hex(0x4ade80),
         }
     }
     fn accent(self) -> Color {
