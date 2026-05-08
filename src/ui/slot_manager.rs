@@ -14,11 +14,6 @@ fn tone_for(sound: &SoundEntry) -> Tone {
     Tone::from_index(idx)
 }
 
-fn fmt_duration(ms: Option<u64>) -> String {
-    ms.map(|ms| format!("{}:{:02}", ms / 60000, (ms % 60000) / 1000))
-        .unwrap_or_else(|| "—".into())
-}
-
 pub fn view_slot_manager<'a>(
     slots: &'a SlotMap,
     sounds: &'a [SoundEntry],
@@ -213,10 +208,4 @@ fn sidebar<'a>(
         ..Default::default()
     })
     .into()
-}
-
-// Used in Task 5's sidebar — included here so it's ready
-#[allow(dead_code)]
-fn _use_fmt_duration(ms: Option<u64>) -> String {
-    fmt_duration(ms)
 }
