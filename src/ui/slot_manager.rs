@@ -178,7 +178,9 @@ fn bound_tile<'a>(
                 .color(t.ink_faint()),
             tone_circle(tone, 40.0, t),
             text(sound.name.clone()).size(11).color(t.ink()),
-            text(trigger.unwrap_or("no hotkey")).size(10).color(t.ink_faint()),
+            text(trigger.unwrap_or("no hotkey"))
+                .size(10)
+                .color(t.ink_faint()),
         ]
         .spacing(4)
         .align_x(iced::Alignment::Center)
@@ -300,7 +302,12 @@ fn sidebar_bound_portal<'a>(t: Theme) -> Element<'a, Message> {
     .into()
 }
 
-fn sidebar_bound<'a>(idx: u8, sound: &'a SoundEntry, trigger: Option<&'a str>, t: Theme) -> Element<'a, Message> {
+fn sidebar_bound<'a>(
+    idx: u8,
+    sound: &'a SoundEntry,
+    trigger: Option<&'a str>,
+    t: Theme,
+) -> Element<'a, Message> {
     let slot_label = text(format!("SLOT #{:02}", idx + 1))
         .size(10)
         .color(t.ink_dim());
