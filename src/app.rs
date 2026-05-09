@@ -96,6 +96,7 @@ fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
             let msg = match ev {
                 ShortcutEvent::Ready => Message::ShortcutsReady,
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
+                ShortcutEvent::Bindings(_) => continue, // Task 2: parse and handle
                 ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
             };
             if tx.send(msg).await.is_err() {
