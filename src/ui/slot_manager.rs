@@ -5,11 +5,6 @@ use crate::app::Message;
 use crate::state::{SlotMap, SoundEntry};
 use crate::ui::theme::{self, Hh, Theme, Tone};
 
-fn fmt_duration(ms: Option<u64>) -> String {
-    ms.map(|ms| format!("{}:{:02}", ms / 60000, (ms % 60000) / 1000))
-        .unwrap_or_else(|| "—".into())
-}
-
 fn tone_for(sound: &SoundEntry) -> Tone {
     let idx = sound
         .id
@@ -244,7 +239,7 @@ fn sound_header<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
         text(format!(
             "{} · {}",
             sound.category,
-            fmt_duration(sound.duration_ms)
+            crate::ui::fmt_duration(sound.duration_ms)
         ))
         .size(11)
         .color(t.ink_dim()),
