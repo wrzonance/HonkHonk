@@ -90,7 +90,7 @@ fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
     use iced::futures::StreamExt;
     iced::stream::channel(16, async |mut tx| {
         use crate::shortcuts::{portal, ShortcutEvent};
-        let stream = portal::shortcut_stream();
+        let stream = portal::shortcut_stream(None);
         let mut stream = std::pin::pin!(stream);
         while let Some(ev) = stream.next().await {
             let msg = match ev {
