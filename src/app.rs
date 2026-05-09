@@ -38,6 +38,7 @@ pub enum Message {
     DismissShortcutsWarning,
     // Shortcut activation
     ShortcutActivated(u8),
+    ShortcutBindingsUpdated(Vec<(u8, String)>),
     // Slot assignment
     AssignSlot(u8, std::path::PathBuf),
     ClearSlot(u8),
@@ -75,6 +76,7 @@ pub struct HonkHonk {
     search_query: String,
     progress: f32,
     slots: SlotMap,
+    slot_triggers: [Option<String>; 20],
     shortcuts_status: ShortcutsStatus,
     context_menu: Option<String>,
     context_menu_pos: Option<Point>,
@@ -96,7 +98,7 @@ fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
             let msg = match ev {
                 ShortcutEvent::Ready => Message::ShortcutsReady,
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
-                ShortcutEvent::Bindings(_) => continue, // Task 2: parse and handle
+                ShortcutEvent::Bindings(b) => Message::ShortcutBindingsUpdated(b),
                 ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
             };
             if tx.send(msg).await.is_err() {
@@ -136,6 +138,7 @@ impl HonkHonk {
             search_query: String::new(),
             progress: 0.0,
             slots,
+            slot_triggers: std::array::from_fn(|_| None),
             shortcuts_status: ShortcutsStatus::Initializing,
             context_menu: None,
             context_menu_pos: None,
@@ -162,6 +165,7 @@ impl HonkHonk {
             search_query: String::new(),
             progress: 0.0,
             slots: SlotMap::default(),
+            slot_triggers: std::array::from_fn(|_| None),
             shortcuts_status: ShortcutsStatus::Initializing,
             context_menu: None,
             context_menu_pos: None,
@@ -203,6 +207,10 @@ impl HonkHonk {
 
     pub fn slots(&self) -> &SlotMap {
         &self.slots
+    }
+
+    pub fn slot_triggers(&self) -> &[Option<String>; 20] {
+        &self.slot_triggers
     }
 
     pub fn context_menu(&self) -> Option<&str> {
@@ -354,6 +362,14 @@ impl HonkHonk {
                         if let Err(e) = self.slots.save() {
                             eprintln!("honkhonk: slots save error: {e}");
                         }
+                    }
+                }
+                Task::none()
+            }
+            Message::ShortcutBindingsUpdated(bindings) => {
+                for (idx, trigger) in bindings {
+                    if let Some(slot) = self.slot_triggers.get_mut(idx as usize) {
+                        *slot = Some(trigger);
                     }
                 }
                 Task::none()
@@ -965,5 +981,24 @@ mod tests {
         let _ = app.update(Message::ClearSlot(3));
         assert_eq!(app.selected_slot(), Some(3));
         assert!(app.slots().get(3).is_none());
+    }
+
+    #[test]
+    fn shortcut_bindings_updated_stores_triggers() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutBindingsUpdated(vec![
+            (0, "Meta+1".into()),
+            (4, "Ctrl+5".into()),
+        ]));
+        assert_eq!(app.slot_triggers()[0].as_deref(), Some("Meta+1"));
+        assert_eq!(app.slot_triggers()[4].as_deref(), Some("Ctrl+5"));
+        assert!(app.slot_triggers()[1].is_none());
+    }
+
+    #[test]
+    fn shortcut_bindings_updated_ignores_out_of_range() {
+        let mut app = HonkHonk::new_for_test();
+        // slot index 20 is out of range — should not panic
+        let _ = app.update(Message::ShortcutBindingsUpdated(vec![(20, "X".into())]));
     }
 }
