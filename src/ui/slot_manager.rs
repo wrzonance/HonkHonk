@@ -391,7 +391,10 @@ fn sidebar<'a>(
                 .get(idx)
                 .and_then(|p| sounds.iter().find(|s| &s.path == p));
             match sound {
-                Some(s) => sidebar_bound(idx, s, slot_triggers[idx as usize].as_deref(), t),
+                Some(s) => {
+                    let trigger = slot_triggers.get(idx as usize).and_then(|t| t.as_deref());
+                    sidebar_bound(idx, s, trigger, t)
+                }
                 None => sidebar_empty(idx, t),
             }
         }

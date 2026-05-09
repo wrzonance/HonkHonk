@@ -19,20 +19,22 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
         use ashpd::desktop::CreateSessionOptions;
 
         macro_rules! bail {
-            ($err:expr) => {{
-                let _ = tx.send(ShortcutEvent::Failed($err.to_string())).await;
+            ($ctx:expr, $err:expr) => {{
+                let _ = tx
+                    .send(ShortcutEvent::Failed(format!("{}: {}", $ctx, $err)))
+                    .await;
                 return;
             }};
         }
 
         let proxy = match GlobalShortcuts::new().await {
             Ok(p) => p,
-            Err(e) => bail!(e),
+            Err(e) => bail!("connecting to portal", e),
         };
 
         let session = match proxy.create_session(CreateSessionOptions::default()).await {
             Ok(s) => s,
-            Err(e) => bail!(e),
+            Err(e) => bail!("creating session", e),
         };
 
         let shortcuts: Vec<NewShortcut> = (1..=SLOT_COUNT)
@@ -49,12 +51,12 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
             .await
         {
             Ok(req) => req,
-            Err(e) => bail!(e),
+            Err(e) => bail!("binding shortcuts", e),
         };
 
         let info = match req.response() {
             Ok(info) => info,
-            Err(e) => bail!(e),
+            Err(e) => bail!("reading bind response", e),
         };
 
         let bindings: Vec<(u8, String)> = info
@@ -67,7 +69,7 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
 
         let mut activated = match proxy.receive_activated().await {
             Ok(s) => s,
-            Err(e) => bail!(e),
+            Err(e) => bail!("subscribing to activations", e),
         };
 
         let _ = tx.send(ShortcutEvent::Ready).await;
