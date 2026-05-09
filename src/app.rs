@@ -659,7 +659,13 @@ impl HonkHonk {
             ViewMode::Main => self.view_main(),
             ViewMode::SlotManager => {
                 let t = theme::Theme::Dark;
-                slot_manager::view_slot_manager(&self.slots, &self.sounds, self.selected_slot, t)
+                slot_manager::view_slot_manager(
+                    &self.slots,
+                    &self.slot_triggers,
+                    &self.sounds,
+                    self.selected_slot,
+                    t,
+                )
             }
         }
     }
