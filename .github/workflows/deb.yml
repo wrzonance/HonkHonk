@@ -56,7 +56,7 @@ jobs:
           lintian --suppress-tags no-upstream-changelog,no-manual-page "$DEB" || true
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: honkhonk-deb-${{ github.ref_name }}
           path: target/x86_64-unknown-linux-gnu/debian/honkhonk_*.deb
