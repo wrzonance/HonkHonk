@@ -86,6 +86,7 @@ pub struct HonkHonk {
     window_size: (f32, f32),
     shortcuts_warning_dismissed: bool,
     durations_loaded: bool,
+    duration_scan_pairs: std::sync::Arc<Vec<(String, std::path::PathBuf)>>,
     view_mode: ViewMode,
     selected_slot: Option<u8>,
 }
@@ -132,15 +133,15 @@ fn shortcuts_stream_sub_none() -> impl iced::futures::Stream<Item = Message> {
 ///
 /// Returns a `BoxStream` (concrete type) so it can be used as `fn(&D) -> S`
 /// with `Subscription::run_with`, which requires a concrete `S: Stream`.
-#[allow(clippy::ptr_arg)] // &Vec required — D must be Sized + Hash + 'static for run_with
 fn duration_scan_builder(
-    pairs: &Vec<(String, std::path::PathBuf)>,
+    pairs: &std::sync::Arc<Vec<(String, std::path::PathBuf)>>,
 ) -> iced::futures::stream::BoxStream<'static, Message> {
-    let pairs = pairs.clone();
+    let pairs = std::sync::Arc::clone(pairs);
     Box::pin(iced::stream::channel(1, async move |mut tx| {
         use iced::futures::SinkExt;
+        let owned = (*pairs).clone();
         let map =
-            tokio::task::spawn_blocking(move || crate::state::library::probe_durations(pairs))
+            tokio::task::spawn_blocking(move || crate::state::library::probe_durations(owned))
                 .await
                 .unwrap_or_default();
         let _ = tx.send(Message::DurationsLoaded(map)).await;
@@ -157,6 +158,12 @@ impl HonkHonk {
         slots: SlotMap,
     ) -> Self {
         let rx = tray.take_rx();
+        let duration_scan_pairs = std::sync::Arc::new(
+            sounds
+                .iter()
+                .map(|s| (s.id.clone(), s.path.clone()))
+                .collect::<Vec<_>>(),
+        );
         Self {
             visible: true,
             exit: false,
@@ -178,6 +185,7 @@ impl HonkHonk {
             window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
             durations_loaded: false,
+            duration_scan_pairs,
             view_mode: ViewMode::default(),
             selected_slot: None,
         }
@@ -206,6 +214,7 @@ impl HonkHonk {
             window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
             durations_loaded: false,
+            duration_scan_pairs: std::sync::Arc::new(Vec::new()),
             view_mode: ViewMode::default(),
             selected_slot: None,
         }
@@ -409,11 +418,8 @@ impl HonkHonk {
                 Task::none()
             }
             Message::DurationsLoaded(map) => {
-                for sound in &mut self.sounds {
-                    if let Some(&ms) = map.get(&sound.id) {
-                        sound.duration_ms = Some(ms);
-                    }
-                }
+                self.sounds =
+                    crate::state::library::apply_durations(std::mem::take(&mut self.sounds), &map);
                 self.durations_loaded = true;
                 Task::none()
             }
@@ -603,12 +609,10 @@ impl HonkHonk {
         let mut subs = vec![shortcuts, tray_poll, events];
 
         if !self.durations_loaded {
-            let pairs: Vec<(String, std::path::PathBuf)> = self
-                .sounds
-                .iter()
-                .map(|s| (s.id.clone(), s.path.clone()))
-                .collect();
-            subs.push(Subscription::run_with(pairs, duration_scan_builder));
+            subs.push(Subscription::run_with(
+                std::sync::Arc::clone(&self.duration_scan_pairs),
+                duration_scan_builder,
+            ));
         }
 
         Subscription::batch(subs)

@@ -101,6 +101,21 @@ pub fn probe_durations(pairs: Vec<(String, PathBuf)>) -> HashMap<String, u64> {
         .collect()
 }
 
+pub fn apply_durations(
+    sounds: Vec<SoundEntry>,
+    durations: &HashMap<String, u64>,
+) -> Vec<SoundEntry> {
+    sounds
+        .into_iter()
+        .map(|mut sound| {
+            if let Some(&ms) = durations.get(&sound.id) {
+                sound.duration_ms = Some(ms);
+            }
+            sound
+        })
+        .collect()
+}
+
 pub struct Library;
 
 impl Library {
