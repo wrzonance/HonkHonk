@@ -67,9 +67,13 @@ fn view_placeholder(t: Theme) -> Element<'static, Message> {
 
 fn view_sound_info<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
     let name = text(sound.name.clone()).size(14).color(t.ink());
-    let subtitle = text(format!("HONKING NOW \u{00b7} {}", sound.category))
-        .size(10.5)
-        .color(t.ink_dim());
+    let subtitle = text(format!(
+        "HONKING NOW \u{00b7} {} \u{00b7} {}",
+        sound.category,
+        crate::ui::fmt_duration(sound.duration_ms),
+    ))
+    .size(10.5)
+    .color(t.ink_dim());
     Column::new()
         .push(name)
         .push(subtitle)

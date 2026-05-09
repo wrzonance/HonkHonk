@@ -1,6 +1,10 @@
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+
+use lofty::prelude::AudioFile;
+use lofty::probe::Probe;
 
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
@@ -85,6 +89,33 @@ fn entry_from_path(path: &Path) -> Option<SoundEntry> {
     })
 }
 
+fn probe_duration(path: &Path) -> Option<u64> {
+    let tagged_file = Probe::open(path).ok()?.read().ok()?;
+    Some(tagged_file.properties().duration().as_millis() as u64)
+}
+
+pub fn probe_durations(pairs: Vec<(String, PathBuf)>) -> HashMap<String, u64> {
+    pairs
+        .into_iter()
+        .filter_map(|(id, path)| probe_duration(&path).map(|ms| (id, ms)))
+        .collect()
+}
+
+pub fn apply_durations(
+    sounds: Vec<SoundEntry>,
+    durations: &HashMap<String, u64>,
+) -> Vec<SoundEntry> {
+    sounds
+        .into_iter()
+        .map(|mut sound| {
+            if let Some(&ms) = durations.get(&sound.id) {
+                sound.duration_ms = Some(ms);
+            }
+            sound
+        })
+        .collect()
+}
+
 pub struct Library;
 
 impl Library {
@@ -122,6 +153,53 @@ impl Library {
 mod tests {
     use super::*;
     use std::fs;
+
+    fn make_wav_1sec() -> Vec<u8> {
+        let sample_rate: u32 = 8000;
+        let num_samples: u32 = 8000;
+        let data_size = num_samples;
+        let mut v = Vec::with_capacity(44 + data_size as usize);
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&(36u32 + data_size).to_le_bytes());
+        v.extend_from_slice(b"WAVE");
+        v.extend_from_slice(b"fmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        v.extend_from_slice(&1u16.to_le_bytes()); // mono
+        v.extend_from_slice(&sample_rate.to_le_bytes());
+        v.extend_from_slice(&sample_rate.to_le_bytes()); // byte_rate
+        v.extend_from_slice(&1u16.to_le_bytes()); // block_align
+        v.extend_from_slice(&8u16.to_le_bytes()); // bits per sample
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&data_size.to_le_bytes());
+        v.extend(vec![128u8; data_size as usize]);
+        v
+    }
+
+    #[test]
+    fn probe_duration_returns_some_for_valid_wav() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wav");
+        fs::write(&path, make_wav_1sec()).unwrap();
+        let ms = probe_duration(&path).unwrap();
+        assert!((900..=1100).contains(&ms), "expected ~1000ms, got {ms}");
+    }
+
+    #[test]
+    fn probe_duration_returns_none_for_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.wav");
+        fs::write(&path, b"").unwrap();
+        assert!(probe_duration(&path).is_none());
+    }
+
+    #[test]
+    fn probe_duration_returns_none_for_non_audio_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("readme.txt");
+        fs::write(&path, b"hello world").unwrap();
+        assert!(probe_duration(&path).is_none());
+    }
 
     #[test]
     fn format_from_extension_detects_all_types() {
