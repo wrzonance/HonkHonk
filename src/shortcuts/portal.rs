@@ -125,19 +125,15 @@ mod tests {
 
     #[test]
     fn bindings_parse_skips_empty_triggers() {
-        let cases: &[(&str, &str, Option<(u8, &str)>)] = &[
-            ("slot-1", "Meta+1", Some((0, "Meta+1"))),
-            ("slot-3", "Ctrl+3", Some((2, "Ctrl+3"))),
-            ("slot-1", "",       None),   // empty trigger excluded
-            ("slot-0", "X",      None),   // out-of-range id excluded
-        ];
-        for (id, trigger, expected) in cases {
-            let result = parse_binding(id, trigger);
-            assert_eq!(
-                result,
-                expected.map(|(i, t)| (i, t.to_owned())),
-                "id={id} trigger={trigger}"
-            );
-        }
+        assert_eq!(
+            parse_binding("slot-1", "Meta+1"),
+            Some((0, "Meta+1".to_owned()))
+        );
+        assert_eq!(
+            parse_binding("slot-3", "Ctrl+3"),
+            Some((2, "Ctrl+3".to_owned()))
+        );
+        assert_eq!(parse_binding("slot-1", ""), None);
+        assert_eq!(parse_binding("slot-0", "X"), None);
     }
 }
