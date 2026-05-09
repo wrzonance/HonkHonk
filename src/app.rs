@@ -48,8 +48,6 @@ pub enum Message {
     // Window / cursor
     CursorMoved(Point),
     WindowResized(f32, f32),
-    // Window handle acquisition
-    WindowOpened(iced::window::Id, f32, f32),
     // Navigation
     ShowSlots,
     ShowMain,
@@ -417,13 +415,6 @@ impl HonkHonk {
                 self.window_size = (w, h);
                 Task::none()
             }
-            Message::WindowOpened(_, w, h) => {
-                self.window_size = (w, h);
-                // iced 0.14 does not expose run_with_handle; window_identifier stays None.
-                // Shortcuts register without a parent window (functional, KDE may show
-                // a generic app name in the shortcuts UI instead of "HonkHonk").
-                Task::none()
-            }
             Message::ShowSlots => {
                 self.view_mode = ViewMode::SlotManager;
                 self.selected_slot = None;
@@ -558,7 +549,7 @@ impl HonkHonk {
         let tray_poll =
             iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
 
-        let events = iced::event::listen_with(|event, _, window_id| match event {
+        let events = iced::event::listen_with(|event, _, _window_id| match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                 ..
@@ -567,7 +558,7 @@ impl HonkHonk {
                 Some(Message::CursorMoved(position))
             }
             iced::Event::Window(iced::window::Event::Opened { size, .. }) => {
-                Some(Message::WindowOpened(window_id, size.width, size.height))
+                Some(Message::WindowResized(size.width, size.height))
             }
             iced::Event::Window(iced::window::Event::Resized(size)) => {
                 Some(Message::WindowResized(size.width, size.height))
