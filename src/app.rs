@@ -128,6 +128,27 @@ fn shortcuts_stream_sub_none() -> impl iced::futures::Stream<Item = Message> {
     shortcuts_stream_sub(None)
 }
 
+/// Builder for the one-shot duration scan subscription.
+///
+/// Returns a `BoxStream` (concrete type) so it can be used as `fn(&D) -> S`
+/// with `Subscription::run_with`, which requires a concrete `S: Stream`.
+#[allow(clippy::ptr_arg)] // &Vec required — D must be Sized + Hash + 'static for run_with
+fn duration_scan_builder(
+    pairs: &Vec<(String, std::path::PathBuf)>,
+) -> iced::futures::stream::BoxStream<'static, Message> {
+    let pairs = pairs.clone();
+    Box::pin(iced::stream::channel(1, async move |mut tx| {
+        use iced::futures::SinkExt;
+        let map = tokio::task::spawn_blocking(move || {
+            crate::state::library::probe_durations(pairs)
+        })
+        .await
+        .unwrap_or_default();
+        let _ = tx.send(Message::DurationsLoaded(map)).await;
+        iced::futures::future::pending::<()>().await;
+    }))
+}
+
 impl HonkHonk {
     pub fn new(
         mut tray: TrayHandle,
@@ -580,7 +601,18 @@ impl HonkHonk {
             _ => None,
         });
 
-        Subscription::batch([shortcuts, tray_poll, events])
+        let mut subs = vec![shortcuts, tray_poll, events];
+
+        if !self.durations_loaded {
+            let pairs: Vec<(String, std::path::PathBuf)> = self
+                .sounds
+                .iter()
+                .map(|s| (s.id.clone(), s.path.clone()))
+                .collect();
+            subs.push(Subscription::run_with(pairs, duration_scan_builder));
+        }
+
+        Subscription::batch(subs)
     }
 
     fn view_shortcuts_banner(&self, t: theme::Theme) -> Option<Element<'_, Message>> {
