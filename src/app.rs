@@ -39,6 +39,8 @@ pub enum Message {
     // Shortcut activation
     ShortcutActivated(u8),
     ShortcutBindingsUpdated(Vec<(u8, String)>),
+    // Duration scanning
+    DurationsLoaded(std::collections::HashMap<String, u64>),
     // Slot assignment
     AssignSlot(u8, std::path::PathBuf),
     ClearSlot(u8),
@@ -83,6 +85,7 @@ pub struct HonkHonk {
     cursor_pos: Point,
     window_size: (f32, f32),
     shortcuts_warning_dismissed: bool,
+    durations_loaded: bool,
     view_mode: ViewMode,
     selected_slot: Option<u8>,
 }
@@ -154,6 +157,7 @@ impl HonkHonk {
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
+            durations_loaded: false,
             view_mode: ViewMode::default(),
             selected_slot: None,
         }
@@ -181,6 +185,7 @@ impl HonkHonk {
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
             shortcuts_warning_dismissed: false,
+            durations_loaded: false,
             view_mode: ViewMode::default(),
             selected_slot: None,
         }
@@ -381,6 +386,15 @@ impl HonkHonk {
                         *slot = Some(trigger);
                     }
                 }
+                Task::none()
+            }
+            Message::DurationsLoaded(map) => {
+                for sound in &mut self.sounds {
+                    if let Some(&ms) = map.get(&sound.id) {
+                        sound.duration_ms = Some(ms);
+                    }
+                }
+                self.durations_loaded = true;
                 Task::none()
             }
             Message::AssignSlot(idx, path) => {
@@ -1017,5 +1031,38 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         // slot index 20 is out of range — should not panic
         let _ = app.update(Message::ShortcutBindingsUpdated(vec![(20, "X".into())]));
+    }
+
+    #[test]
+    fn durations_loaded_fills_matching_sound_entries() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "abc123".into(),
+            name: "Honk".into(),
+            path: "/tmp/honk.wav".into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: None,
+            category: "Honk".into(),
+        }];
+        let map = std::collections::HashMap::from([("abc123".to_string(), 1500u64)]);
+        let _ = app.update(Message::DurationsLoaded(map));
+        assert_eq!(app.sounds[0].duration_ms, Some(1500));
+        assert!(app.durations_loaded);
+    }
+
+    #[test]
+    fn durations_loaded_ignores_unmatched_ids() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "abc123".into(),
+            name: "Honk".into(),
+            path: "/tmp/honk.wav".into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: None,
+            category: "Honk".into(),
+        }];
+        let map = std::collections::HashMap::from([("no-match".to_string(), 999u64)]);
+        let _ = app.update(Message::DurationsLoaded(map));
+        assert_eq!(app.sounds[0].duration_ms, None);
     }
 }
