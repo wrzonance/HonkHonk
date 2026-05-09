@@ -139,11 +139,10 @@ fn duration_scan_builder(
     let pairs = pairs.clone();
     Box::pin(iced::stream::channel(1, async move |mut tx| {
         use iced::futures::SinkExt;
-        let map = tokio::task::spawn_blocking(move || {
-            crate::state::library::probe_durations(pairs)
-        })
-        .await
-        .unwrap_or_default();
+        let map =
+            tokio::task::spawn_blocking(move || crate::state::library::probe_durations(pairs))
+                .await
+                .unwrap_or_default();
         let _ = tx.send(Message::DurationsLoaded(map)).await;
         iced::futures::future::pending::<()>().await;
     }))
