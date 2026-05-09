@@ -12,31 +12,6 @@ use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
 
-/// Newtype wrapping `ashpd::WindowIdentifier` behind an `Arc` so that `Message` can derive
-/// `Clone` and `PartialEq`. `WindowIdentifier` itself implements neither trait.
-/// Equality is pointer-based (two clones of the same Arc are equal; two independently
-/// created identifiers are not). This is sufficient because `WindowIdentifierReady` is
-/// an internal lifecycle message that is never compared in application logic or tests.
-#[derive(Debug, Clone)]
-pub struct WindowIdentifierHandle(Arc<ashpd::WindowIdentifier>);
-
-impl PartialEq for WindowIdentifierHandle {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-#[allow(dead_code)]
-impl WindowIdentifierHandle {
-    pub fn new(wid: ashpd::WindowIdentifier) -> Self {
-        Self(Arc::new(wid))
-    }
-
-    pub fn get(&self) -> &ashpd::WindowIdentifier {
-        &self.0
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
     #[default]
@@ -75,7 +50,6 @@ pub enum Message {
     WindowResized(f32, f32),
     // Window handle acquisition
     WindowOpened(iced::window::Id, f32, f32),
-    WindowIdentifierReady(Option<WindowIdentifierHandle>),
     // Navigation
     ShowSlots,
     ShowMain,
@@ -110,10 +84,6 @@ pub struct HonkHonk {
     context_menu_pos: Option<Point>,
     cursor_pos: Point,
     window_size: (f32, f32),
-    // Placeholder for future use when iced exposes run_with_handle (not in 0.14).
-    // In the current fallback path this always stays None; shortcuts work without it.
-    #[allow(dead_code)]
-    window_identifier: Option<ashpd::WindowIdentifier>,
     shortcuts_warning_dismissed: bool,
     view_mode: ViewMode,
     selected_slot: Option<u8>,
@@ -185,7 +155,6 @@ impl HonkHonk {
             context_menu_pos: None,
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
-            window_identifier: None,
             shortcuts_warning_dismissed: false,
             view_mode: ViewMode::default(),
             selected_slot: None,
@@ -213,7 +182,6 @@ impl HonkHonk {
             context_menu_pos: None,
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
-            window_identifier: None,
             shortcuts_warning_dismissed: false,
             view_mode: ViewMode::default(),
             selected_slot: None,
@@ -456,7 +424,6 @@ impl HonkHonk {
                 // a generic app name in the shortcuts UI instead of "HonkHonk").
                 Task::none()
             }
-            Message::WindowIdentifierReady(_) => Task::none(),
             Message::ShowSlots => {
                 self.view_mode = ViewMode::SlotManager;
                 self.selected_slot = None;
