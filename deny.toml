@@ -24,6 +24,9 @@ ignore = [
     # proc-macro-error is unmaintained; transitive dep, no patched alternative
     # in use by our direct dependencies yet.
     { id = "RUSTSEC-2024-0370", reason = "transitive dep, no patched version available upstream" },
+    # paste is unmaintained; transitive dep via lofty. No fix available without
+    # lofty dropping its paste dependency upstream.
+    { id = "RUSTSEC-2024-0436", reason = "transitive via lofty, no patched version available upstream" },
 ]
 
 # ── Licenses ──────────────────────────────────────────────────────────────────
