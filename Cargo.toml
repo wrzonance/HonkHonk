@@ -9,7 +9,7 @@ repository = "https://github.com/thewrz/HonkHonk"
 
 [dependencies]
 iced = { version = "0.14", features = ["tokio", "tiny-skia"] }
-tray-icon = "0.23"
+tray-icon = "0.24"
 muda = "0.19"
 gtk = "0.18"
 symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
