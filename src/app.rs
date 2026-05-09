@@ -12,6 +12,31 @@ use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
 
+/// Newtype wrapping `ashpd::WindowIdentifier` behind an `Arc` so that `Message` can derive
+/// `Clone` and `PartialEq`. `WindowIdentifier` itself implements neither trait.
+/// Equality is pointer-based (two clones of the same Arc are equal; two independently
+/// created identifiers are not). This is sufficient because `WindowIdentifierReady` is
+/// an internal lifecycle message that is never compared in application logic or tests.
+#[derive(Debug, Clone)]
+pub struct WindowIdentifierHandle(Arc<ashpd::WindowIdentifier>);
+
+impl PartialEq for WindowIdentifierHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+#[allow(dead_code)]
+impl WindowIdentifierHandle {
+    pub fn new(wid: ashpd::WindowIdentifier) -> Self {
+        Self(Arc::new(wid))
+    }
+
+    pub fn get(&self) -> &ashpd::WindowIdentifier {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
     #[default]
@@ -48,6 +73,9 @@ pub enum Message {
     // Window / cursor
     CursorMoved(Point),
     WindowResized(f32, f32),
+    // Window handle acquisition
+    WindowOpened(iced::window::Id, f32, f32),
+    WindowIdentifierReady(Option<WindowIdentifierHandle>),
     // Navigation
     ShowSlots,
     ShowMain,
@@ -82,17 +110,23 @@ pub struct HonkHonk {
     context_menu_pos: Option<Point>,
     cursor_pos: Point,
     window_size: (f32, f32),
+    // Placeholder for future use when iced exposes run_with_handle (not in 0.14).
+    // In the current fallback path this always stays None; shortcuts work without it.
+    #[allow(dead_code)]
+    window_identifier: Option<ashpd::WindowIdentifier>,
     shortcuts_warning_dismissed: bool,
     view_mode: ViewMode,
     selected_slot: Option<u8>,
 }
 
-fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
+fn shortcuts_stream_sub(
+    window_id: Option<ashpd::WindowIdentifier>,
+) -> impl iced::futures::Stream<Item = Message> {
     use iced::futures::SinkExt;
     use iced::futures::StreamExt;
-    iced::stream::channel(16, async |mut tx| {
+    iced::stream::channel(16, async move |mut tx| {
         use crate::shortcuts::{portal, ShortcutEvent};
-        let stream = portal::shortcut_stream(None);
+        let stream = portal::shortcut_stream(window_id);
         let mut stream = std::pin::pin!(stream);
         while let Some(ev) = stream.next().await {
             let msg = match ev {
@@ -114,6 +148,13 @@ fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
             .await;
         iced::futures::future::pending::<()>().await;
     })
+}
+
+/// Zero-arg wrapper for `Subscription::run` (which requires a fn pointer, not a closure).
+/// Passes `None` as the window identifier — iced 0.14 does not expose `run_with_handle`,
+/// so we cannot acquire a Wayland surface handle from this side of the API.
+fn shortcuts_stream_sub_none() -> impl iced::futures::Stream<Item = Message> {
+    shortcuts_stream_sub(None)
 }
 
 impl HonkHonk {
@@ -144,6 +185,7 @@ impl HonkHonk {
             context_menu_pos: None,
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
+            window_identifier: None,
             shortcuts_warning_dismissed: false,
             view_mode: ViewMode::default(),
             selected_slot: None,
@@ -171,6 +213,7 @@ impl HonkHonk {
             context_menu_pos: None,
             cursor_pos: Point::ORIGIN,
             window_size: (1280.0, 800.0),
+            window_identifier: None,
             shortcuts_warning_dismissed: false,
             view_mode: ViewMode::default(),
             selected_slot: None,
@@ -406,6 +449,14 @@ impl HonkHonk {
                 self.window_size = (w, h);
                 Task::none()
             }
+            Message::WindowOpened(_, w, h) => {
+                self.window_size = (w, h);
+                // iced 0.14 does not expose run_with_handle; window_identifier stays None.
+                // Shortcuts register without a parent window (functional, KDE may show
+                // a generic app name in the shortcuts UI instead of "HonkHonk").
+                Task::none()
+            }
+            Message::WindowIdentifierReady(_) => Task::none(),
             Message::ShowSlots => {
                 self.view_mode = ViewMode::SlotManager;
                 self.selected_slot = None;
@@ -533,12 +584,14 @@ impl HonkHonk {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let shortcuts = Subscription::run(shortcuts_stream_sub);
+        // iced 0.14 does not expose run_with_handle, so window_identifier stays None.
+        // We run the subscription unconditionally (no gating) to keep shortcuts functional.
+        let shortcuts = Subscription::run(shortcuts_stream_sub_none);
 
         let tray_poll =
             iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
 
-        let events = iced::event::listen_with(|event, _, _| match event {
+        let events = iced::event::listen_with(|event, _, window_id| match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                 ..
@@ -547,7 +600,7 @@ impl HonkHonk {
                 Some(Message::CursorMoved(position))
             }
             iced::Event::Window(iced::window::Event::Opened { size, .. }) => {
-                Some(Message::WindowResized(size.width, size.height))
+                Some(Message::WindowOpened(window_id, size.width, size.height))
             }
             iced::Event::Window(iced::window::Event::Resized(size)) => {
                 Some(Message::WindowResized(size.width, size.height))
