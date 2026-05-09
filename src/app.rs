@@ -38,6 +38,7 @@ pub enum Message {
     DismissShortcutsWarning,
     // Shortcut activation
     ShortcutActivated(u8),
+    ShortcutBindingsUpdated(Vec<(u8, String)>),
     // Slot assignment
     AssignSlot(u8, std::path::PathBuf),
     ClearSlot(u8),
@@ -75,6 +76,7 @@ pub struct HonkHonk {
     search_query: String,
     progress: f32,
     slots: SlotMap,
+    slot_triggers: [Option<String>; 20],
     shortcuts_status: ShortcutsStatus,
     context_menu: Option<String>,
     context_menu_pos: Option<Point>,
@@ -85,17 +87,20 @@ pub struct HonkHonk {
     selected_slot: Option<u8>,
 }
 
-fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
+fn shortcuts_stream_sub(
+    window_id: Option<ashpd::WindowIdentifier>,
+) -> impl iced::futures::Stream<Item = Message> {
     use iced::futures::SinkExt;
     use iced::futures::StreamExt;
-    iced::stream::channel(16, async |mut tx| {
+    iced::stream::channel(16, async move |mut tx| {
         use crate::shortcuts::{portal, ShortcutEvent};
-        let stream = portal::shortcut_stream();
+        let stream = portal::shortcut_stream(window_id);
         let mut stream = std::pin::pin!(stream);
         while let Some(ev) = stream.next().await {
             let msg = match ev {
                 ShortcutEvent::Ready => Message::ShortcutsReady,
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
+                ShortcutEvent::Bindings(b) => Message::ShortcutBindingsUpdated(b),
                 ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
             };
             if tx.send(msg).await.is_err() {
@@ -111,6 +116,13 @@ fn shortcuts_stream_sub() -> impl iced::futures::Stream<Item = Message> {
             .await;
         iced::futures::future::pending::<()>().await;
     })
+}
+
+/// Zero-arg wrapper for `Subscription::run` (which requires a fn pointer, not a closure).
+/// Passes `None` as the window identifier — iced 0.14 does not expose `run_with_handle`,
+/// so we cannot acquire a Wayland surface handle from this side of the API.
+fn shortcuts_stream_sub_none() -> impl iced::futures::Stream<Item = Message> {
+    shortcuts_stream_sub(None)
 }
 
 impl HonkHonk {
@@ -135,6 +147,7 @@ impl HonkHonk {
             search_query: String::new(),
             progress: 0.0,
             slots,
+            slot_triggers: std::array::from_fn(|_| None),
             shortcuts_status: ShortcutsStatus::Initializing,
             context_menu: None,
             context_menu_pos: None,
@@ -161,6 +174,7 @@ impl HonkHonk {
             search_query: String::new(),
             progress: 0.0,
             slots: SlotMap::default(),
+            slot_triggers: std::array::from_fn(|_| None),
             shortcuts_status: ShortcutsStatus::Initializing,
             context_menu: None,
             context_menu_pos: None,
@@ -202,6 +216,10 @@ impl HonkHonk {
 
     pub fn slots(&self) -> &SlotMap {
         &self.slots
+    }
+
+    pub fn slot_triggers(&self) -> &[Option<String>; 20] {
+        &self.slot_triggers
     }
 
     pub fn context_menu(&self) -> Option<&str> {
@@ -353,6 +371,14 @@ impl HonkHonk {
                         if let Err(e) = self.slots.save() {
                             eprintln!("honkhonk: slots save error: {e}");
                         }
+                    }
+                }
+                Task::none()
+            }
+            Message::ShortcutBindingsUpdated(bindings) => {
+                for (idx, trigger) in bindings {
+                    if let Some(slot) = self.slot_triggers.get_mut(idx as usize) {
+                        *slot = Some(trigger);
                     }
                 }
                 Task::none()
@@ -516,12 +542,14 @@ impl HonkHonk {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let shortcuts = Subscription::run(shortcuts_stream_sub);
+        // iced 0.14 does not expose run_with_handle, so window_identifier stays None.
+        // We run the subscription unconditionally (no gating) to keep shortcuts functional.
+        let shortcuts = Subscription::run(shortcuts_stream_sub_none);
 
         let tray_poll =
             iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
 
-        let events = iced::event::listen_with(|event, _, _| match event {
+        let events = iced::event::listen_with(|event, _, _window_id| match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                 ..
@@ -631,7 +659,13 @@ impl HonkHonk {
             ViewMode::Main => self.view_main(),
             ViewMode::SlotManager => {
                 let t = theme::Theme::Dark;
-                slot_manager::view_slot_manager(&self.slots, &self.sounds, self.selected_slot, t)
+                slot_manager::view_slot_manager(
+                    &self.slots,
+                    &self.slot_triggers,
+                    &self.sounds,
+                    self.selected_slot,
+                    t,
+                )
             }
         }
     }
@@ -964,5 +998,24 @@ mod tests {
         let _ = app.update(Message::ClearSlot(3));
         assert_eq!(app.selected_slot(), Some(3));
         assert!(app.slots().get(3).is_none());
+    }
+
+    #[test]
+    fn shortcut_bindings_updated_stores_triggers() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutBindingsUpdated(vec![
+            (0, "Meta+1".into()),
+            (4, "Ctrl+5".into()),
+        ]));
+        assert_eq!(app.slot_triggers()[0].as_deref(), Some("Meta+1"));
+        assert_eq!(app.slot_triggers()[4].as_deref(), Some("Ctrl+5"));
+        assert!(app.slot_triggers()[1].is_none());
+    }
+
+    #[test]
+    fn shortcut_bindings_updated_ignores_out_of_range() {
+        let mut app = HonkHonk::new_for_test();
+        // slot index 20 is out of range — should not panic
+        let _ = app.update(Message::ShortcutBindingsUpdated(vec![(20, "X".into())]));
     }
 }

@@ -21,6 +21,7 @@ fn tone_for(sound: &SoundEntry) -> Tone {
 
 pub fn view_slot_manager<'a>(
     slots: &'a SlotMap,
+    slot_triggers: &'a [Option<String>; 20],
     sounds: &'a [SoundEntry],
     selected_slot: Option<u8>,
     t: Theme,
@@ -34,8 +35,8 @@ pub fn view_slot_manager<'a>(
             background: Some(theme::bg_color(t.hairline())),
             ..Default::default()
         });
-    let grid = slot_grid(slots, sounds, selected_slot, t);
-    let side = sidebar(slots, sounds, selected_slot, t);
+    let grid = slot_grid(slots, slot_triggers, sounds, selected_slot, t);
+    let side = sidebar(slots, slot_triggers, sounds, selected_slot, t);
     let body = row![grid, divider, side].height(Length::Fill);
     container(column![header, body].height(Length::Fill))
         .width(Length::Fill)
@@ -89,6 +90,7 @@ fn slot_header<'a>(bound_count: usize, t: Theme) -> Element<'a, Message> {
 
 fn slot_grid<'a>(
     slots: &'a SlotMap,
+    slot_triggers: &'a [Option<String>; 20],
     sounds: &'a [SoundEntry],
     selected_slot: Option<u8>,
     t: Theme,
@@ -101,7 +103,7 @@ fn slot_grid<'a>(
                     let sound = slots
                         .get(idx)
                         .and_then(|p| sounds.iter().find(|s| &s.path == p));
-                    slot_tile(idx, sound, selected_slot == Some(idx), t)
+                    slot_tile(idx, sound, slot_triggers, selected_slot == Some(idx), t)
                 })
                 .collect();
             Row::with_children(tiles).spacing(theme::space::MD).into()
@@ -121,11 +123,12 @@ fn slot_grid<'a>(
 fn slot_tile<'a>(
     idx: u8,
     sound: Option<&'a SoundEntry>,
+    slot_triggers: &'a [Option<String>; 20],
     selected: bool,
     t: Theme,
 ) -> Element<'a, Message> {
     match sound {
-        Some(s) => bound_tile(idx, s, selected, t),
+        Some(s) => bound_tile(idx, s, slot_triggers[idx as usize].as_deref(), selected, t),
         None => empty_tile(idx, selected, t),
     }
 }
@@ -149,6 +152,7 @@ fn tone_circle<'a>(tone: Tone, size: f32, t: Theme) -> Element<'a, Message> {
 fn bound_tile<'a>(
     idx: u8,
     sound: &'a SoundEntry,
+    trigger: Option<&'a str>,
     selected: bool,
     t: Theme,
 ) -> Element<'a, Message> {
@@ -174,7 +178,9 @@ fn bound_tile<'a>(
                 .color(t.ink_faint()),
             tone_circle(tone, 40.0, t),
             text(sound.name.clone()).size(11).color(t.ink()),
-            text("no hotkey").size(10).color(t.ink_faint()),
+            text(trigger.unwrap_or("no hotkey"))
+                .size(10)
+                .color(t.ink_faint()),
         ]
         .spacing(4)
         .align_x(iced::Alignment::Center)
@@ -250,8 +256,8 @@ fn sound_header<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
         .into()
 }
 
-fn sidebar_bound_hotkey<'a>(t: Theme) -> Element<'a, Message> {
-    container(text("—").size(13).color(t.ink()))
+fn sidebar_bound_hotkey<'a>(trigger: Option<&'a str>, t: Theme) -> Element<'a, Message> {
+    container(text(trigger.unwrap_or("—")).size(13).color(t.ink()))
         .padding([theme::space::SM, theme::space::MD])
         .width(Length::Fill)
         .style(move |_t| container::Style {
@@ -296,11 +302,16 @@ fn sidebar_bound_portal<'a>(t: Theme) -> Element<'a, Message> {
     .into()
 }
 
-fn sidebar_bound<'a>(idx: u8, sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
+fn sidebar_bound<'a>(
+    idx: u8,
+    sound: &'a SoundEntry,
+    trigger: Option<&'a str>,
+    t: Theme,
+) -> Element<'a, Message> {
     let slot_label = text(format!("SLOT #{:02}", idx + 1))
         .size(10)
         .color(t.ink_dim());
-    let hk_display = sidebar_bound_hotkey(t);
+    let hk_display = sidebar_bound_hotkey(trigger, t);
     let portal = sidebar_bound_portal(t);
     let unbind = button(
         text("Unbind")
@@ -365,6 +376,7 @@ fn sidebar_empty<'a>(idx: u8, t: Theme) -> Element<'a, Message> {
 
 fn sidebar<'a>(
     slots: &'a SlotMap,
+    slot_triggers: &'a [Option<String>; 20],
     sounds: &'a [SoundEntry],
     selected_slot: Option<u8>,
     t: Theme,
@@ -379,7 +391,10 @@ fn sidebar<'a>(
                 .get(idx)
                 .and_then(|p| sounds.iter().find(|s| &s.path == p));
             match sound {
-                Some(s) => sidebar_bound(idx, s, t),
+                Some(s) => {
+                    let trigger = slot_triggers.get(idx as usize).and_then(|t| t.as_deref());
+                    sidebar_bound(idx, s, trigger, t)
+                }
                 None => sidebar_empty(idx, t),
             }
         }
