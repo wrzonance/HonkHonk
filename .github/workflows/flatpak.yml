@@ -45,7 +45,7 @@ jobs:
           flatpak build-bundle repo honkhonk.flatpak io.github.thewrz.HonkHonk
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: honkhonk-flatpak-${{ github.ref_name }}
           path: honkhonk.flatpak
