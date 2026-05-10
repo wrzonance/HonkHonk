@@ -47,7 +47,7 @@ fn settings_header(t: Theme) -> Element<'static, Message> {
                 ..Default::default()
             })
             .color(t.ink()),
-        text("· tweak the honk").size(12).color(t.ink_dim()),
+        text(" ruffle feathers").size(12).color(t.ink_dim()),
     ]
     .spacing(theme::space::MD)
     .align_y(Alignment::Center);
