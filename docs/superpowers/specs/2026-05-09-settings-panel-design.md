@@ -132,7 +132,7 @@ Layout:
 view_settings(state, theme)
   ├── settings_header()
   │     ├── "← Back to sounds" button → Message::ShowMain
-  │     └── "Settings · tweak the honk" title
+  │     └── "Settings  ruffle feathers" title
   └── row![
         settings_sidebar(active_section, theme)   220px fixed
           └── 5 nav items (always all 5, always visible)
