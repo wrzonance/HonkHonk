@@ -125,7 +125,7 @@ function SettingsPanel({ dark, density, view, frameW = 1180, frameH = 760 }) {
         </button>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.025em', fontStyle: 'italic' }}>Settings</div>
-          <div style={{ fontSize: 12, color: theme.inkDim, fontWeight: 500 }}>· tweak the honk</div>
+          <div style={{ fontSize: 12, color: theme.inkDim, fontWeight: 500 }}> ruffle feathers</div>
         </div>
         <div style={{ flex: 1 }}/>
         <div style={{ transform: 'rotate(8deg)', opacity: 0.7 }}>
