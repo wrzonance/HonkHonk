@@ -599,10 +599,17 @@ impl HonkHonk {
                 ..Default::default()
             });
 
-        row![title, slots_btn, settings_btn, space::horizontal(), search, stop_btn]
-            .spacing(theme::space::LG)
-            .align_y(iced::Alignment::Center)
-            .into()
+        row![
+            title,
+            slots_btn,
+            settings_btn,
+            space::horizontal(),
+            search,
+            stop_btn
+        ]
+        .spacing(theme::space::LG)
+        .align_y(iced::Alignment::Center)
+        .into()
     }
 
     fn view_category_chips(&self, t: theme::Theme) -> Element<'_, Message> {
@@ -1221,7 +1228,10 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         app.durations_loaded = true;
         let _ = app.update(Message::RescanLibrary);
-        assert!(!app.durations_loaded, "RescanLibrary must reset durations_loaded");
+        assert!(
+            !app.durations_loaded,
+            "RescanLibrary must reset durations_loaded"
+        );
     }
 
     #[test]
