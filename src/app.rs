@@ -17,6 +17,17 @@ pub enum ViewMode {
     #[default]
     Main,
     SlotManager,
+    Settings,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SettingsSection {
+    #[default]
+    Audio,
+    Library,
+    Hotkeys,
+    Appearance,
+    About,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +65,14 @@ pub enum Message {
     ShowSlots,
     ShowMain,
     SelectSlot(u8),
+    // Settings navigation
+    ShowSettings,
+    ShowSettingsSection(SettingsSection),
+    // Library management
+    RescanLibrary,
+    AddSoundDirectory,
+    SoundDirectoryPickResult(Option<std::path::PathBuf>),
+    RemoveSoundDirectory(std::path::PathBuf),
 }
 
 impl Message {
@@ -71,15 +90,15 @@ pub struct HonkHonk {
     tray_rx: Arc<Mutex<Receiver<TrayEvent>>>,
     _tray: Option<TrayHandle>,
     audio: Option<AudioHandle>,
-    sounds: Vec<SoundEntry>,
+    pub(crate) sounds: Vec<SoundEntry>,
     playing: Option<String>,
     active_category: Option<String>,
-    config: AppConfig,
+    pub(crate) config: AppConfig,
     search_query: String,
     progress: f32,
     slots: SlotMap,
-    slot_triggers: [Option<String>; 20],
-    shortcuts_status: ShortcutsStatus,
+    pub(crate) slot_triggers: [Option<String>; 20],
+    pub(crate) shortcuts_status: ShortcutsStatus,
     context_menu: Option<String>,
     context_menu_pos: Option<Point>,
     cursor_pos: Point,
@@ -89,6 +108,7 @@ pub struct HonkHonk {
     duration_scan_pairs: std::sync::Arc<Vec<(String, std::path::PathBuf)>>,
     view_mode: ViewMode,
     selected_slot: Option<u8>,
+    pub(crate) settings_section: SettingsSection,
 }
 
 fn shortcuts_stream_sub(
@@ -149,6 +169,23 @@ fn duration_scan_builder(
     }))
 }
 
+async fn pick_directory() -> Option<std::path::PathBuf> {
+    use ashpd::desktop::file_chooser::SelectedFiles;
+    let files = SelectedFiles::open_file()
+        .title("Select Sound Folder")
+        .directory(true)
+        .send()
+        .await
+        .ok()?
+        .response()
+        .ok()?;
+    files
+        .uris()
+        .first()
+        .and_then(|uri| url::Url::parse(uri.as_str()).ok())
+        .and_then(|u| u.to_file_path().ok())
+}
+
 impl HonkHonk {
     pub fn new(
         mut tray: TrayHandle,
@@ -188,6 +225,7 @@ impl HonkHonk {
             duration_scan_pairs,
             view_mode: ViewMode::default(),
             selected_slot: None,
+            settings_section: SettingsSection::default(),
         }
     }
 
@@ -217,6 +255,7 @@ impl HonkHonk {
             duration_scan_pairs: std::sync::Arc::new(Vec::new()),
             view_mode: ViewMode::default(),
             selected_slot: None,
+            settings_section: SettingsSection::default(),
         }
     }
 
@@ -465,9 +504,52 @@ impl HonkHonk {
                 self.selected_slot = None;
                 Task::none()
             }
+            Message::ShowSettings => {
+                self.view_mode = ViewMode::Settings;
+                self.settings_section = SettingsSection::Audio;
+                Task::none()
+            }
+            Message::ShowSettingsSection(section) => {
+                self.settings_section = section;
+                Task::none()
+            }
             Message::SelectSlot(idx) => {
                 self.selected_slot = Some(idx);
                 Task::none()
+            }
+            Message::RescanLibrary => {
+                let new_sounds =
+                    crate::state::Library::scan(&self.config.sound_directories).unwrap_or_default();
+                let pairs: Vec<(String, std::path::PathBuf)> = new_sounds
+                    .iter()
+                    .map(|s| (s.id.clone(), s.path.clone()))
+                    .collect();
+                self.sounds = new_sounds;
+                self.duration_scan_pairs = std::sync::Arc::new(pairs);
+                self.durations_loaded = false;
+                Task::none()
+            }
+            Message::AddSoundDirectory => {
+                Task::perform(pick_directory(), Message::SoundDirectoryPickResult)
+            }
+            Message::SoundDirectoryPickResult(Some(path)) => {
+                if !self.config.sound_directories.contains(&path) {
+                    self.config.sound_directories.push(path);
+                    if let Err(e) = self.config.save() {
+                        eprintln!("honkhonk: config save error: {e}");
+                    }
+                    self.update(Message::RescanLibrary)
+                } else {
+                    Task::none()
+                }
+            }
+            Message::SoundDirectoryPickResult(None) => Task::none(),
+            Message::RemoveSoundDirectory(path) => {
+                self.config.sound_directories.retain(|p| p != &path);
+                if let Err(e) = self.config.save() {
+                    eprintln!("honkhonk: config save error: {e}");
+                }
+                self.update(Message::RescanLibrary)
             }
         }
     }
@@ -505,6 +587,15 @@ impl HonkHonk {
                 ..Default::default()
             });
 
+        let settings_btn = button(text("Settings").size(14).color(t.ink()))
+            .on_press(Message::ShowSettings)
+            .style(move |_theme, _status| button::Style {
+                background: Some(theme::bg_color(t.panel())),
+                text_color: t.ink(),
+                border: theme::tile_border(t.hairline(), 1.0),
+                ..Default::default()
+            });
+
         let search = search_bar::view_search_bar(&self.search_query);
 
         let stop_btn = button(text("Stop All").size(14).color(t.ink()))
@@ -516,10 +607,17 @@ impl HonkHonk {
                 ..Default::default()
             });
 
-        row![title, slots_btn, space::horizontal(), search, stop_btn]
-            .spacing(theme::space::LG)
-            .align_y(iced::Alignment::Center)
-            .into()
+        row![
+            title,
+            slots_btn,
+            settings_btn,
+            space::horizontal(),
+            search,
+            stop_btn
+        ]
+        .spacing(theme::space::LG)
+        .align_y(iced::Alignment::Center)
+        .into()
     }
 
     fn view_category_chips(&self, t: theme::Theme) -> Element<'_, Message> {
@@ -715,6 +813,9 @@ impl HonkHonk {
                     self.selected_slot,
                     t,
                 )
+            }
+            ViewMode::Settings => {
+                crate::ui::settings::view_settings(self, crate::ui::theme::Theme::Dark)
             }
         }
     }
@@ -1099,5 +1200,72 @@ mod tests {
         let map = std::collections::HashMap::from([("no-match".to_string(), 999u64)]);
         let _ = app.update(Message::DurationsLoaded(map));
         assert_eq!(app.sounds[0].duration_ms, None);
+    }
+
+    #[test]
+    fn show_settings_sets_view_mode() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShowSettings);
+        assert!(matches!(app.view_mode, ViewMode::Settings));
+    }
+
+    #[test]
+    fn show_settings_defaults_section_to_audio() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShowSettings);
+        assert!(matches!(app.settings_section, SettingsSection::Audio));
+    }
+
+    #[test]
+    fn show_settings_section_updates_active_section() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShowSettingsSection(SettingsSection::Library));
+        assert!(matches!(app.settings_section, SettingsSection::Library));
+    }
+
+    #[test]
+    fn show_main_from_settings_resets_view_mode() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShowSettings);
+        let _ = app.update(Message::ShowMain);
+        assert!(matches!(app.view_mode, ViewMode::Main));
+    }
+
+    #[test]
+    fn rescan_library_resets_durations_loaded() {
+        let mut app = HonkHonk::new_for_test();
+        app.durations_loaded = true;
+        let _ = app.update(Message::RescanLibrary);
+        assert!(
+            !app.durations_loaded,
+            "RescanLibrary must reset durations_loaded"
+        );
+    }
+
+    #[test]
+    fn remove_sound_directory_removes_path() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/hh_test_sounds");
+        app.config.sound_directories.push(path.clone());
+        let _ = app.update(Message::RemoveSoundDirectory(path.clone()));
+        assert!(!app.config.sound_directories.contains(&path));
+    }
+
+    #[test]
+    fn sound_directory_pick_some_appends_to_config() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/hh_new_sounds");
+        let before = app.config.sound_directories.len();
+        let _ = app.update(Message::SoundDirectoryPickResult(Some(path.clone())));
+        assert_eq!(app.config.sound_directories.len(), before + 1);
+        assert!(app.config.sound_directories.contains(&path));
+    }
+
+    #[test]
+    fn sound_directory_pick_none_is_noop() {
+        let mut app = HonkHonk::new_for_test();
+        let before = app.config.sound_directories.clone();
+        let _ = app.update(Message::SoundDirectoryPickResult(None));
+        assert_eq!(app.config.sound_directories, before);
     }
 }
