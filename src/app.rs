@@ -579,6 +579,15 @@ impl HonkHonk {
                 ..Default::default()
             });
 
+        let settings_btn = button(text("Settings").size(14).color(t.ink()))
+            .on_press(Message::ShowSettings)
+            .style(move |_theme, _status| button::Style {
+                background: Some(theme::bg_color(t.panel())),
+                text_color: t.ink(),
+                border: theme::tile_border(t.hairline(), 1.0),
+                ..Default::default()
+            });
+
         let search = search_bar::view_search_bar(&self.search_query);
 
         let stop_btn = button(text("Stop All").size(14).color(t.ink()))
@@ -590,7 +599,7 @@ impl HonkHonk {
                 ..Default::default()
             });
 
-        row![title, slots_btn, space::horizontal(), search, stop_btn]
+        row![title, slots_btn, settings_btn, space::horizontal(), search, stop_btn]
             .spacing(theme::space::LG)
             .align_y(iced::Alignment::Center)
             .into()
@@ -791,8 +800,7 @@ impl HonkHonk {
                 )
             }
             ViewMode::Settings => {
-                // Placeholder — settings UI module wired in Task 4
-                text("Settings").into()
+                crate::ui::settings::view_settings(self, crate::ui::theme::Theme::Dark)
             }
         }
     }
