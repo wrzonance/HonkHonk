@@ -169,21 +169,35 @@ fn duration_scan_builder(
     }))
 }
 
-async fn pick_directory() -> Option<std::path::PathBuf> {
+async fn pick_directory() -> anyhow::Result<Option<std::path::PathBuf>> {
+    use anyhow::Context;
     use ashpd::desktop::file_chooser::SelectedFiles;
-    let files = SelectedFiles::open_file()
+
+    let request = SelectedFiles::open_file()
         .title("Select Sound Folder")
         .directory(true)
         .send()
         .await
-        .ok()?
-        .response()
-        .ok()?;
-    files
-        .uris()
-        .first()
-        .and_then(|uri| url::Url::parse(uri.as_str()).ok())
-        .and_then(|u| u.to_file_path().ok())
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("file chooser portal send failed")?;
+
+    let files = match request.response() {
+        Ok(f) => f,
+        Err(ashpd::Error::Response(_)) => return Ok(None), // user cancelled
+        Err(e) => return Err(anyhow::anyhow!(e).context("file chooser response failed")),
+    };
+
+    let uri = match files.uris().first() {
+        Some(u) => u.clone(),
+        None => return Ok(None),
+    };
+
+    let url = url::Url::parse(uri.as_str())
+        .with_context(|| format!("parsing file URI: {uri}"))?;
+
+    url.to_file_path()
+        .map(|p| Some(p))
+        .map_err(|_| anyhow::anyhow!("URI is not a file:// path: {uri}"))
 }
 
 impl HonkHonk {
@@ -519,7 +533,16 @@ impl HonkHonk {
             }
             Message::RescanLibrary => {
                 let new_sounds =
-                    crate::state::Library::scan(&self.config.sound_directories).unwrap_or_default();
+                    match crate::state::Library::scan(&self.config.sound_directories) {
+                        Ok(sounds) => sounds,
+                        Err(e) => {
+                            eprintln!(
+                                "honkhonk: library rescan failed for {:?}: {e}",
+                                self.config.sound_directories
+                            );
+                            return Task::none();
+                        }
+                    };
                 let pairs: Vec<(String, std::path::PathBuf)> = new_sounds
                     .iter()
                     .map(|s| (s.id.clone(), s.path.clone()))
@@ -529,9 +552,18 @@ impl HonkHonk {
                 self.durations_loaded = false;
                 Task::none()
             }
-            Message::AddSoundDirectory => {
-                Task::perform(pick_directory(), Message::SoundDirectoryPickResult)
-            }
+            Message::AddSoundDirectory => Task::perform(
+                async {
+                    match pick_directory().await {
+                        Ok(opt) => opt,
+                        Err(e) => {
+                            eprintln!("honkhonk: directory picker error: {e:#}");
+                            None
+                        }
+                    }
+                },
+                Message::SoundDirectoryPickResult,
+            ),
             Message::SoundDirectoryPickResult(Some(path)) => {
                 if !self.config.sound_directories.contains(&path) {
                     self.config.sound_directories.push(path);
