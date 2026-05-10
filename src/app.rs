@@ -182,11 +182,8 @@ async fn pick_directory() -> Option<std::path::PathBuf> {
     files
         .uris()
         .first()
-        .and_then(|uri| {
-            // ashpd 0.13 Uri has only as_str(); parse file:// prefix manually
-            let s = uri.as_str();
-            s.strip_prefix("file://").map(std::path::PathBuf::from)
-        })
+        .and_then(|uri| url::Url::parse(uri.as_str()).ok())
+        .and_then(|u| u.to_file_path().ok())
 }
 
 impl HonkHonk {
