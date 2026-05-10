@@ -368,6 +368,7 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     .padding([9.0, 12.0])
     .style(move |_t, _s| button::Style {
         background: None,
+        // Iced Border has no dash/style field — solid hairline approximates the dashed design intent
         border: iced::Border {
             color: t.hairline2(),
             width: 1.5,
