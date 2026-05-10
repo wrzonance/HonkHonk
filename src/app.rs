@@ -790,6 +790,7 @@ impl HonkHonk {
             &filtered,
             self.playing.as_deref(),
             &self.slots,
+            &self.slot_triggers,
             matches!(self.shortcuts_status, ShortcutsStatus::Active),
         );
 
@@ -823,8 +824,14 @@ impl HonkHonk {
         // Overlay context menu at window level so cursor coords map exactly.
         if let (Some(ref sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
             let found = self.sounds.iter().find(|s| s.id == *sound_id);
-            let overlay =
-                sound_grid::context_menu_overlay(found, &self.slots, t, pos, self.window_size);
+            let overlay = sound_grid::context_menu_overlay(
+                found,
+                &self.slots,
+                &self.slot_triggers,
+                t,
+                pos,
+                self.window_size,
+            );
             iced::widget::stack![base, overlay].into()
         } else {
             base.into()
