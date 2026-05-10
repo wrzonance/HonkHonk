@@ -198,7 +198,12 @@ pub fn get_setting_value(id: SettingId, _state: &HonkHonk) -> SettingValue {
 pub fn setting_message(id: SettingId, _value: SettingValue) -> Message {
     match id {
         SettingId::RescanLibrary => Message::RescanLibrary,
-        _ => Message::RescanLibrary,
+        // All other IDs are unwired stubs — no SettingDef renders them yet.
+        // If this arm fires, a SettingDef was added without updating this function.
+        _ => {
+            debug_assert!(false, "setting_message: unhandled SettingId {:?}", id);
+            Message::RescanLibrary
+        }
     }
 }
 
