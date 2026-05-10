@@ -5,7 +5,7 @@ use iced::{
 };
 
 use crate::app::{HonkHonk, Message, SettingsSection};
-use crate::settings::{ControlType, SettingDef, SettingId, SettingValue};
+use crate::settings::{ControlType, SettingCategory, SettingDef, SettingId, SettingValue, SETTINGS_REGISTRY};
 use crate::ui::theme::{self, Hh, Theme};
 
 /// Top-level settings view — full window swap.
@@ -244,27 +244,259 @@ fn section_layout<'a>(
 
 // --- Section stubs (replaced in Tasks 5 and 6) ---
 
-pub fn view_audio_section<'a>(_state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
-    section_layout("Audio", "Where HonkHonk listens and speaks.", column![].into(), t)
+pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
+    // Status badge — always active if user reached settings
+    let dot = container(iced::widget::Space::new())
+        .width(8.0)
+        .height(8.0)
+        .style(move |_t| container::Style {
+            background: Some(theme::bg_color(t.good())),
+            border: iced::Border {
+                radius: iced::border::Radius::from(4.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+    let status_badge = container(
+        column![
+            row![
+                dot,
+                text("Audio engine active")
+                    .size(12)
+                    .color(t.ink())
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    }),
+            ]
+            .spacing(theme::space::SM)
+            .align_y(Alignment::Center),
+            text("honkhonk-mix · honkhonk-mic")
+                .size(11)
+                .color(t.ink_dim())
+                .font(iced::Font {
+                    family: iced::font::Family::Monospace,
+                    ..Default::default()
+                }),
+        ]
+        .spacing(theme::space::XS),
+    )
+    .padding(theme::space::MD)
+    .style(move |_t| container::Style {
+        background: Some(theme::bg_color(t.panel())),
+        border: iced::Border {
+            color: t.hairline(),
+            width: 1.0,
+            radius: theme::radius::MD,
+        },
+        ..Default::default()
+    });
+
+    // Registry rows for Audio — empty in Phase 2, populated by issues #71/#72
+    let registry_rows = SETTINGS_REGISTRY
+        .iter()
+        .filter(|d| matches!(d.category, SettingCategory::Audio))
+        .fold(column![].spacing(0.0), |col, def| {
+            col.push(render_setting_row(def, state, t))
+        });
+
+    section_layout(
+        "Audio",
+        "Where HonkHonk listens and speaks.",
+        column![status_badge, registry_rows]
+            .spacing(theme::space::LG)
+            .into(),
+        t,
+    )
 }
 
 pub fn view_library_section<'a>(_state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
     section_layout("Library", "Where HonkHonk looks for your sounds.", column![].into(), t)
 }
 
-pub fn view_hotkeys_section<'a>(_state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
+pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
+    use crate::shortcuts::ShortcutsStatus;
+
+    let (dot_color, status_text) = match &state.shortcuts_status {
+        ShortcutsStatus::Active => (t.good(), "Connected to KDE portal"),
+        ShortcutsStatus::Initializing => (t.ink_dim(), "Connecting to portal…"),
+        ShortcutsStatus::Unavailable(_) => (t.accent(), "Portal unavailable"),
+    };
+
+    let dot = container(iced::widget::Space::new())
+        .width(8.0)
+        .height(8.0)
+        .style(move |_t| container::Style {
+            background: Some(theme::bg_color(dot_color)),
+            border: iced::Border {
+                radius: iced::border::Radius::from(4.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+    let portal_badge = container(
+        row![
+            dot,
+            text(status_text)
+                .size(12)
+                .color(t.ink())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                }),
+        ]
+        .spacing(theme::space::SM)
+        .align_y(Alignment::Center),
+    )
+    .padding(theme::space::MD)
+    .style(move |_t| container::Style {
+        background: Some(theme::bg_color(t.panel())),
+        border: iced::Border {
+            color: t.hairline(),
+            width: 1.0,
+            radius: theme::radius::MD,
+        },
+        ..Default::default()
+    });
+
+    // Slot bindings table — read-only, from portal-assigned triggers
+    let bound: Vec<(u8, &str)> = state
+        .slot_triggers
+        .iter()
+        .enumerate()
+        .filter_map(|(i, opt)| opt.as_deref().map(|s| (i as u8, s)))
+        .collect();
+
+    let binding_rows: Vec<Element<'_, Message>> = if bound.is_empty() {
+        vec![text("No hotkeys assigned yet. Use the Slot Manager to bind sounds.")
+            .size(12)
+            .color(t.ink_dim())
+            .into()]
+    } else {
+        bound
+            .into_iter()
+            .map(|(slot, trigger)| {
+                container(
+                    row![
+                        text(format!("Slot {}", slot + 1))
+                            .size(12)
+                            .color(t.ink_dim())
+                            .width(Length::Fixed(60.0)),
+                        text(trigger)
+                            .size(12)
+                            .color(t.ink())
+                            .font(iced::Font {
+                                family: iced::font::Family::Monospace,
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            }),
+                    ]
+                    .spacing(theme::space::MD)
+                    .align_y(Alignment::Center),
+                )
+                .padding([6.0, 12.0])
+                .style(move |_t| container::Style {
+                    background: Some(theme::bg_color(t.panel())),
+                    border: iced::Border {
+                        color: t.hairline(),
+                        width: 1.0,
+                        radius: theme::radius::MD,
+                    },
+                    ..Default::default()
+                })
+                .into()
+            })
+            .collect()
+    };
+
+    let bindings = Column::with_children(binding_rows).spacing(theme::space::XS);
+
     section_layout(
         "Hotkeys",
         "Global shortcuts that work even when HonkHonk isn't focused.",
-        column![].into(),
+        column![portal_badge, bindings].spacing(theme::space::LG).into(),
         t,
     )
 }
 
 pub fn view_appearance_section(t: Theme) -> Element<'static, Message> {
-    section_layout("Appearance", "How honky should HonkHonk look today?", column![].into(), t)
+    let registry_rows = SETTINGS_REGISTRY
+        .iter()
+        .filter(|d| matches!(d.category, SettingCategory::Appearance))
+        .fold(column![].spacing(0.0), |col, _def| col);
+    section_layout(
+        "Appearance",
+        "How honky should HonkHonk look today?",
+        registry_rows.into(),
+        t,
+    )
 }
 
 pub fn view_about_section(t: Theme) -> Element<'static, Message> {
-    section_layout("About", "The bird is the word.", column![].into(), t)
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+    let logo_block = column![
+        text("HonkHonk")
+            .size(28)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                style: iced::font::Style::Italic,
+                ..Default::default()
+            }),
+        text(format!("v{VERSION} · Iced 0.13"))
+            .size(13)
+            .color(t.ink_dim()),
+        text("A soundboard for KDE. Built with Rust, Iced, and PipeWire.")
+            .size(12)
+            .color(t.ink_faint()),
+    ]
+    .spacing(theme::space::XS);
+
+    let license = container(
+        text("GPL-3.0-or-later")
+            .size(12)
+            .color(t.ink())
+            .font(iced::Font {
+                family: iced::font::Family::Monospace,
+                ..Default::default()
+            }),
+    )
+    .padding([4.0, 10.0])
+    .style(move |_t| container::Style {
+        background: Some(theme::bg_color(t.panel())),
+        border: iced::Border {
+            color: t.hairline(),
+            width: 1.0,
+            radius: theme::radius::MD,
+        },
+        ..Default::default()
+    });
+
+    let credits = column![
+        text("Credits")
+            .size(13)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            }),
+        text("Iced — iced-rs").size(12).color(t.ink_dim()),
+        text("Symphonia — pdeljanov").size(12).color(t.ink_dim()),
+        text("ashpd — bilelmoussaoui").size(12).color(t.ink_dim()),
+        text("pipewire-rs — PipeWire project").size(12).color(t.ink_dim()),
+        text("tray-icon — tauri-apps").size(12).color(t.ink_dim()),
+    ]
+    .spacing(theme::space::XS);
+
+    section_layout(
+        "About",
+        "The bird is the word.",
+        column![logo_block, license, credits]
+            .spacing(theme::space::XL)
+            .into(),
+        t,
+    )
 }
