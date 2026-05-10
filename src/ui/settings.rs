@@ -25,8 +25,10 @@ pub fn view_settings(state: &HonkHonk, t: Theme) -> Element<'_, Message> {
 fn settings_header(t: Theme) -> Element<'static, Message> {
     let back_btn = button(
         row![
-            text("←").size(14).color(t.ink()),
-            text("Back to sounds").size(13).color(t.ink()),
+            text("←").size(theme::font::BODY).color(t.ink()),
+            text("Back to sounds")
+                .size(theme::font::BODY)
+                .color(t.ink()),
         ]
         .spacing(theme::space::SM)
         .align_y(Alignment::Center),
@@ -41,13 +43,15 @@ fn settings_header(t: Theme) -> Element<'static, Message> {
 
     let title = row![
         text("Settings")
-            .size(22)
+            .size(theme::font::TITLE)
             .font(iced::Font {
                 weight: iced::font::Weight::Bold,
                 ..Default::default()
             })
             .color(t.ink()),
-        text(" ruffle feathers").size(12).color(t.ink_dim()),
+        text("· ruffle feathers")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
     ]
     .spacing(theme::space::MD)
     .align_y(Alignment::Center);
@@ -85,7 +89,7 @@ fn settings_sidebar<'a>(active: &'a SettingsSection, t: Theme) -> Element<'a, Me
             let is_active = active == section;
             let item = button(
                 text(*label)
-                    .size(13)
+                    .size(theme::font::BODY)
                     .color(if is_active { t.bg() } else { t.ink() })
                     .font(iced::Font {
                         weight: iced::font::Weight::Bold,
@@ -151,11 +155,14 @@ pub fn render_setting_row<'a>(
     let value = get_setting_value(def.id, state);
 
     let label_col = column![
-        text(def.label).size(13).color(t.ink()).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..Default::default()
-        }),
-        text(def.hint).size(11).color(t.ink_dim()),
+        text(def.label)
+            .size(theme::font::BODY)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            }),
+        text(def.hint).size(theme::font::LABEL).color(t.ink_dim()),
     ]
     .spacing(theme::space::XS)
     .width(Length::Fixed(260.0));
@@ -163,7 +170,7 @@ pub fn render_setting_row<'a>(
     let control: Element<'_, Message> = match (&def.control, value) {
         (ControlType::Button, _) => {
             let msg = setting_message(def.id, SettingValue::None);
-            button(text(def.label).size(13).color(t.ink()))
+            button(text(def.label).size(theme::font::BODY).color(t.ink()))
                 .on_press(msg)
                 .padding([8.0, 18.0])
                 .style(move |_t, _s| button::Style {
@@ -173,7 +180,10 @@ pub fn render_setting_row<'a>(
                 })
                 .into()
         }
-        _ => text("—").size(13).color(t.ink_faint()).into(),
+        _ => text("—")
+            .size(theme::font::BODY)
+            .color(t.ink_faint())
+            .into(),
     };
 
     container(
@@ -224,12 +234,15 @@ fn section_layout<'a>(
 ) -> Element<'a, Message> {
     column![
         column![
-            text(title).size(26).color(t.ink()).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                style: iced::font::Style::Italic,
-                ..Default::default()
-            }),
-            text(subtitle).size(13).color(t.ink_dim()),
+            text(title)
+                .size(theme::font::TITLE)
+                .color(t.ink())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    style: iced::font::Style::Italic,
+                    ..Default::default()
+                }),
+            text(subtitle).size(theme::font::BODY).color(t.ink_dim()),
         ]
         .spacing(theme::space::XS)
         .width(Length::Fill),
@@ -252,8 +265,8 @@ fn section_layout<'a>(
 pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
     // Status badge — always active if user reached settings
     let dot = container(iced::widget::Space::new())
-        .width(8.0)
-        .height(8.0)
+        .width(theme::space::SM)
+        .height(theme::space::SM)
         .style(move |_t| container::Style {
             background: Some(theme::bg_color(t.good())),
             border: iced::Border {
@@ -268,7 +281,7 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
             row![
                 dot,
                 text("Audio engine active")
-                    .size(12)
+                    .size(theme::font::LABEL)
                     .color(t.ink())
                     .font(iced::Font {
                         weight: iced::font::Weight::Bold,
@@ -278,7 +291,7 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
             .spacing(theme::space::SM)
             .align_y(Alignment::Center),
             text("honkhonk-mix · honkhonk-mic")
-                .size(11)
+                .size(theme::font::LABEL)
                 .color(t.ink_dim())
                 .font(iced::Font {
                     family: iced::font::Family::Monospace,
@@ -324,7 +337,7 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
         .iter()
         .map(|path| {
             let path_clone = path.clone();
-            let remove_btn = button(text("×").size(14).color(t.ink_faint()))
+            let remove_btn = button(text("×").size(theme::font::BODY).color(t.ink_faint()))
                 .on_press(Message::RemoveSoundDirectory(path_clone))
                 .padding(4.0)
                 .style(move |_t, _s| button::Style {
@@ -336,7 +349,7 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
             container(
                 row![
                     text(path.display().to_string())
-                        .size(12)
+                        .size(theme::font::LABEL)
                         .color(t.ink())
                         .font(iced::Font {
                             family: iced::font::Family::Monospace,
@@ -363,20 +376,24 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
         })
         .collect();
 
-    let add_btn = button(text("+ Add a folder").size(13).color(t.ink_dim()))
-        .on_press(Message::AddSoundDirectory)
-        .width(Length::Fill)
-        .padding([9.0, 12.0])
-        .style(move |_t, _s| button::Style {
-            background: None,
-            // Iced Border has no dash/style field — solid hairline approximates the dashed design intent
-            border: iced::Border {
-                color: t.hairline2(),
-                width: 1.5,
-                radius: theme::radius::MD,
-            },
-            ..Default::default()
-        });
+    let add_btn = button(
+        text("+ Add a folder")
+            .size(theme::font::BODY)
+            .color(t.ink_dim()),
+    )
+    .on_press(Message::AddSoundDirectory)
+    .width(Length::Fill)
+    .padding([9.0, 12.0])
+    .style(move |_t, _s| button::Style {
+        background: None,
+        // Iced Border has no dash/style field — solid hairline approximates the dashed design intent
+        border: iced::Border {
+            color: t.hairline2(),
+            width: 1.5,
+            radius: theme::radius::MD,
+        },
+        ..Default::default()
+    });
 
     let folders_widget = column![
         Column::with_children(folder_rows).spacing(theme::space::XS),
@@ -388,14 +405,14 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     let folders_row = row![
         column![
             text("Sound folders")
-                .size(13)
+                .size(theme::font::BODY)
                 .color(t.ink())
                 .font(iced::Font {
                     weight: iced::font::Weight::Bold,
                     ..Default::default()
                 }),
             text("HonkHonk watches these folders. Drop in MP3 / WAV / OGG / FLAC.")
-                .size(11)
+                .size(theme::font::LABEL)
                 .color(t.ink_dim()),
         ]
         .spacing(theme::space::XS)
@@ -420,11 +437,16 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     let format_pills: Vec<Element<'_, Message>> = FORMATS
         .iter()
         .map(|fmt| {
-            container(text(*fmt).size(11).color(t.ink_dim()).font(iced::Font {
-                family: iced::font::Family::Monospace,
-                weight: iced::font::Weight::Bold,
-                ..Default::default()
-            }))
+            container(
+                text(*fmt)
+                    .size(theme::font::LABEL)
+                    .color(t.ink_dim())
+                    .font(iced::Font {
+                        family: iced::font::Family::Monospace,
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    }),
+            )
             .padding([5.0, 11.0])
             .style(move |_t| container::Style {
                 background: Some(theme::bg_color(t.panel())),
@@ -442,14 +464,14 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     let formats_row = row![
         column![
             text("Supported formats")
-                .size(13)
+                .size(theme::font::BODY)
                 .color(t.ink())
                 .font(iced::Font {
                     weight: iced::font::Weight::Bold,
                     ..Default::default()
                 }),
             text("Decoded via Symphonia — pure Rust.")
-                .size(11)
+                .size(theme::font::LABEL)
                 .color(t.ink_dim()),
         ]
         .spacing(theme::space::XS)
@@ -480,8 +502,8 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     };
 
     let dot = container(iced::widget::Space::new())
-        .width(8.0)
-        .height(8.0)
+        .width(theme::space::SM)
+        .height(theme::space::SM)
         .style(move |_t| container::Style {
             background: Some(theme::bg_color(dot_color)),
             border: iced::Border {
@@ -494,10 +516,13 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     let portal_badge = container(
         row![
             dot,
-            text(status_text).size(12).color(t.ink()).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..Default::default()
-            }),
+            text(status_text)
+                .size(theme::font::LABEL)
+                .color(t.ink())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                }),
         ]
         .spacing(theme::space::SM)
         .align_y(Alignment::Center),
@@ -524,7 +549,7 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     let binding_rows: Vec<Element<'_, Message>> = if bound.is_empty() {
         vec![
             text("No hotkeys assigned yet. Use the Slot Manager to bind sounds.")
-                .size(12)
+                .size(theme::font::LABEL)
                 .color(t.ink_dim())
                 .into(),
         ]
@@ -535,14 +560,17 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
                 container(
                     row![
                         text(format!("Slot {}", slot + 1))
-                            .size(12)
+                            .size(theme::font::LABEL)
                             .color(t.ink_dim())
                             .width(Length::Fixed(60.0)),
-                        text(trigger).size(12).color(t.ink()).font(iced::Font {
-                            family: iced::font::Family::Monospace,
-                            weight: iced::font::Weight::Bold,
-                            ..Default::default()
-                        }),
+                        text(trigger)
+                            .size(theme::font::LABEL)
+                            .color(t.ink())
+                            .font(iced::Font {
+                                family: iced::font::Family::Monospace,
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            }),
                     ]
                     .spacing(theme::space::MD)
                     .align_y(Alignment::Center),
@@ -587,23 +615,26 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
 
     let logo_block = column![
-        text("HonkHonk").size(28).color(t.ink()).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            style: iced::font::Style::Italic,
-            ..Default::default()
-        }),
+        text("HonkHonk")
+            .size(theme::font::HERO)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                style: iced::font::Style::Italic,
+                ..Default::default()
+            }),
         text(format!("v{VERSION} · Iced 0.14"))
-            .size(13)
+            .size(theme::font::BODY)
             .color(t.ink_dim()),
         text("A Wayland-native soundboard for Linux. Built with Rust, Iced, and PipeWire.")
-            .size(12)
+            .size(theme::font::LABEL)
             .color(t.ink_faint()),
     ]
     .spacing(theme::space::XS);
 
     let license = container(
         text("GPL-3.0-or-later")
-            .size(12)
+            .size(theme::font::LABEL)
             .color(t.ink())
             .font(iced::Font {
                 family: iced::font::Family::Monospace,
@@ -622,17 +653,28 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
     });
 
     let credits = column![
-        text("Credits").size(13).color(t.ink()).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..Default::default()
-        }),
-        text("Iced — iced-rs").size(12).color(t.ink_dim()),
-        text("Symphonia — pdeljanov").size(12).color(t.ink_dim()),
-        text("ashpd — bilelmoussaoui").size(12).color(t.ink_dim()),
-        text("pipewire-rs — PipeWire project")
-            .size(12)
+        text("Credits")
+            .size(theme::font::BODY)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            }),
+        text("Iced — iced-rs")
+            .size(theme::font::LABEL)
             .color(t.ink_dim()),
-        text("tray-icon — tauri-apps").size(12).color(t.ink_dim()),
+        text("Symphonia — pdeljanov")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+        text("ashpd — bilelmoussaoui")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+        text("pipewire-rs — PipeWire project")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+        text("tray-icon — tauri-apps")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
     ]
     .spacing(theme::space::XS);
 

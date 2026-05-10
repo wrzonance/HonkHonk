@@ -22,6 +22,20 @@ pub mod space {
     pub const XXL: f32 = 32.0;
 }
 
+pub mod font {
+    pub const LABEL: f32 = 11.0;
+    pub const BODY: f32 = 13.0;
+    pub const TITLE: f32 = 22.0;
+    pub const HERO: f32 = 28.0;
+}
+
+pub mod component {
+    pub const ARTWORK_SQ: f32 = 44.0;
+    pub const PROGRESS_BAR_H: f32 = 6.0;
+    pub const SLOT_CARD_H: f32 = 138.0;
+    pub const SOUND_TILE_H: f32 = 140.0;
+}
+
 pub mod radius {
     use iced::border::Radius;
     pub const SM: Radius = Radius {

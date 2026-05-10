@@ -23,6 +23,7 @@ ashpd = { version = "0.13", features = ["global_shortcuts", "raw-window-handle",
 url = "2"  # RFC-8089 file URI parsing for pick_directory() ashpd file chooser result
 lofty = "0.24"
 tokio = { version = "1", features = ["rt"] }
+anyhow = "1.0.102"
 
 [features]
 default = []
