@@ -319,7 +319,7 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     use crate::shortcuts::ShortcutsStatus;
 
     let (dot_color, status_text) = match &state.shortcuts_status {
-        ShortcutsStatus::Active => (t.good(), "Connected to KDE portal"),
+        ShortcutsStatus::Active => (t.good(), "Global shortcuts active"),
         ShortcutsStatus::Initializing => (t.ink_dim(), "Connecting to portal…"),
         ShortcutsStatus::Unavailable(_) => (t.accent(), "Portal unavailable"),
     };
@@ -422,14 +422,10 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
 }
 
 pub fn view_appearance_section(t: Theme) -> Element<'static, Message> {
-    let registry_rows = SETTINGS_REGISTRY
-        .iter()
-        .filter(|d| matches!(d.category, SettingCategory::Appearance))
-        .fold(column![].spacing(0.0), |col, _def| col);
     section_layout(
         "Appearance",
         "How honky should HonkHonk look today?",
-        registry_rows.into(),
+        column![].into(),
         t,
     )
 }
