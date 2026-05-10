@@ -826,8 +826,10 @@ impl HonkHonk {
             let found = self.sounds.iter().find(|s| s.id == *sound_id);
             let overlay = sound_grid::context_menu_overlay(
                 found,
-                &self.slots,
-                &self.slot_triggers,
+                sound_grid::SlotCtx {
+                    slots: &self.slots,
+                    triggers: &self.slot_triggers,
+                },
                 t,
                 pos,
                 self.window_size,

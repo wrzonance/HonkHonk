@@ -6,9 +6,14 @@ use crate::state::{SlotMap, SoundEntry};
 use crate::ui::theme::{self, Hh, Theme, Tone};
 
 #[derive(Clone, Copy)]
+pub struct SlotCtx<'a> {
+    pub slots: &'a SlotMap,
+    pub triggers: &'a [Option<String>; 20],
+}
+
+#[derive(Clone, Copy)]
 struct TileCtx<'a> {
-    slots: &'a SlotMap,
-    slot_triggers: &'a [Option<String>; 20],
+    slot_ctx: SlotCtx<'a>,
     shortcuts_active: bool,
 }
 
@@ -35,8 +40,10 @@ pub fn view_grid<'a>(
     }
 
     let ctx = TileCtx {
-        slots,
-        slot_triggers,
+        slot_ctx: SlotCtx {
+            slots,
+            triggers: slot_triggers,
+        },
         shortcuts_active,
     };
 
@@ -100,8 +107,9 @@ fn tile_view<'a>(
         .color(theme.ink_faint());
 
     let slot_badge: Option<Element<'_, Message>> = if ctx.shortcuts_active {
-        ctx.slots.slot_for(&sound.path).and_then(|idx| {
-            ctx.slot_triggers
+        ctx.slot_ctx.slots.slot_for(&sound.path).and_then(|idx| {
+            ctx.slot_ctx
+                .triggers
                 .get(idx as usize)
                 .and_then(|t| t.as_deref())
                 .map(|trigger| {
@@ -167,8 +175,7 @@ const MENU_H: f32 = 340.0;
 
 pub fn context_menu_overlay<'a>(
     sound: Option<&'a SoundEntry>,
-    slots: &'a crate::state::SlotMap,
-    slot_triggers: &'a [Option<String>; 20],
+    slot_ctx: SlotCtx<'a>,
     theme: Theme,
     pos: iced::Point,
     window_size: (f32, f32),
@@ -176,12 +183,12 @@ pub fn context_menu_overlay<'a>(
     use iced::widget::Column;
 
     let sound_path = sound.map(|s| &s.path);
-    let assigned_slot = sound_path.and_then(|p| slots.slot_for(p));
+    let assigned_slot = sound_path.and_then(|p| slot_ctx.slots.slot_for(p));
 
     let slot_buttons: Vec<Element<'_, Message>> = (0u8..20)
         .map(|i| {
             let is_assigned = assigned_slot == Some(i);
-            let trigger = slot_triggers.get(i as usize).and_then(|t| t.as_deref());
+            let trigger = slot_ctx.triggers.get(i as usize).and_then(|t| t.as_deref());
             let label = match (is_assigned, trigger) {
                 (true, Some(t)) => format!("\u{2713} Slot {}  {}", i + 1, t),
                 (true, None) => format!("\u{2713} Slot {}", i + 1),
