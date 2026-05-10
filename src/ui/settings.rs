@@ -203,10 +203,10 @@ pub fn setting_message(id: SettingId, _value: SettingValue) -> Message {
         SettingId::RescanLibrary => Message::RescanLibrary,
         // All other IDs are unwired stubs — no SettingDef renders them yet.
         // If this arm fires, a SettingDef was added without updating this function.
-        _ => {
-            debug_assert!(false, "setting_message: unhandled SettingId {:?}", id);
-            Message::RescanLibrary
-        }
+        _ => unreachable!(
+            "setting_message: unhandled SettingId {:?} — add an arm here when wiring a backend",
+            id
+        ),
     }
 }
 
@@ -590,7 +590,7 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
         text(format!("v{VERSION} · Iced 0.13"))
             .size(13)
             .color(t.ink_dim()),
-        text("A soundboard for KDE. Built with Rust, Iced, and PipeWire.")
+        text("A Wayland-native soundboard for Linux. Built with Rust, Iced, and PipeWire.")
             .size(12)
             .color(t.ink_faint()),
     ]

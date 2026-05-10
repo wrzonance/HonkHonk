@@ -533,14 +533,22 @@ impl HonkHonk {
                 Task::perform(pick_directory(), Message::SoundDirectoryPickResult)
             }
             Message::SoundDirectoryPickResult(Some(path)) => {
-                self.config.sound_directories.push(path);
-                let _ = self.config.save();
-                self.update(Message::RescanLibrary)
+                if !self.config.sound_directories.contains(&path) {
+                    self.config.sound_directories.push(path);
+                    if let Err(e) = self.config.save() {
+                        eprintln!("honkhonk: config save error: {e}");
+                    }
+                    self.update(Message::RescanLibrary)
+                } else {
+                    Task::none()
+                }
             }
             Message::SoundDirectoryPickResult(None) => Task::none(),
             Message::RemoveSoundDirectory(path) => {
                 self.config.sound_directories.retain(|p| p != &path);
-                let _ = self.config.save();
+                if let Err(e) = self.config.save() {
+                    eprintln!("honkhonk: config save error: {e}");
+                }
                 self.update(Message::RescanLibrary)
             }
         }
