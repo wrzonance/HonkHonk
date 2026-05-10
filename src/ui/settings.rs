@@ -311,8 +311,166 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
     )
 }
 
-pub fn view_library_section<'a>(_state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
-    section_layout("Library", "Where HonkHonk looks for your sounds.", column![].into(), t)
+pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
+    // --- Folder list ---
+    let folder_rows: Vec<Element<'_, Message>> = state
+        .config
+        .sound_directories
+        .iter()
+        .map(|path| {
+            let path_clone = path.clone();
+            let remove_btn = button(
+                text("×").size(14).color(t.ink_faint()),
+            )
+            .on_press(Message::RemoveSoundDirectory(path_clone))
+            .padding(4.0)
+            .style(move |_t, _s| button::Style {
+                background: None,
+                border: iced::Border::default(),
+                ..Default::default()
+            });
+
+            container(
+                row![
+                    text(path.display().to_string())
+                        .size(12)
+                        .color(t.ink())
+                        .font(iced::Font {
+                            family: iced::font::Family::Monospace,
+                            ..Default::default()
+                        })
+                        .width(Length::Fill),
+                    remove_btn,
+                ]
+                .spacing(theme::space::SM)
+                .align_y(Alignment::Center),
+            )
+            .padding([10.0, 12.0])
+            .width(Length::Fill)
+            .style(move |_t| container::Style {
+                background: Some(theme::bg_color(t.panel())),
+                border: iced::Border {
+                    color: t.hairline(),
+                    width: 1.0,
+                    radius: theme::radius::MD,
+                },
+                ..Default::default()
+            })
+            .into()
+        })
+        .collect();
+
+    let add_btn = button(
+        text("+ Add a folder").size(13).color(t.ink_dim()),
+    )
+    .on_press(Message::AddSoundDirectory)
+    .width(Length::Fill)
+    .padding([9.0, 12.0])
+    .style(move |_t, _s| button::Style {
+        background: None,
+        border: iced::Border {
+            color: t.hairline2(),
+            width: 1.5,
+            radius: theme::radius::MD,
+        },
+        ..Default::default()
+    });
+
+    let folders_widget = column![
+        Column::with_children(folder_rows).spacing(theme::space::XS),
+        add_btn,
+    ]
+    .spacing(theme::space::XS)
+    .width(Length::Fixed(540.0));
+
+    let folders_row = row![
+        column![
+            text("Sound folders")
+                .size(13)
+                .color(t.ink())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                }),
+            text("HonkHonk watches these folders. Drop in MP3 / WAV / OGG / FLAC.")
+                .size(11)
+                .color(t.ink_dim()),
+        ]
+        .spacing(theme::space::XS)
+        .width(Length::Fixed(260.0)),
+        folders_widget,
+    ]
+    .spacing(theme::space::XL)
+    .align_y(Alignment::Start)
+    .width(Length::Fill);
+
+    // --- Registry rows (RescanLibrary button) ---
+    let registry_rows = SETTINGS_REGISTRY
+        .iter()
+        .filter(|d| matches!(d.category, SettingCategory::Library))
+        .fold(column![].spacing(0.0), |col, def| {
+            col.push(render_setting_row(def, state, t))
+        });
+
+    // --- Supported formats (static display) ---
+    const FORMATS: &[&str] = &["MP3", "WAV", "OGG Vorbis", "FLAC", "AAC", "Opus"];
+
+    let format_pills: Vec<Element<'_, Message>> = FORMATS
+        .iter()
+        .map(|fmt| {
+            container(
+                text(*fmt)
+                    .size(11)
+                    .color(t.ink_dim())
+                    .font(iced::Font {
+                        family: iced::font::Family::Monospace,
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    }),
+            )
+            .padding([5.0, 11.0])
+            .style(move |_t| container::Style {
+                background: Some(theme::bg_color(t.panel())),
+                border: iced::Border {
+                    color: t.hairline2(),
+                    width: 1.0,
+                    radius: theme::radius::PILL,
+                },
+                ..Default::default()
+            })
+            .into()
+        })
+        .collect();
+
+    let formats_row = row![
+        column![
+            text("Supported formats")
+                .size(13)
+                .color(t.ink())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                }),
+            text("Decoded via Symphonia — pure Rust.")
+                .size(11)
+                .color(t.ink_dim()),
+        ]
+        .spacing(theme::space::XS)
+        .width(Length::Fixed(260.0)),
+        Row::with_children(format_pills).spacing(theme::space::XS),
+    ]
+    .spacing(theme::space::XL)
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
+
+    section_layout(
+        "Library",
+        "Where HonkHonk looks for your sounds.",
+        column![folders_row, registry_rows, formats_row]
+            .spacing(theme::space::LG)
+            .into(),
+        t,
+    )
 }
 
 pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
