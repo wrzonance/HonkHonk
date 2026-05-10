@@ -86,9 +86,15 @@ fn tile_view<'a>(
         None => "\u{2014}".into(),
     };
 
-    let category_text = text(sound.category.clone()).size(theme::font::LABEL).color(theme.ink_dim());
-    let name_text = text(sound.name.clone()).size(theme::font::BODY).color(theme.ink());
-    let duration_text = text(duration_str).size(theme::font::LABEL).color(theme.ink_faint());
+    let category_text = text(sound.category.clone())
+        .size(theme::font::LABEL)
+        .color(theme.ink_dim());
+    let name_text = text(sound.name.clone())
+        .size(theme::font::BODY)
+        .color(theme.ink());
+    let duration_text = text(duration_str)
+        .size(theme::font::LABEL)
+        .color(theme.ink_faint());
 
     let slot_badge: Option<Element<'_, Message>> = if ctx.shortcuts_active {
         ctx.slots.slot_for(&sound.path).map(|idx| {

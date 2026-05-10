@@ -66,7 +66,9 @@ fn view_placeholder(t: Theme) -> Element<'static, Message> {
 }
 
 fn view_sound_info<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
-    let name = text(sound.name.clone()).size(theme::font::BODY).color(t.ink());
+    let name = text(sound.name.clone())
+        .size(theme::font::BODY)
+        .color(t.ink());
     let subtitle = text(format!(
         "HONKING NOW \u{00b7} {} \u{00b7} {}",
         sound.category,

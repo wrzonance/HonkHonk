@@ -26,7 +26,9 @@ fn settings_header(t: Theme) -> Element<'static, Message> {
     let back_btn = button(
         row![
             text("←").size(theme::font::BODY).color(t.ink()),
-            text("Back to sounds").size(theme::font::BODY).color(t.ink()),
+            text("Back to sounds")
+                .size(theme::font::BODY)
+                .color(t.ink()),
         ]
         .spacing(theme::space::SM)
         .align_y(Alignment::Center),
@@ -47,7 +49,9 @@ fn settings_header(t: Theme) -> Element<'static, Message> {
                 ..Default::default()
             })
             .color(t.ink()),
-        text("· ruffle feathers").size(theme::font::LABEL).color(t.ink_dim()),
+        text("· ruffle feathers")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
     ]
     .spacing(theme::space::MD)
     .align_y(Alignment::Center);
@@ -151,10 +155,13 @@ pub fn render_setting_row<'a>(
     let value = get_setting_value(def.id, state);
 
     let label_col = column![
-        text(def.label).size(theme::font::BODY).color(t.ink()).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..Default::default()
-        }),
+        text(def.label)
+            .size(theme::font::BODY)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            }),
         text(def.hint).size(theme::font::LABEL).color(t.ink_dim()),
     ]
     .spacing(theme::space::XS)
@@ -173,7 +180,10 @@ pub fn render_setting_row<'a>(
                 })
                 .into()
         }
-        _ => text("—").size(theme::font::BODY).color(t.ink_faint()).into(),
+        _ => text("—")
+            .size(theme::font::BODY)
+            .color(t.ink_faint())
+            .into(),
     };
 
     container(
@@ -224,11 +234,14 @@ fn section_layout<'a>(
 ) -> Element<'a, Message> {
     column![
         column![
-            text(title).size(theme::font::TITLE).color(t.ink()).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                style: iced::font::Style::Italic,
-                ..Default::default()
-            }),
+            text(title)
+                .size(theme::font::TITLE)
+                .color(t.ink())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    style: iced::font::Style::Italic,
+                    ..Default::default()
+                }),
             text(subtitle).size(theme::font::BODY).color(t.ink_dim()),
         ]
         .spacing(theme::space::XS)
@@ -363,20 +376,24 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
         })
         .collect();
 
-    let add_btn = button(text("+ Add a folder").size(theme::font::BODY).color(t.ink_dim()))
-        .on_press(Message::AddSoundDirectory)
-        .width(Length::Fill)
-        .padding([9.0, 12.0])
-        .style(move |_t, _s| button::Style {
-            background: None,
-            // Iced Border has no dash/style field — solid hairline approximates the dashed design intent
-            border: iced::Border {
-                color: t.hairline2(),
-                width: 1.5,
-                radius: theme::radius::MD,
-            },
-            ..Default::default()
-        });
+    let add_btn = button(
+        text("+ Add a folder")
+            .size(theme::font::BODY)
+            .color(t.ink_dim()),
+    )
+    .on_press(Message::AddSoundDirectory)
+    .width(Length::Fill)
+    .padding([9.0, 12.0])
+    .style(move |_t, _s| button::Style {
+        background: None,
+        // Iced Border has no dash/style field — solid hairline approximates the dashed design intent
+        border: iced::Border {
+            color: t.hairline2(),
+            width: 1.5,
+            radius: theme::radius::MD,
+        },
+        ..Default::default()
+    });
 
     let folders_widget = column![
         Column::with_children(folder_rows).spacing(theme::space::XS),
@@ -420,11 +437,16 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     let format_pills: Vec<Element<'_, Message>> = FORMATS
         .iter()
         .map(|fmt| {
-            container(text(*fmt).size(theme::font::LABEL).color(t.ink_dim()).font(iced::Font {
-                family: iced::font::Family::Monospace,
-                weight: iced::font::Weight::Bold,
-                ..Default::default()
-            }))
+            container(
+                text(*fmt)
+                    .size(theme::font::LABEL)
+                    .color(t.ink_dim())
+                    .font(iced::Font {
+                        family: iced::font::Family::Monospace,
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    }),
+            )
             .padding([5.0, 11.0])
             .style(move |_t| container::Style {
                 background: Some(theme::bg_color(t.panel())),
@@ -494,10 +516,13 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     let portal_badge = container(
         row![
             dot,
-            text(status_text).size(theme::font::LABEL).color(t.ink()).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..Default::default()
-            }),
+            text(status_text)
+                .size(theme::font::LABEL)
+                .color(t.ink())
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                }),
         ]
         .spacing(theme::space::SM)
         .align_y(Alignment::Center),
@@ -538,11 +563,14 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
                             .size(theme::font::LABEL)
                             .color(t.ink_dim())
                             .width(Length::Fixed(60.0)),
-                        text(trigger).size(theme::font::LABEL).color(t.ink()).font(iced::Font {
-                            family: iced::font::Family::Monospace,
-                            weight: iced::font::Weight::Bold,
-                            ..Default::default()
-                        }),
+                        text(trigger)
+                            .size(theme::font::LABEL)
+                            .color(t.ink())
+                            .font(iced::Font {
+                                family: iced::font::Family::Monospace,
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            }),
                     ]
                     .spacing(theme::space::MD)
                     .align_y(Alignment::Center),
@@ -587,11 +615,14 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
 
     let logo_block = column![
-        text("HonkHonk").size(theme::font::HERO).color(t.ink()).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            style: iced::font::Style::Italic,
-            ..Default::default()
-        }),
+        text("HonkHonk")
+            .size(theme::font::HERO)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                style: iced::font::Style::Italic,
+                ..Default::default()
+            }),
         text(format!("v{VERSION} · Iced 0.14"))
             .size(theme::font::BODY)
             .color(t.ink_dim()),
@@ -622,17 +653,28 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
     });
 
     let credits = column![
-        text("Credits").size(theme::font::BODY).color(t.ink()).font(iced::Font {
-            weight: iced::font::Weight::Bold,
-            ..Default::default()
-        }),
-        text("Iced — iced-rs").size(theme::font::LABEL).color(t.ink_dim()),
-        text("Symphonia — pdeljanov").size(theme::font::LABEL).color(t.ink_dim()),
-        text("ashpd — bilelmoussaoui").size(theme::font::LABEL).color(t.ink_dim()),
+        text("Credits")
+            .size(theme::font::BODY)
+            .color(t.ink())
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            }),
+        text("Iced — iced-rs")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+        text("Symphonia — pdeljanov")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+        text("ashpd — bilelmoussaoui")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
         text("pipewire-rs — PipeWire project")
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
-        text("tray-icon — tauri-apps").size(theme::font::LABEL).color(t.ink_dim()),
+        text("tray-icon — tauri-apps")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
     ]
     .spacing(theme::space::XS);
 

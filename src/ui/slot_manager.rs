@@ -47,7 +47,9 @@ fn slot_header<'a>(bound_count: usize, t: Theme) -> Element<'a, Message> {
     let back_btn = button(
         row![
             text("←").size(theme::font::BODY).color(t.ink()),
-            text("Back to sounds").size(theme::font::BODY).color(t.ink()),
+            text("Back to sounds")
+                .size(theme::font::BODY)
+                .color(t.ink()),
         ]
         .spacing(theme::space::XS)
         .align_y(iced::Alignment::Center),
@@ -172,7 +174,9 @@ fn bound_tile<'a>(
                 .size(theme::font::LABEL)
                 .color(t.ink_faint()),
             tone_circle(tone, 40.0, t),
-            text(sound.name.clone()).size(theme::font::LABEL).color(t.ink()),
+            text(sound.name.clone())
+                .size(theme::font::LABEL)
+                .color(t.ink()),
             text(trigger.unwrap_or("no hotkey"))
                 .size(theme::font::LABEL)
                 .color(t.ink_faint()),
@@ -235,7 +239,9 @@ fn sound_header<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
     let tone = tone_for(sound);
     let circle = tone_circle(tone, 56.0, t);
     let info = column![
-        text(sound.name.clone()).size(theme::font::BODY).color(t.ink()),
+        text(sound.name.clone())
+            .size(theme::font::BODY)
+            .color(t.ink()),
         text(format!(
             "{} · {}",
             sound.category,
@@ -252,18 +258,22 @@ fn sound_header<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
 }
 
 fn sidebar_bound_hotkey<'a>(trigger: Option<&'a str>, t: Theme) -> Element<'a, Message> {
-    container(text(trigger.unwrap_or("—")).size(theme::font::BODY).color(t.ink()))
-        .padding([theme::space::SM, theme::space::MD])
-        .width(Length::Fill)
-        .style(move |_t| container::Style {
-            border: iced::Border {
-                color: t.accent(),
-                width: 1.5,
-                radius: 10.0.into(),
-            },
-            ..Default::default()
-        })
-        .into()
+    container(
+        text(trigger.unwrap_or("—"))
+            .size(theme::font::BODY)
+            .color(t.ink()),
+    )
+    .padding([theme::space::SM, theme::space::MD])
+    .width(Length::Fill)
+    .style(move |_t| container::Style {
+        border: iced::Border {
+            color: t.accent(),
+            width: 1.5,
+            radius: 10.0.into(),
+        },
+        ..Default::default()
+    })
+    .into()
 }
 
 fn sidebar_bound_portal<'a>(t: Theme) -> Element<'a, Message> {
@@ -328,9 +338,13 @@ fn sidebar_bound<'a>(
     column![
         slot_label,
         sound_header(sound, t),
-        text("GLOBAL HOTKEY").size(theme::font::LABEL).color(t.ink_dim()),
+        text("GLOBAL HOTKEY")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
         hk_display,
-        text("PORTAL STATUS").size(theme::font::LABEL).color(t.ink_dim()),
+        text("PORTAL STATUS")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
         portal,
         unbind,
     ]

@@ -192,8 +192,7 @@ async fn pick_directory() -> anyhow::Result<Option<std::path::PathBuf>> {
         None => return Ok(None),
     };
 
-    let url = url::Url::parse(uri.as_str())
-        .with_context(|| format!("parsing file URI: {uri}"))?;
+    let url = url::Url::parse(uri.as_str()).with_context(|| format!("parsing file URI: {uri}"))?;
 
     url.to_file_path()
         .map(|p| Some(p))
@@ -532,17 +531,16 @@ impl HonkHonk {
                 Task::none()
             }
             Message::RescanLibrary => {
-                let new_sounds =
-                    match crate::state::Library::scan(&self.config.sound_directories) {
-                        Ok(sounds) => sounds,
-                        Err(e) => {
-                            eprintln!(
-                                "honkhonk: library rescan failed for {:?}: {e}",
-                                self.config.sound_directories
-                            );
-                            return Task::none();
-                        }
-                    };
+                let new_sounds = match crate::state::Library::scan(&self.config.sound_directories) {
+                    Ok(sounds) => sounds,
+                    Err(e) => {
+                        eprintln!(
+                            "honkhonk: library rescan failed for {:?}: {e}",
+                            self.config.sound_directories
+                        );
+                        return Task::none();
+                    }
+                };
                 let pairs: Vec<(String, std::path::PathBuf)> = new_sounds
                     .iter()
                     .map(|s| (s.id.clone(), s.path.clone()))
