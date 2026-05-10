@@ -195,7 +195,7 @@ async fn pick_directory() -> anyhow::Result<Option<std::path::PathBuf>> {
     let url = url::Url::parse(uri.as_str()).with_context(|| format!("parsing file URI: {uri}"))?;
 
     url.to_file_path()
-        .map(|p| Some(p))
+        .map(Some)
         .map_err(|_| anyhow::anyhow!("URI is not a file:// path: {uri}"))
 }
 
