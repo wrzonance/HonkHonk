@@ -51,8 +51,8 @@ pub fn view_now_playing<'a>(
 
 fn view_placeholder(t: Theme) -> Element<'static, Message> {
     container(Space::new())
-        .width(44.0)
-        .height(44.0)
+        .width(theme::component::ARTWORK_SQ)
+        .height(theme::component::ARTWORK_SQ)
         .style(move |_theme| container::Style {
             background: Some(theme::bg_color(t.bg())),
             border: Border {
@@ -66,13 +66,13 @@ fn view_placeholder(t: Theme) -> Element<'static, Message> {
 }
 
 fn view_sound_info<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
-    let name = text(sound.name.clone()).size(14).color(t.ink());
+    let name = text(sound.name.clone()).size(theme::font::BODY).color(t.ink());
     let subtitle = text(format!(
         "HONKING NOW \u{00b7} {} \u{00b7} {}",
         sound.category,
         crate::ui::fmt_duration(sound.duration_ms),
     ))
-    .size(10.5)
+    .size(theme::font::LABEL)
     .color(t.ink_dim());
     Column::new()
         .push(name)
@@ -86,7 +86,7 @@ fn view_progress_bar(progress: f32, t: Theme) -> Element<'static, Message> {
 
     let filled = container(Space::new())
         .width(filled_width)
-        .height(6.0)
+        .height(theme::component::PROGRESS_BAR_H)
         .style(move |_theme| container::Style {
             background: Some(theme::bg_color(t.accent())),
             border: Border {
@@ -98,7 +98,7 @@ fn view_progress_bar(progress: f32, t: Theme) -> Element<'static, Message> {
 
     container(filled)
         .width(320.0)
-        .height(6.0)
+        .height(theme::component::PROGRESS_BAR_H)
         .style(move |_theme| container::Style {
             background: Some(theme::bg_color(t.bg())),
             border: Border {

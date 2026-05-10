@@ -9,7 +9,7 @@ pub fn view_search_bar(query: &str) -> Element<'_, Message> {
 
     let input = text_input("Find a sound\u{2026}", query)
         .on_input(Message::SearchChanged)
-        .size(13.5)
+        .size(theme::font::BODY)
         .width(Length::Fixed(300.0))
         .style(move |_theme, status| {
             let border_color = match status {

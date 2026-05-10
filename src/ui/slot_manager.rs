@@ -46,8 +46,8 @@ pub fn view_slot_manager<'a>(
 fn slot_header<'a>(bound_count: usize, t: Theme) -> Element<'a, Message> {
     let back_btn = button(
         row![
-            text("←").size(14).color(t.ink()),
-            text("Back to sounds").size(13).color(t.ink()),
+            text("←").size(theme::font::BODY).color(t.ink()),
+            text("Back to sounds").size(theme::font::BODY).color(t.ink()),
         ]
         .spacing(theme::space::XS)
         .align_y(iced::Alignment::Center),
@@ -60,10 +60,10 @@ fn slot_header<'a>(bound_count: usize, t: Theme) -> Element<'a, Message> {
         ..Default::default()
     });
 
-    let title = text("Slots").size(22).color(t.ink());
-    let sep = text("·").size(14).color(t.ink_dim());
+    let title = text("Slots").size(theme::font::TITLE).color(t.ink());
+    let sep = text("·").size(theme::font::BODY).color(t.ink_dim());
     let stats = text(format!("{bound_count} bound"))
-        .size(12)
+        .size(theme::font::LABEL)
         .color(t.ink_dim());
 
     container(
@@ -169,12 +169,12 @@ fn bound_tile<'a>(
     button(
         column![
             text(format!("#{:02}", idx + 1))
-                .size(10)
+                .size(theme::font::LABEL)
                 .color(t.ink_faint()),
             tone_circle(tone, 40.0, t),
-            text(sound.name.clone()).size(11).color(t.ink()),
+            text(sound.name.clone()).size(theme::font::LABEL).color(t.ink()),
             text(trigger.unwrap_or("no hotkey"))
-                .size(10)
+                .size(theme::font::LABEL)
                 .color(t.ink_faint()),
         ]
         .spacing(4)
@@ -183,7 +183,7 @@ fn bound_tile<'a>(
     )
     .on_press(Message::SelectSlot(idx))
     .width(Length::Fill)
-    .height(138)
+    .height(theme::component::SLOT_CARD_H)
     .style(move |_t, _s| button::Style {
         background: Some(theme::bg_color(bg)),
         text_color: t.ink(),
@@ -210,10 +210,10 @@ fn empty_tile<'a>(idx: u8, selected: bool, t: Theme) -> Element<'a, Message> {
     button(
         column![
             text(format!("#{:02}", idx + 1))
-                .size(10)
+                .size(theme::font::LABEL)
                 .color(t.ink_faint()),
-            text("+").size(22).color(t.ink_faint()),
-            text("EMPTY").size(10).color(t.ink_faint()),
+            text("+").size(theme::font::TITLE).color(t.ink_faint()),
+            text("EMPTY").size(theme::font::LABEL).color(t.ink_faint()),
         ]
         .spacing(6)
         .align_x(iced::Alignment::Center)
@@ -221,7 +221,7 @@ fn empty_tile<'a>(idx: u8, selected: bool, t: Theme) -> Element<'a, Message> {
     )
     .on_press(Message::SelectSlot(idx))
     .width(Length::Fill)
-    .height(138)
+    .height(theme::component::SLOT_CARD_H)
     .style(move |_t, _s| button::Style {
         background: Some(theme::bg_color(t.panel())),
         text_color: t.ink_faint(),
@@ -235,13 +235,13 @@ fn sound_header<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
     let tone = tone_for(sound);
     let circle = tone_circle(tone, 56.0, t);
     let info = column![
-        text(sound.name.clone()).size(17).color(t.ink()),
+        text(sound.name.clone()).size(theme::font::BODY).color(t.ink()),
         text(format!(
             "{} · {}",
             sound.category,
             crate::ui::fmt_duration(sound.duration_ms)
         ))
-        .size(11)
+        .size(theme::font::LABEL)
         .color(t.ink_dim()),
     ]
     .spacing(2);
@@ -252,7 +252,7 @@ fn sound_header<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
 }
 
 fn sidebar_bound_hotkey<'a>(trigger: Option<&'a str>, t: Theme) -> Element<'a, Message> {
-    container(text(trigger.unwrap_or("—")).size(13).color(t.ink()))
+    container(text(trigger.unwrap_or("—")).size(theme::font::BODY).color(t.ink()))
         .padding([theme::space::SM, theme::space::MD])
         .width(Length::Fill)
         .style(move |_t| container::Style {
@@ -268,8 +268,8 @@ fn sidebar_bound_hotkey<'a>(trigger: Option<&'a str>, t: Theme) -> Element<'a, M
 
 fn sidebar_bound_portal<'a>(t: Theme) -> Element<'a, Message> {
     let dot = container(Space::new())
-        .width(8)
-        .height(8)
+        .width(theme::space::SM)
+        .height(theme::space::SM)
         .style(move |_t| container::Style {
             background: Some(theme::bg_color(t.good())),
             border: iced::Border {
@@ -282,7 +282,7 @@ fn sidebar_bound_portal<'a>(t: Theme) -> Element<'a, Message> {
         row![
             dot,
             text("Registered via xdg-desktop-portal")
-                .size(11)
+                .size(theme::font::LABEL)
                 .color(t.ink_dim())
         ]
         .spacing(theme::space::SM)
@@ -304,13 +304,13 @@ fn sidebar_bound<'a>(
     t: Theme,
 ) -> Element<'a, Message> {
     let slot_label = text(format!("SLOT #{:02}", idx + 1))
-        .size(10)
+        .size(theme::font::LABEL)
         .color(t.ink_dim());
     let hk_display = sidebar_bound_hotkey(trigger, t);
     let portal = sidebar_bound_portal(t);
     let unbind = button(
         text("Unbind")
-            .size(12)
+            .size(theme::font::LABEL)
             .color(iced::Color::from_rgb(0.86, 0.15, 0.15)),
     )
     .on_press(Message::ClearSlot(idx))
@@ -328,9 +328,9 @@ fn sidebar_bound<'a>(
     column![
         slot_label,
         sound_header(sound, t),
-        text("GLOBAL HOTKEY").size(11).color(t.ink_dim()),
+        text("GLOBAL HOTKEY").size(theme::font::LABEL).color(t.ink_dim()),
         hk_display,
-        text("PORTAL STATUS").size(11).color(t.ink_dim()),
+        text("PORTAL STATUS").size(theme::font::LABEL).color(t.ink_dim()),
         portal,
         unbind,
     ]
@@ -340,14 +340,14 @@ fn sidebar_bound<'a>(
 
 fn sidebar_empty<'a>(idx: u8, t: Theme) -> Element<'a, Message> {
     let slot_label = text(format!("SLOT #{:02}", idx + 1))
-        .size(10)
+        .size(theme::font::LABEL)
         .color(t.ink_dim());
     let placeholder = container(
         column![
             text("🪿").size(32),
-            text("Slot is empty").size(13).color(t.ink()),
+            text("Slot is empty").size(theme::font::BODY).color(t.ink()),
             text("Assign via right-click on any sound tile")
-                .size(11)
+                .size(theme::font::LABEL)
                 .color(t.ink_dim()),
         ]
         .spacing(theme::space::SM)
@@ -378,7 +378,7 @@ fn sidebar<'a>(
 ) -> Element<'a, Message> {
     let inner: Element<'_, Message> = match selected_slot {
         None => text("Select a slot to inspect it")
-            .size(13)
+            .size(theme::font::BODY)
             .color(t.ink_faint())
             .into(),
         Some(idx) => {

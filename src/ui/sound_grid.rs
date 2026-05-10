@@ -12,7 +12,6 @@ struct TileCtx<'a> {
 }
 
 const COLUMNS: usize = 5;
-const TILE_HEIGHT: f32 = 140.0;
 
 pub fn view_grid<'a>(
     sounds: &[&'a SoundEntry],
@@ -25,7 +24,7 @@ pub fn view_grid<'a>(
     if sounds.is_empty() {
         return container(
             text("No sounds found. Add audio files to your sound directory.")
-                .size(16)
+                .size(theme::font::BODY)
                 .color(theme.ink_dim()),
         )
         .width(Length::Fill)
@@ -87,15 +86,15 @@ fn tile_view<'a>(
         None => "\u{2014}".into(),
     };
 
-    let category_text = text(sound.category.clone()).size(11).color(theme.ink_dim());
-    let name_text = text(sound.name.clone()).size(15).color(theme.ink());
-    let duration_text = text(duration_str).size(11).color(theme.ink_faint());
+    let category_text = text(sound.category.clone()).size(theme::font::LABEL).color(theme.ink_dim());
+    let name_text = text(sound.name.clone()).size(theme::font::BODY).color(theme.ink());
+    let duration_text = text(duration_str).size(theme::font::LABEL).color(theme.ink_faint());
 
     let slot_badge: Option<Element<'_, Message>> = if ctx.shortcuts_active {
         ctx.slots.slot_for(&sound.path).map(|idx| {
             container(
                 text(format!("F{}", idx + 1))
-                    .size(10)
+                    .size(theme::font::LABEL)
                     .font(iced::Font::MONOSPACE)
                     .color(theme.ink_dim()),
             )
@@ -128,7 +127,7 @@ fn tile_view<'a>(
     button(content)
         .on_press(Message::PlaySound(sound.id.clone()))
         .width(Length::Fill)
-        .height(TILE_HEIGHT)
+        .height(theme::component::SOUND_TILE_H)
         .style(move |_theme, status| {
             let bg_final = match status {
                 button::Status::Hovered | button::Status::Pressed => lighten(bg, 0.03),
@@ -181,7 +180,7 @@ pub fn context_menu_overlay<'a>(
                 }
             });
 
-            button(text(label).size(13).color(theme.ink()))
+            button(text(label).size(theme::font::BODY).color(theme.ink()))
                 .on_press_maybe(msg)
                 .width(Length::Fill)
                 .style(move |_t, status| button::Style {
@@ -199,7 +198,7 @@ pub fn context_menu_overlay<'a>(
     let menu = container(
         column![
             text(sound.map(|s| s.name.as_str()).unwrap_or(""))
-                .size(13)
+                .size(theme::font::BODY)
                 .color(theme.ink_dim()),
             iced::widget::scrollable(
                 Column::with_children(slot_buttons)
