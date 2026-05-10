@@ -169,6 +169,26 @@ fn duration_scan_builder(
     }))
 }
 
+async fn pick_directory() -> Option<std::path::PathBuf> {
+    use ashpd::desktop::file_chooser::SelectedFiles;
+    let files = SelectedFiles::open_file()
+        .title("Select Sound Folder")
+        .directory(true)
+        .send()
+        .await
+        .ok()?
+        .response()
+        .ok()?;
+    files
+        .uris()
+        .first()
+        .and_then(|uri| {
+            // ashpd 0.13 Uri has only as_str(); parse file:// prefix manually
+            let s = uri.as_str();
+            s.strip_prefix("file://").map(std::path::PathBuf::from)
+        })
+}
+
 impl HonkHonk {
     pub fn new(
         mut tray: TrayHandle,
@@ -500,10 +520,32 @@ impl HonkHonk {
                 self.selected_slot = Some(idx);
                 Task::none()
             }
-            Message::RescanLibrary => Task::none(),
-            Message::AddSoundDirectory => Task::none(),
-            Message::SoundDirectoryPickResult(_) => Task::none(),
-            Message::RemoveSoundDirectory(_) => Task::none(),
+            Message::RescanLibrary => {
+                let new_sounds =
+                    crate::state::Library::scan(&self.config.sound_directories).unwrap_or_default();
+                let pairs: Vec<(String, std::path::PathBuf)> = new_sounds
+                    .iter()
+                    .map(|s| (s.id.clone(), s.path.clone()))
+                    .collect();
+                self.sounds = new_sounds;
+                self.duration_scan_pairs = std::sync::Arc::new(pairs);
+                self.durations_loaded = false;
+                Task::none()
+            }
+            Message::AddSoundDirectory => {
+                Task::perform(pick_directory(), Message::SoundDirectoryPickResult)
+            }
+            Message::SoundDirectoryPickResult(Some(path)) => {
+                self.config.sound_directories.push(path);
+                let _ = self.config.save();
+                self.update(Message::RescanLibrary)
+            }
+            Message::SoundDirectoryPickResult(None) => Task::none(),
+            Message::RemoveSoundDirectory(path) => {
+                self.config.sound_directories.retain(|p| p != &path);
+                let _ = self.config.save();
+                self.update(Message::RescanLibrary)
+            }
         }
     }
 
@@ -1167,5 +1209,40 @@ mod tests {
         let _ = app.update(Message::ShowSettings);
         let _ = app.update(Message::ShowMain);
         assert!(matches!(app.view_mode, ViewMode::Main));
+    }
+
+    #[test]
+    fn rescan_library_resets_durations_loaded() {
+        let mut app = HonkHonk::new_for_test();
+        app.durations_loaded = true;
+        let _ = app.update(Message::RescanLibrary);
+        assert!(!app.durations_loaded, "RescanLibrary must reset durations_loaded");
+    }
+
+    #[test]
+    fn remove_sound_directory_removes_path() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/hh_test_sounds");
+        app.config.sound_directories.push(path.clone());
+        let _ = app.update(Message::RemoveSoundDirectory(path.clone()));
+        assert!(!app.config.sound_directories.contains(&path));
+    }
+
+    #[test]
+    fn sound_directory_pick_some_appends_to_config() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/hh_new_sounds");
+        let before = app.config.sound_directories.len();
+        let _ = app.update(Message::SoundDirectoryPickResult(Some(path.clone())));
+        assert_eq!(app.config.sound_directories.len(), before + 1);
+        assert!(app.config.sound_directories.contains(&path));
+    }
+
+    #[test]
+    fn sound_directory_pick_none_is_noop() {
+        let mut app = HonkHonk::new_for_test();
+        let before = app.config.sound_directories.clone();
+        let _ = app.update(Message::SoundDirectoryPickResult(None));
+        assert_eq!(app.config.sound_directories, before);
     }
 }
