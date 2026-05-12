@@ -52,15 +52,22 @@ pub struct SettingDef {
     pub control: ControlType,
 }
 
-/// Phase 2: only RescanLibrary wired.
-/// Add a SettingDef here when its backend sub-MVP lands.
-pub static SETTINGS_REGISTRY: &[SettingDef] = &[SettingDef {
-    id: SettingId::RescanLibrary,
-    category: SettingCategory::Library,
-    label: "Scan now",
-    hint: "Force a re-scan of all sound folders.",
-    control: ControlType::Button,
-}];
+pub static SETTINGS_REGISTRY: &[SettingDef] = &[
+    SettingDef {
+        id: SettingId::Theme,
+        category: SettingCategory::Appearance,
+        label: "Theme",
+        hint: "Light, Dark, or follow your desktop environment.",
+        control: ControlType::Radio(&["Light", "Dark", "System"]),
+    },
+    SettingDef {
+        id: SettingId::RescanLibrary,
+        category: SettingCategory::Library,
+        label: "Scan now",
+        hint: "Force a re-scan of all sound folders.",
+        control: ControlType::Button,
+    },
+];
 
 #[cfg(test)]
 mod tests {
@@ -99,5 +106,15 @@ mod tests {
             .filter(|d| matches!(d.category, SettingCategory::Audio))
             .count();
         assert_eq!(count, 0, "No audio settings wired in Phase 2 shell");
+    }
+
+    #[test]
+    fn theme_entry_exists_in_appearance_category() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::Theme))
+            .expect("Theme must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.category, SettingCategory::Appearance));
+        assert!(matches!(def.control, ControlType::Radio(_)));
     }
 }

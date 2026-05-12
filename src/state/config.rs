@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::state::error::ConfigError;
+use crate::ui::theme::Theme;
 
 const DEFAULT_VOLUME: f32 = 0.85;
 const DEFAULT_WIDTH: u32 = 900;
@@ -17,6 +18,8 @@ pub struct AppConfig {
     pub volume: f32,
     pub window_width: u32,
     pub window_height: u32,
+    #[serde(default)]
+    pub theme: Theme,
 }
 
 impl Default for AppConfig {
@@ -34,6 +37,7 @@ impl Default for AppConfig {
             volume: DEFAULT_VOLUME,
             window_width: DEFAULT_WIDTH,
             window_height: DEFAULT_HEIGHT,
+            theme: Theme::Dark,
         }
     }
 }
@@ -151,6 +155,7 @@ mod tests {
             volume: 0.5,
             window_width: 1024,
             window_height: 768,
+            theme: Theme::Dark,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -169,6 +174,7 @@ mod tests {
             volume: 0.7,
             window_width: 800,
             window_height: 500,
+            theme: Theme::Dark,
         };
 
         config.save_to(&path).unwrap();

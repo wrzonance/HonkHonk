@@ -73,6 +73,8 @@ pub enum Message {
     AddSoundDirectory,
     SoundDirectoryPickResult(Option<std::path::PathBuf>),
     RemoveSoundDirectory(std::path::PathBuf),
+    // Appearance
+    ThemeChanged(theme::Theme),
 }
 
 impl Message {
@@ -581,6 +583,13 @@ impl HonkHonk {
                 }
                 self.update(Message::RescanLibrary)
             }
+            Message::ThemeChanged(t) => {
+                self.config.theme = t;
+                if let Err(e) = self.config.save() {
+                    eprintln!("honkhonk: config save error: {e}");
+                }
+                Task::none()
+            }
         }
     }
 
@@ -706,7 +715,10 @@ impl HonkHonk {
     }
 
     pub fn theme(&self) -> Theme {
-        Theme::Dark
+        match self.config.theme {
+            theme::Theme::Light => Theme::Light,
+            theme::Theme::Dark | theme::Theme::System => Theme::Dark,
+        }
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
@@ -782,7 +794,7 @@ impl HonkHonk {
     }
 
     fn view_main(&self) -> Element<'_, Message> {
-        let t = theme::Theme::Dark;
+        let t = self.config.theme;
         let header = self.view_header(t);
         let chips = self.view_category_chips(t);
         let filtered = self.filtered_sounds();
@@ -844,7 +856,7 @@ impl HonkHonk {
         match self.view_mode {
             ViewMode::Main => self.view_main(),
             ViewMode::SlotManager => {
-                let t = theme::Theme::Dark;
+                let t = self.config.theme;
                 slot_manager::view_slot_manager(
                     &self.slots,
                     &self.slot_triggers,
@@ -854,7 +866,7 @@ impl HonkHonk {
                 )
             }
             ViewMode::Settings => {
-                crate::ui::settings::view_settings(self, crate::ui::theme::Theme::Dark)
+                crate::ui::settings::view_settings(self, self.config.theme)
             }
         }
     }
@@ -1306,5 +1318,15 @@ mod tests {
         let before = app.config.sound_directories.clone();
         let _ = app.update(Message::SoundDirectoryPickResult(None));
         assert_eq!(app.config.sound_directories, before);
+    }
+
+    #[test]
+    fn theme_changed_updates_config() {
+        let mut app = HonkHonk::new_for_test();
+        assert_eq!(app.config.theme, crate::ui::theme::Theme::Dark);
+        let _ = app.update(Message::ThemeChanged(crate::ui::theme::Theme::Light));
+        assert_eq!(app.config.theme, crate::ui::theme::Theme::Light);
+        let _ = app.update(Message::ThemeChanged(crate::ui::theme::Theme::System));
+        assert_eq!(app.config.theme, crate::ui::theme::Theme::System);
     }
 }

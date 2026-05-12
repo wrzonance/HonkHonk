@@ -132,7 +132,7 @@ fn settings_content<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
         SettingsSection::Audio => view_audio_section(state, t),
         SettingsSection::Library => view_library_section(state, t),
         SettingsSection::Hotkeys => view_hotkeys_section(state, t),
-        SettingsSection::Appearance => view_appearance_section(t),
+        SettingsSection::Appearance => view_appearance_section(state, t),
         SettingsSection::About => view_about_section(t),
     };
 
@@ -180,6 +180,35 @@ pub fn render_setting_row<'a>(
                 })
                 .into()
         }
+        (ControlType::Radio(options), SettingValue::Index(current)) => {
+            let id = def.id;
+            options
+                .iter()
+                .enumerate()
+                .fold(row![].spacing(theme::space::XS), |r, (i, label)| {
+                    let msg = setting_message(id, SettingValue::Index(i));
+                    let active = i == current;
+                    r.push(
+                        button(
+                            text(*label)
+                                .size(theme::font::BODY)
+                                .color(if active { t.bg() } else { t.ink() }),
+                        )
+                        .on_press(msg)
+                        .padding([6.0, 14.0])
+                        .style(move |_t, _s| button::Style {
+                            background: Some(theme::bg_color(if active {
+                                t.ink()
+                            } else {
+                                t.panel()
+                            })),
+                            border: theme::tile_border(t.hairline2(), 1.0),
+                            ..Default::default()
+                        }),
+                    )
+                })
+                .into()
+        }
         _ => text("—")
             .size(theme::font::BODY)
             .color(t.ink_faint())
@@ -197,27 +226,24 @@ pub fn render_setting_row<'a>(
     .into()
 }
 
-/// Read the current value of a setting from app state.
-/// Add arms here when backend sub-MVPs land.
-pub fn get_setting_value(id: SettingId, _state: &HonkHonk) -> SettingValue {
+pub fn get_setting_value(id: SettingId, state: &HonkHonk) -> SettingValue {
     match id {
         SettingId::RescanLibrary => SettingValue::None,
+        SettingId::Theme => SettingValue::Index(state.config.theme.setting_index()),
         _ => SettingValue::None,
     }
 }
 
-/// Map a setting id + value to the specific Message that applies it.
-/// Add arms here when backend sub-MVPs land.
-pub fn setting_message(id: SettingId, _value: SettingValue) -> Message {
-    match id {
-        SettingId::RescanLibrary => Message::RescanLibrary,
-        // All other IDs are unwired stubs — no SettingDef renders them yet.
-        // If this arm fires, a SettingDef was added without updating this function.
+pub fn setting_message(id: SettingId, value: SettingValue) -> Message {
+    match (id, value) {
+        (SettingId::RescanLibrary, _) => Message::RescanLibrary,
+        (SettingId::Theme, SettingValue::Index(i)) => {
+            Message::ThemeChanged(crate::ui::theme::Theme::from_setting_index(i))
+        }
         other => {
-            // Safety net: if this fires, a SettingDef was added without updating this function.
             debug_assert!(
                 false,
-                "setting_message: unhandled SettingId {:?} — add an arm here when wiring a backend",
+                "setting_message: unhandled ({:?}) — add an arm here when wiring a backend",
                 other
             );
             Message::RescanLibrary
@@ -602,11 +628,18 @@ pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     )
 }
 
-pub fn view_appearance_section(t: Theme) -> Element<'static, Message> {
+pub fn view_appearance_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
+    let registry_rows = SETTINGS_REGISTRY
+        .iter()
+        .filter(|d| matches!(d.category, SettingCategory::Appearance))
+        .fold(column![].spacing(0.0), |col, def| {
+            col.push(render_setting_row(def, state, t))
+        });
+
     section_layout(
         "Appearance",
         "How honky should HonkHonk look today?",
-        column![].into(),
+        registry_rows.into(),
         t,
     )
 }
