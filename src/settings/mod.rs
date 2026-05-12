@@ -61,6 +61,13 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
         control: ControlType::Radio(&["Light", "Dark", "System"]),
     },
     SettingDef {
+        id: SettingId::Density,
+        category: SettingCategory::Appearance,
+        label: "Grid density",
+        hint: "Number of tiles per row.",
+        control: ControlType::Radio(&["Compact", "Regular", "Comfy"]),
+    },
+    SettingDef {
         id: SettingId::RescanLibrary,
         category: SettingCategory::Library,
         label: "Scan now",
@@ -116,5 +123,26 @@ mod tests {
             .expect("Theme must be in SETTINGS_REGISTRY");
         assert!(matches!(def.category, SettingCategory::Appearance));
         assert!(matches!(def.control, ControlType::Radio(_)));
+    }
+
+    #[test]
+    fn density_entry_exists_in_appearance_category() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::Density))
+            .expect("Density must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.category, SettingCategory::Appearance));
+    }
+
+    #[test]
+    fn density_control_is_radio_with_three_options() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::Density))
+            .expect("Density must be in SETTINGS_REGISTRY");
+        assert!(
+            matches!(def.control, ControlType::Radio(opts) if opts.len() == 3),
+            "Density must be Radio with 3 options"
+        );
     }
 }

@@ -5,6 +5,41 @@ use serde::{Deserialize, Serialize};
 use crate::state::error::ConfigError;
 use crate::ui::theme::Theme;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Density {
+    Compact,
+    #[default]
+    Regular,
+    Comfy,
+}
+
+impl Density {
+    pub fn columns(self) -> usize {
+        match self {
+            Density::Compact => 6,
+            Density::Regular => 5,
+            Density::Comfy => 4,
+        }
+    }
+
+    pub fn setting_index(self) -> usize {
+        match self {
+            Density::Compact => 0,
+            Density::Regular => 1,
+            Density::Comfy => 2,
+        }
+    }
+
+    pub fn from_setting_index(i: usize) -> Self {
+        match i {
+            0 => Density::Compact,
+            2 => Density::Comfy,
+            _ => Density::Regular,
+        }
+    }
+}
+
 const DEFAULT_VOLUME: f32 = 0.85;
 const DEFAULT_WIDTH: u32 = 900;
 const DEFAULT_HEIGHT: u32 = 600;
@@ -20,6 +55,8 @@ pub struct AppConfig {
     pub window_height: u32,
     #[serde(default)]
     pub theme: Theme,
+    #[serde(default)]
+    pub density: Density,
 }
 
 impl Default for AppConfig {
@@ -38,6 +75,7 @@ impl Default for AppConfig {
             window_width: DEFAULT_WIDTH,
             window_height: DEFAULT_HEIGHT,
             theme: Theme::Dark,
+            density: Density::Regular,
         }
     }
 }
@@ -149,6 +187,35 @@ mod tests {
     }
 
     #[test]
+    fn default_density_is_regular() {
+        assert_eq!(AppConfig::default().density, Density::Regular);
+    }
+
+    #[test]
+    fn density_columns_compact_is_6() {
+        assert_eq!(Density::Compact.columns(), 6);
+    }
+
+    #[test]
+    fn density_columns_regular_is_5() {
+        assert_eq!(Density::Regular.columns(), 5);
+    }
+
+    #[test]
+    fn density_columns_comfy_is_4() {
+        assert_eq!(Density::Comfy.columns(), 4);
+    }
+
+    #[test]
+    fn density_round_trips_through_json() {
+        for d in [Density::Compact, Density::Regular, Density::Comfy] {
+            let json = serde_json::to_string(&d).unwrap();
+            let back: Density = serde_json::from_str(&json).unwrap();
+            assert_eq!(d, back);
+        }
+    }
+
+    #[test]
     fn round_trip_serialize_deserialize() {
         let config = AppConfig {
             sound_directories: vec![PathBuf::from("/tmp/sounds")],
@@ -156,6 +223,7 @@ mod tests {
             window_width: 1024,
             window_height: 768,
             theme: Theme::Dark,
+            density: Density::Compact,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -175,6 +243,7 @@ mod tests {
             window_width: 800,
             window_height: 500,
             theme: Theme::Dark,
+            density: Density::Comfy,
         };
 
         config.save_to(&path).unwrap();
