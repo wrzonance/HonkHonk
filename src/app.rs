@@ -584,9 +584,14 @@ impl HonkHonk {
                 self.update(Message::RescanLibrary)
             }
             Message::ThemeChanged(t) => {
-                self.config.theme = t;
-                if let Err(e) = self.config.save() {
-                    eprintln!("honkhonk: config save error: {e}");
+                if self.config.theme != t {
+                    self.config = AppConfig {
+                        theme: t,
+                        ..self.config.clone()
+                    };
+                    if let Err(e) = self.config.save() {
+                        eprintln!("honkhonk: config save error: {e}");
+                    }
                 }
                 Task::none()
             }
