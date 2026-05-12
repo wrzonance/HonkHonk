@@ -12,19 +12,23 @@ pub struct SlotCtx<'a> {
 }
 
 #[derive(Clone, Copy)]
+pub struct GridCtx<'a> {
+    pub slots: &'a SlotMap,
+    pub triggers: &'a [Option<String>; 20],
+    pub shortcuts_active: bool,
+    pub columns: usize,
+}
+
+#[derive(Clone, Copy)]
 struct TileCtx<'a> {
     slot_ctx: SlotCtx<'a>,
     shortcuts_active: bool,
 }
 
-const COLUMNS: usize = 5;
-
 pub fn view_grid<'a>(
     sounds: &[&'a SoundEntry],
     playing: Option<&str>,
-    slots: &'a crate::state::SlotMap,
-    slot_triggers: &'a [Option<String>; 20],
-    shortcuts_active: bool,
+    grid: GridCtx<'a>,
 ) -> Element<'a, Message> {
     let theme = Theme::Dark;
 
@@ -41,14 +45,14 @@ pub fn view_grid<'a>(
 
     let ctx = TileCtx {
         slot_ctx: SlotCtx {
-            slots,
-            triggers: slot_triggers,
+            slots: grid.slots,
+            triggers: grid.triggers,
         },
-        shortcuts_active,
+        shortcuts_active: grid.shortcuts_active,
     };
 
     let rows: Vec<Element<'a, Message>> = sounds
-        .chunks(COLUMNS)
+        .chunks(grid.columns)
         .map(|chunk| {
             let tiles: Vec<Element<'a, Message>> = chunk
                 .iter()

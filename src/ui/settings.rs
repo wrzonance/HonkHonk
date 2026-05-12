@@ -230,6 +230,7 @@ pub fn get_setting_value(id: SettingId, state: &HonkHonk) -> SettingValue {
     match id {
         SettingId::RescanLibrary => SettingValue::None,
         SettingId::Theme => SettingValue::Index(state.config.theme.setting_index()),
+        SettingId::Density => SettingValue::Index(state.config.density.setting_index()),
         _ => SettingValue::None,
     }
 }
@@ -239,6 +240,9 @@ pub fn setting_message(id: SettingId, value: SettingValue) -> Message {
         (SettingId::RescanLibrary, _) => Message::RescanLibrary,
         (SettingId::Theme, SettingValue::Index(i)) => {
             Message::ThemeChanged(crate::ui::theme::Theme::from_setting_index(i))
+        }
+        (SettingId::Density, SettingValue::Index(i)) => {
+            Message::DensityChanged(crate::state::config::Density::from_setting_index(i))
         }
         other => {
             debug_assert!(

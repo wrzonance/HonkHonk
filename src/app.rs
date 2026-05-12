@@ -6,6 +6,7 @@ use iced::{Element, Length, Point, Subscription, Task, Theme};
 
 use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
 use crate::shortcuts::ShortcutsStatus;
+use crate::state::config::Density;
 use crate::state::{AppConfig, SlotMap, SoundEntry};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::sound_grid;
@@ -75,6 +76,7 @@ pub enum Message {
     RemoveSoundDirectory(std::path::PathBuf),
     // Appearance
     ThemeChanged(theme::Theme),
+    DensityChanged(Density),
 }
 
 impl Message {
@@ -595,6 +597,18 @@ impl HonkHonk {
                 }
                 Task::none()
             }
+            Message::DensityChanged(d) => {
+                if self.config.density != d {
+                    self.config = AppConfig {
+                        density: d,
+                        ..self.config.clone()
+                    };
+                    if let Err(e) = self.config.save() {
+                        eprintln!("honkhonk: config save error: {e}");
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -806,9 +820,12 @@ impl HonkHonk {
         let grid = sound_grid::view_grid(
             &filtered,
             self.playing.as_deref(),
-            &self.slots,
-            &self.slot_triggers,
-            matches!(self.shortcuts_status, ShortcutsStatus::Active),
+            sound_grid::GridCtx {
+                slots: &self.slots,
+                triggers: &self.slot_triggers,
+                shortcuts_active: matches!(self.shortcuts_status, ShortcutsStatus::Active),
+                columns: self.config.density.columns(),
+            },
         );
 
         let now_playing = now_playing::view_now_playing(
@@ -1331,5 +1348,19 @@ mod tests {
         assert_eq!(app.config.theme, crate::ui::theme::Theme::Light);
         let _ = app.update(Message::ThemeChanged(crate::ui::theme::Theme::System));
         assert_eq!(app.config.theme, crate::ui::theme::Theme::System);
+    }
+
+    #[test]
+    fn density_changed_updates_config() {
+        let mut app = HonkHonk::new_for_test();
+        assert_eq!(app.config.density, crate::state::config::Density::Regular);
+        let _ = app.update(Message::DensityChanged(
+            crate::state::config::Density::Compact,
+        ));
+        assert_eq!(app.config.density, crate::state::config::Density::Compact);
+        let _ = app.update(Message::DensityChanged(
+            crate::state::config::Density::Comfy,
+        ));
+        assert_eq!(app.config.density, crate::state::config::Density::Comfy);
     }
 }
