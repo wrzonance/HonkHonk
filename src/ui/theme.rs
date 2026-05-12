@@ -1,15 +1,32 @@
 use iced::{Background, Border, Color};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum Theme {
     #[default]
     Dark,
     Light,
+    System,
 }
 
 impl Theme {
     pub fn is_dark(self) -> bool {
-        matches!(self, Theme::Dark)
+        matches!(self, Theme::Dark | Theme::System)
+    }
+
+    pub fn setting_index(self) -> usize {
+        match self {
+            Theme::Light => 0,
+            Theme::Dark => 1,
+            Theme::System => 2,
+        }
+    }
+
+    pub fn from_setting_index(i: usize) -> Self {
+        match i {
+            0 => Theme::Light,
+            1 => Theme::Dark,
+            _ => Theme::System,
+        }
     }
 }
 
@@ -146,49 +163,49 @@ impl Hh for Theme {
     fn bg(self) -> Color {
         match self {
             Theme::Light => hex(0xf4efe4),
-            Theme::Dark => hex(0x171410),
+            Theme::Dark | Theme::System => hex(0x171410),
         }
     }
     fn panel(self) -> Color {
         match self {
             Theme::Light => hex(0xfffaf0),
-            Theme::Dark => hex(0x1f1c16),
+            Theme::Dark | Theme::System => hex(0x1f1c16),
         }
     }
     fn ink(self) -> Color {
         match self {
             Theme::Light => hex(0x1a1208),
-            Theme::Dark => hex(0xfbf3df),
+            Theme::Dark | Theme::System => hex(0xfbf3df),
         }
     }
     fn ink_dim(self) -> Color {
         match self {
             Theme::Light => hex(0x6a553a),
-            Theme::Dark => hex(0xa39377),
+            Theme::Dark | Theme::System => hex(0xa39377),
         }
     }
     fn ink_faint(self) -> Color {
         match self {
             Theme::Light => hex(0xa8957a),
-            Theme::Dark => hex(0x6a5b46),
+            Theme::Dark | Theme::System => hex(0x6a5b46),
         }
     }
     fn hairline(self) -> Color {
         match self {
             Theme::Light => Color::from_rgba(0.0, 0.0, 0.0, 0.06),
-            Theme::Dark => Color::from_rgba(1.0, 1.0, 1.0, 0.06),
+            Theme::Dark | Theme::System => Color::from_rgba(1.0, 1.0, 1.0, 0.06),
         }
     }
     fn hairline2(self) -> Color {
         match self {
             Theme::Light => Color::from_rgba(0.0, 0.0, 0.0, 0.12),
-            Theme::Dark => Color::from_rgba(1.0, 1.0, 1.0, 0.12),
+            Theme::Dark | Theme::System => Color::from_rgba(1.0, 1.0, 1.0, 0.12),
         }
     }
     fn good(self) -> Color {
         match self {
             Theme::Light => hex(0x16a34a),
-            Theme::Dark => hex(0x4ade80),
+            Theme::Dark | Theme::System => hex(0x4ade80),
         }
     }
     fn accent(self) -> Color {
