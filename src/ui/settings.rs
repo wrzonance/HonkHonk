@@ -189,11 +189,11 @@ pub fn render_setting_row<'a>(
                     let msg = setting_message(id, SettingValue::Index(i));
                     let active = i == current;
                     r.push(
-                        button(
-                            text(*label)
-                                .size(theme::font::BODY)
-                                .color(if active { t.bg() } else { t.ink() }),
-                        )
+                        button(text(*label).size(theme::font::BODY).color(if active {
+                            t.bg()
+                        } else {
+                            t.ink()
+                        }))
                         .on_press(msg)
                         .padding([6.0, 14.0])
                         .style(move |_t, _s| button::Style {

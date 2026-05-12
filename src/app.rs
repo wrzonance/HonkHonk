@@ -865,9 +865,7 @@ impl HonkHonk {
                     t,
                 )
             }
-            ViewMode::Settings => {
-                crate::ui::settings::view_settings(self, self.config.theme)
-            }
+            ViewMode::Settings => crate::ui::settings::view_settings(self, self.config.theme),
         }
     }
 }
