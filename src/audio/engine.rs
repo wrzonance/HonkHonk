@@ -22,6 +22,8 @@ pub enum AudioCommand {
     },
     Stop,
     SetVolume(f32),
+    SetMicPassthrough(bool),
+    SetMicPassthroughLevel(f32),
     Shutdown,
 }
 
@@ -57,7 +59,7 @@ impl AudioHandle {
     }
 }
 
-pub fn spawn() -> Result<AudioHandle, AudioError> {
+pub fn spawn(initial_passthrough: bool) -> Result<AudioHandle, AudioError> {
     let (cmd_tx, cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
 
@@ -65,7 +67,7 @@ pub fn spawn() -> Result<AudioHandle, AudioError> {
         .name("honkhonk-pw".into())
         .spawn(move || {
             let default_source = query_default_source_name();
-            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source) {
+            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source, initial_passthrough) {
                 let _ = evt_tx.send(AudioEvent::Error(e.to_string()));
             }
         })
@@ -182,7 +184,9 @@ fn run_engine(
     cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
     default_source: Option<String>,
+    initial_passthrough: bool,
 ) -> Result<(), AudioError> {
+    let _ = initial_passthrough; // wired in Task 4
     let mainloop = pipewire::main_loop::MainLoopRc::new(None)
         .map_err(|e| AudioError::PipeWireInit(format!("main loop: {e}")))?;
 
@@ -240,6 +244,8 @@ fn run_engine(
                 ap.monitor_state.borrow_mut().set_volume(v);
             }
         }
+        AudioCommand::SetMicPassthrough(_) => {}
+        AudioCommand::SetMicPassthroughLevel(_) => {}
         AudioCommand::Shutdown => {
             let _ = ctx.active.borrow_mut().take();
             mainloop_quit.quit();

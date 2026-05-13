@@ -32,7 +32,7 @@ fn main() -> iced::Result {
         }
     };
 
-    let audio_handle = match honkhonk::audio::spawn() {
+    let audio_handle = match honkhonk::audio::spawn(true) {
         Ok(handle) => handle,
         Err(e) => {
             eprintln!("fatal: failed to start audio engine: {e}");
