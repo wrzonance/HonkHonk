@@ -158,13 +158,30 @@ fn handle_registry_global(
 pub struct RegistryGuard<'a> {
     _registry: pipewire::registry::RegistryBox<'a>,
     _listener: pipewire::registry::Listener,
-    _links: Rc<RefCell<Vec<pipewire::link::Link>>>,
+    _other_links: Rc<RefCell<Vec<pipewire::link::Link>>>,
+    mic_links: Rc<RefCell<Vec<pipewire::link::Link>>>,
+    state: Rc<RefCell<RegistryState>>,
+    mic_passthrough: Rc<Cell<bool>>,
+}
+
+impl<'a> RegistryGuard<'a> {
+    pub fn apply_passthrough(&self, enabled: bool, core: &pipewire::core::CoreRc) {
+        self.mic_passthrough.set(enabled);
+        if enabled {
+            let mut s = self.state.borrow_mut();
+            let mut links = self.mic_links.borrow_mut();
+            try_create_mic_links(&mut s, core, &mut links);
+        } else {
+            self.mic_links.borrow_mut().clear();
+        }
+    }
 }
 
 pub fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
     shared_sink_id: Rc<Cell<Option<u32>>>,
     default_source_name: Option<String>,
+    mic_passthrough: Rc<Cell<bool>>,
 ) -> Result<RegistryGuard<'_>, AudioError> {
     let state = Rc::new(RefCell::new(RegistryState {
         preferred_source_name: default_source_name,
@@ -177,14 +194,17 @@ pub fn setup_registry_listener(
         mic_output_ports: Vec::new(),
         linked_pairs: HashSet::new(),
     }));
-    let all_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
+    let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
+    let other_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
 
     let registry = core
         .get_registry()
         .map_err(|e| AudioError::PipeWireInit(format!("registry: {e}")))?;
 
     let state_ref = state.clone();
-    let links_ref = all_links.clone();
+    let mic_links_ref = mic_links.clone();
+    let other_links_ref = other_links.clone();
+    let mic_passthrough_ref = mic_passthrough.clone();
     let core_ref = core.clone();
     let listener = registry
         .add_listener_local()
@@ -194,15 +214,21 @@ pub fn setup_registry_listener(
             if let Some(id) = s.sink_node_id {
                 shared_sink_id.set(Some(id));
             }
-            let mut link_store = links_ref.borrow_mut();
-            try_create_mic_links(&mut s, &core_ref, &mut link_store);
-            try_create_monitor_links(&mut s, &core_ref, &mut link_store);
+            if mic_passthrough_ref.get() {
+                let mut ml = mic_links_ref.borrow_mut();
+                try_create_mic_links(&mut s, &core_ref, &mut ml);
+            }
+            let mut ol = other_links_ref.borrow_mut();
+            try_create_monitor_links(&mut s, &core_ref, &mut ol);
         })
         .register();
 
     Ok(RegistryGuard {
         _registry: registry,
         _listener: listener,
-        _links: all_links,
+        _other_links: other_links,
+        mic_links,
+        state,
+        mic_passthrough,
     })
 }
