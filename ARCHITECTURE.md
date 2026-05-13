@@ -117,7 +117,7 @@ hairline:  rgba(0,0,0,0.06)   hairline:  rgba(1,1,1,0.06)
 - Favorites tab with star markers
 - Per-sound editor sheet (inline rename, color swatches, trim handles)
 - Bulk import review screen
-- Appearance settings (theme/density/view/accent intensity)
+- Accent intensity slider (theme + density already shipped in Phase 1)
 - List view alternative
 
 **Phase 4 — Advanced:**
@@ -299,28 +299,35 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 
 ## Phased Delivery
 
-### Phase 1: MVP — "It plays sounds in Discord"
-- Iced GUI skeleton (window, sound grid, search, volume)
-- Sound file browser (folder-based, search, grid view)
-- PipeWire virtual mic (persistent sink + mic passthrough)
-- Play sound → virtual mic + local headset
-- Stop / volume controls
-- System tray with quit
-- Flatpak packaging
+### Phase 1: MVP — "It plays sounds in Discord" ✅ COMPLETE
 
-**No hotkeys in Phase 1.** Click-to-play only. Ship it, get feedback.
+- Iced GUI skeleton (window, sound grid, search, volume) ✅
+- Sound file browser (folder-based, search, grid view) ✅
+- PipeWire virtual mic (persistent sink + mic passthrough) ✅
+- Play sound → virtual mic + local headset ✅
+- Stop / volume controls ✅
+- System tray with quit ✅
+- Settings panel — Audio, Library, Hotkeys, Appearance, About ✅
+- Theme persistence (Light / Dark / System, live switching) ✅
+- Grid density (Compact / Regular / Comfy) ✅
+- Mic passthrough toggle + level slider (gain effect in Phase 3) ✅
+- XDG GlobalShortcuts — 20 fixed slots, portal session, slot manager UI ✅
 
-### Phase 2: Global Shortcuts
-- ashpd GlobalShortcuts integration
-- 20 fixed slots, user assigns sounds to slots
-- Settings panel for slot management
-- KDE System Settings integration for key binding
+**Click-to-play ships. Global hotkeys partially wired (binding via DE System Settings).**
+
+### Phase 2: Global Shortcuts — In Progress
+- ~~ashpd GlobalShortcuts integration~~ ✅
+- ~~20 fixed slots, user assigns sounds to slots~~ ✅
+- ~~Settings panel for slot management~~ ✅
+- In-app shortcut assignment with conflict feedback (#77)
+- Monitor output device selection (#72)
+- Renderer selection — wgpu vs tiny-skia (#73)
 
 ### Phase 3: Polish
 - Favorites / recently played
 - Sound pack import (drag-and-drop folders, MyInstants URL import)
-- Themes (dark/light, accent colors via Iced custom Theme)
-- Per-sound volume
+- Accent color intensity (theme variant complete, intensity slider pending)
+- Per-sound volume + mic passthrough gain (#29)
 - Overlap mode (concurrent vs. interrupt)
 
 ### Phase 4: Advanced
