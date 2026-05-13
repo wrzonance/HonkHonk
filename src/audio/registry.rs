@@ -155,17 +155,19 @@ fn handle_registry_global(
     }
 }
 
-pub struct RegistryGuard<'a> {
-    _registry: pipewire::registry::RegistryBox<'a>,
+pub struct RegistryGuard {
+    _registry: pipewire::registry::RegistryRc,
     _listener: pipewire::registry::Listener,
     _other_links: Rc<RefCell<Vec<pipewire::link::Link>>>,
     mic_links: Rc<RefCell<Vec<pipewire::link::Link>>>,
     state: Rc<RefCell<RegistryState>>,
     mic_passthrough: Rc<Cell<bool>>,
+    core: pipewire::core::CoreRc,
 }
 
-impl<'a> RegistryGuard<'a> {
-    pub fn apply_passthrough(&self, enabled: bool, core: &pipewire::core::CoreRc) {
+impl RegistryGuard {
+    pub fn apply_passthrough(&self, enabled: bool) {
+        let core = &self.core;
         self.mic_passthrough.set(enabled);
         if enabled {
             let mut s = self.state.borrow_mut();
@@ -194,7 +196,7 @@ pub fn setup_registry_listener(
     shared_sink_id: Rc<Cell<Option<u32>>>,
     default_source_name: Option<String>,
     mic_passthrough: Rc<Cell<bool>>,
-) -> Result<RegistryGuard<'_>, AudioError> {
+) -> Result<RegistryGuard, AudioError> {
     let state = Rc::new(RefCell::new(RegistryState {
         preferred_source_name: default_source_name,
         sink_node_id: None,
@@ -210,7 +212,7 @@ pub fn setup_registry_listener(
     let other_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
 
     let registry = core
-        .get_registry()
+        .get_registry_rc()
         .map_err(|e| AudioError::PipeWireInit(format!("registry: {e}")))?;
 
     let state_ref = state.clone();
@@ -242,5 +244,6 @@ pub fn setup_registry_listener(
         mic_links,
         state,
         mic_passthrough,
+        core: core.clone(),
     })
 }

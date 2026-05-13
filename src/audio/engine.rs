@@ -186,7 +186,7 @@ fn run_engine(
     default_source: Option<String>,
     initial_passthrough: bool,
 ) -> Result<(), AudioError> {
-    let _ = initial_passthrough; // wired in Task 4
+    let mic_passthrough: Rc<Cell<bool>> = Rc::new(Cell::new(initial_passthrough));
     let mainloop = pipewire::main_loop::MainLoopRc::new(None)
         .map_err(|e| AudioError::PipeWireInit(format!("main loop: {e}")))?;
 
@@ -201,7 +201,12 @@ fn run_engine(
     let _source = create_virtual_source(&core)?;
 
     let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
-    let _registry_guard = setup_registry_listener(&core, registry_sink_id.clone(), default_source)?;
+    let registry_guard = setup_registry_listener(
+        &core,
+        registry_sink_id.clone(),
+        default_source,
+        mic_passthrough,
+    )?;
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
@@ -244,7 +249,9 @@ fn run_engine(
                 ap.monitor_state.borrow_mut().set_volume(v);
             }
         }
-        AudioCommand::SetMicPassthrough(_) => {}
+        AudioCommand::SetMicPassthrough(v) => {
+            registry_guard.apply_passthrough(v);
+        }
         AudioCommand::SetMicPassthroughLevel(_) => {}
         AudioCommand::Shutdown => {
             let _ = ctx.active.borrow_mut().take();
