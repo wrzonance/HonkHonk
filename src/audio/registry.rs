@@ -174,12 +174,14 @@ impl<'a> RegistryGuard<'a> {
         } else {
             {
                 let mut s = self.state.borrow_mut();
-                let mic_ports: Vec<u32> = s.mic_output_ports.clone();
-                let sink_ports: Vec<u32> = s.sink_input_ports.clone();
-                for mic_port in &mic_ports {
-                    for sink_port in &sink_ports {
-                        s.linked_pairs.remove(&(*mic_port, *sink_port));
-                    }
+                let pairs: Vec<(u32, u32)> = s
+                    .mic_output_ports
+                    .iter()
+                    .zip(s.sink_input_ports.iter())
+                    .map(|(&m, &k)| (m, k))
+                    .collect();
+                for pair in pairs {
+                    s.linked_pairs.remove(&pair);
                 }
             }
             self.mic_links.borrow_mut().clear();
