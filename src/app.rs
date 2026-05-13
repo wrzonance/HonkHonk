@@ -636,7 +636,9 @@ impl HonkHonk {
                 }
                 self.config = config;
                 if let Some(ref audio) = self.audio {
-                    audio.send(AudioCommand::SetMicPassthroughLevel(self.config.mic_passthrough_level));
+                    audio.send(AudioCommand::SetMicPassthroughLevel(
+                        self.config.mic_passthrough_level,
+                    ));
                 }
                 Task::none()
             }

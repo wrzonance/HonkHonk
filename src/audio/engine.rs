@@ -67,7 +67,8 @@ pub fn spawn(initial_passthrough: bool) -> Result<AudioHandle, AudioError> {
         .name("honkhonk-pw".into())
         .spawn(move || {
             let default_source = query_default_source_name();
-            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source, initial_passthrough) {
+            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source, initial_passthrough)
+            {
                 let _ = evt_tx.send(AudioEvent::Error(e.to_string()));
             }
         })

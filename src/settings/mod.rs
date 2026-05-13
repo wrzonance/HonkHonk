@@ -79,7 +79,11 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
         category: SettingCategory::Audio,
         label: "Passthrough level",
         hint: "Mic gain into virtual mic. Audio effect lands in issue #29.",
-        control: ControlType::Slider { min: 0.0, max: 1.0, step: 0.01 },
+        control: ControlType::Slider {
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+        },
     },
     SettingDef {
         id: SettingId::RescanLibrary,
@@ -162,7 +166,10 @@ mod tests {
             .iter()
             .filter(|d| matches!(d.category, SettingCategory::Audio))
             .count();
-        assert_eq!(count, 2, "Audio section must have MicPassthrough + MicPassthroughLevel");
+        assert_eq!(
+            count, 2,
+            "Audio section must have MicPassthrough + MicPassthroughLevel"
+        );
     }
 
     #[test]
