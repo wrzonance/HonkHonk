@@ -157,7 +157,16 @@ mod tests {
             .iter()
             .find(|d| matches!(d.id, SettingId::MicPassthroughLevel))
             .expect("MicPassthroughLevel must be in SETTINGS_REGISTRY");
-        assert!(matches!(def.control, ControlType::Slider { .. }));
+        assert!(
+            matches!(
+                def.control,
+                ControlType::Slider { min, max, step }
+                    if (min - 0.0).abs() < f32::EPSILON
+                        && (max - 1.0).abs() < f32::EPSILON
+                        && (step - 0.01).abs() < f32::EPSILON
+            ),
+            "MicPassthroughLevel must be Slider(min=0.0, max=1.0, step=0.01)"
+        );
     }
 
     #[test]
