@@ -88,8 +88,8 @@ impl Default for AppConfig {
             window_height: DEFAULT_HEIGHT,
             theme: Theme::Dark,
             density: Density::Regular,
-            mic_passthrough: true,
-            mic_passthrough_level: 1.0,
+            mic_passthrough: default_true(),
+            mic_passthrough_level: default_level(),
         }
     }
 }
@@ -198,6 +198,9 @@ mod tests {
         assert_eq!(config.volume, 0.85);
         assert_eq!(config.window_width, 900);
         assert_eq!(config.window_height, 600);
+        assert!(config.mic_passthrough);
+        let eps = 1e-6_f32;
+        assert!((config.mic_passthrough_level - 1.0).abs() < eps);
     }
 
     #[test]
