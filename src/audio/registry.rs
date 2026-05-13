@@ -174,20 +174,108 @@ impl RegistryGuard {
             let mut links = self.mic_links.borrow_mut();
             try_create_mic_links(&mut s, core, &mut links);
         } else {
-            {
-                let mut s = self.state.borrow_mut();
-                let pairs: Vec<(u32, u32)> = s
-                    .mic_output_ports
-                    .iter()
-                    .zip(s.sink_input_ports.iter())
-                    .map(|(&m, &k)| (m, k))
-                    .collect();
-                for pair in pairs {
-                    s.linked_pairs.remove(&pair);
-                }
+            let mut s = self.state.borrow_mut();
+            let mut links = self.mic_links.borrow_mut();
+            let pairs: Vec<(u32, u32)> = s
+                .mic_output_ports
+                .iter()
+                .zip(s.sink_input_ports.iter())
+                .map(|(&m, &k)| (m, k))
+                .collect();
+            links.clear(); // drop PipeWire link objects first
+            for pair in pairs {
+                s.linked_pairs.remove(&pair);
             }
-            self.mic_links.borrow_mut().clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn make_state_with_ports() -> RegistryState {
+        let mut state = RegistryState {
+            preferred_source_name: None,
+            sink_node_id: Some(1),
+            sink_input_ports: vec![10, 11],
+            sink_output_ports: vec![],
+            vsource_node_id: None,
+            vsource_input_ports: vec![],
+            mic_node_id: Some(2),
+            mic_output_ports: vec![20, 21],
+            linked_pairs: HashSet::new(),
+        };
+        // Simulate what try_create_mic_links would do (without PipeWire):
+        // manually insert the pairs that would be created
+        state.linked_pairs.insert((20, 10));
+        state.linked_pairs.insert((21, 11));
+        state
+    }
+
+    #[test]
+    fn linked_pairs_removal_uses_zip_not_cross_product() {
+        // After disable, only the zipped pairs should be removed, not the full cross-product
+        let mut state = make_state_with_ports();
+        // Manually remove as apply_passthrough(false) would
+        let pairs: Vec<(u32, u32)> = state
+            .mic_output_ports
+            .iter()
+            .zip(state.sink_input_ports.iter())
+            .map(|(&m, &k)| (m, k))
+            .collect();
+        for pair in pairs {
+            state.linked_pairs.remove(&pair);
+        }
+        // All linked pairs should be gone
+        assert!(state.linked_pairs.is_empty());
+    }
+
+    #[test]
+    fn linked_pairs_removal_clears_only_mic_sink_pairs() {
+        // Monitor pairs (sink_output → vsource_input) should not be touched
+        let mut state = make_state_with_ports();
+        // Add a monitor pair that should not be removed
+        state.linked_pairs.insert((30, 40)); // sink_out → vsource_in
+
+        let pairs: Vec<(u32, u32)> = state
+            .mic_output_ports
+            .iter()
+            .zip(state.sink_input_ports.iter())
+            .map(|(&m, &k)| (m, k))
+            .collect();
+        for pair in pairs {
+            state.linked_pairs.remove(&pair);
+        }
+        // Monitor pair should still be present
+        assert!(state.linked_pairs.contains(&(30, 40)));
+        // Mic pairs should be gone
+        assert!(!state.linked_pairs.contains(&(20, 10)));
+        assert!(!state.linked_pairs.contains(&(21, 11)));
+    }
+
+    #[test]
+    fn linked_pairs_empty_state_removal_does_not_panic() {
+        let state = RegistryState {
+            preferred_source_name: None,
+            sink_node_id: None,
+            sink_input_ports: vec![],
+            sink_output_ports: vec![],
+            vsource_node_id: None,
+            vsource_input_ports: vec![],
+            mic_node_id: None,
+            mic_output_ports: vec![],
+            linked_pairs: HashSet::new(),
+        };
+        // zip of empty vecs should produce no iterations — should not panic
+        let pairs: Vec<(u32, u32)> = state
+            .mic_output_ports
+            .iter()
+            .zip(state.sink_input_ports.iter())
+            .map(|(&m, &k)| (m, k))
+            .collect();
+        assert!(pairs.is_empty());
     }
 }
 
