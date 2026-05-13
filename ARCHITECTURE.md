@@ -117,7 +117,7 @@ hairline:  rgba(0,0,0,0.06)   hairline:  rgba(1,1,1,0.06)
 - Favorites tab with star markers
 - Per-sound editor sheet (inline rename, color swatches, trim handles)
 - Bulk import review screen
-- Appearance settings (theme/density/view/accent intensity)
+- Accent intensity slider (theme + density already shipped in Phase 1)
 - List view alternative
 
 **Phase 4 — Advanced:**
@@ -275,10 +275,12 @@ HonkHonk creates a single persistent virtual audio device on startup:
 ```
 
 Key design decisions:
-- **One persistent virtual sink** created at startup, destroyed at shutdown. No per-sound node creation/destruction (this is what caused PWSP's audio cutouts).
+- **One session-persistent virtual sink** created at startup, destroyed at shutdown (`object.linger = false`). No per-sound node creation/destruction (this is what caused PWSP's audio cutouts).
 - **Real mic passthrough** mixed into the virtual sink. User's voice + sound effects come through one device.
 - **Playback streams** write directly to the virtual sink. PipeWire handles mixing natively.
 - **Local monitoring** via a separate playback stream to the default audio output (headset), so the user hears the sound too.
+
+> **Known limitation (tracked in #49):** Both virtual nodes use `object.linger = false`, so they are destroyed when HonkHonk exits. External apps (Discord, OBS, Audacity) lose their "HonkHonk Mic" selection and must re-select it after each restart. JACK-based clients (e.g. Audacity in JACK mode) are particularly affected because JACK does not auto-reconnect to nodes that were destroyed and recreated. Fix: `pipewire.conf.d` drop-in makes the virtual source system-persistent — tracked in **#49**.
 
 ### Why this avoids PWSP's problems
 
@@ -299,29 +301,37 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 
 ## Phased Delivery
 
-### Phase 1: MVP — "It plays sounds in Discord"
-- Iced GUI skeleton (window, sound grid, search, volume)
-- Sound file browser (folder-based, search, grid view)
-- PipeWire virtual mic (persistent sink + mic passthrough)
-- Play sound → virtual mic + local headset
-- Stop / volume controls
-- System tray with quit
-- Flatpak packaging
+### Phase 1: MVP — "It plays sounds in Discord" ✅ COMPLETE
 
-**No hotkeys in Phase 1.** Click-to-play only. Ship it, get feedback.
+- Iced GUI skeleton (window, sound grid, search, volume) ✅
+- Sound file browser (folder-based, search, grid view) ✅
+- PipeWire virtual mic (persistent sink + mic passthrough) ✅
+- Play sound → virtual mic + local headset ✅
+- Stop / volume controls ✅
+- System tray with quit ✅
+- Settings panel — Audio, Library, Hotkeys, Appearance, About ✅
+- Theme persistence (Light / Dark / System, live switching) ✅
+- Grid density (Compact / Regular / Comfy) ✅
+- Mic passthrough toggle + level slider (gain effect in Phase 3) ✅
+- XDG GlobalShortcuts — 20 fixed slots, portal session, slot manager UI ✅
 
-### Phase 2: Global Shortcuts
-- ashpd GlobalShortcuts integration
-- 20 fixed slots, user assigns sounds to slots
-- Settings panel for slot management
-- KDE System Settings integration for key binding
+**Click-to-play ships. Global hotkeys partially wired (binding via DE System Settings).**
+
+### Phase 2: Global Shortcuts — In Progress
+- ~~ashpd GlobalShortcuts integration~~ ✅
+- ~~20 fixed slots, user assigns sounds to slots~~ ✅
+- ~~Settings panel for slot management~~ ✅
+- In-app shortcut assignment with conflict feedback (#77)
+- Monitor output device selection (#72)
+- Renderer selection — wgpu vs tiny-skia (#73)
 
 ### Phase 3: Polish
 - Favorites / recently played
 - Sound pack import (drag-and-drop folders, MyInstants URL import)
-- Themes (dark/light, accent colors via Iced custom Theme)
-- Per-sound volume
+- Accent color intensity (theme variant complete, intensity slider pending)
+- Per-sound volume + mic passthrough gain (#29)
 - Overlap mode (concurrent vs. interrupt)
+- System-persistent virtual mic via `pipewire.conf.d` drop-in (#49)
 
 ### Phase 4: Advanced
 - App audio passthrough (route Spotify/YouTube to mic)

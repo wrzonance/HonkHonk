@@ -40,6 +40,14 @@ impl Density {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_level() -> f32 {
+    1.0
+}
+
 const DEFAULT_VOLUME: f32 = 0.85;
 const DEFAULT_WIDTH: u32 = 900;
 const DEFAULT_HEIGHT: u32 = 600;
@@ -57,6 +65,10 @@ pub struct AppConfig {
     pub theme: Theme,
     #[serde(default)]
     pub density: Density,
+    #[serde(default = "default_true")]
+    pub mic_passthrough: bool,
+    #[serde(default = "default_level")]
+    pub mic_passthrough_level: f32,
 }
 
 impl Default for AppConfig {
@@ -76,6 +88,8 @@ impl Default for AppConfig {
             window_height: DEFAULT_HEIGHT,
             theme: Theme::Dark,
             density: Density::Regular,
+            mic_passthrough: default_true(),
+            mic_passthrough_level: default_level(),
         }
     }
 }
@@ -184,6 +198,9 @@ mod tests {
         assert_eq!(config.volume, 0.85);
         assert_eq!(config.window_width, 900);
         assert_eq!(config.window_height, 600);
+        assert!(config.mic_passthrough);
+        let eps = 1e-6_f32;
+        assert!((config.mic_passthrough_level - 1.0).abs() < eps);
     }
 
     #[test]
@@ -224,6 +241,8 @@ mod tests {
             window_height: 768,
             theme: Theme::Dark,
             density: Density::Compact,
+            mic_passthrough: true,
+            mic_passthrough_level: 0.75,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -244,6 +263,8 @@ mod tests {
             window_height: 500,
             theme: Theme::Dark,
             density: Density::Comfy,
+            mic_passthrough: false,
+            mic_passthrough_level: 0.5,
         };
 
         config.save_to(&path).unwrap();
@@ -260,6 +281,50 @@ mod tests {
         let loaded = AppConfig::load_from(&path).unwrap();
         assert_eq!(loaded, AppConfig::default());
         assert!(path.exists());
+    }
+
+    #[test]
+    fn default_mic_passthrough_is_true() {
+        assert!(AppConfig::default().mic_passthrough);
+    }
+
+    #[test]
+    fn default_mic_passthrough_level_is_one() {
+        let eps = 1e-6_f32;
+        assert!((AppConfig::default().mic_passthrough_level - 1.0).abs() < eps);
+    }
+
+    #[test]
+    fn mic_passthrough_false_round_trips_json() {
+        let config = AppConfig {
+            mic_passthrough: false,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(!back.mic_passthrough);
+    }
+
+    #[test]
+    fn mic_passthrough_level_round_trips_json() {
+        let config = AppConfig {
+            mic_passthrough_level: 0.42,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        let eps = 1e-5_f32;
+        assert!((back.mic_passthrough_level - 0.42).abs() < eps);
+    }
+
+    #[test]
+    fn missing_mic_passthrough_field_deserializes_to_default() {
+        // Simulates loading a config written before this field existed.
+        let json = r#"{"sound_directories":[],"volume":0.85,"window_width":900,"window_height":600,"theme":"Dark","density":"regular"}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.mic_passthrough);
+        let eps = 1e-6_f32;
+        assert!((config.mic_passthrough_level - 1.0).abs() < eps);
     }
 
     #[test]

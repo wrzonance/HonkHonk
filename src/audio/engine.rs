@@ -22,6 +22,8 @@ pub enum AudioCommand {
     },
     Stop,
     SetVolume(f32),
+    SetMicPassthrough(bool),
+    SetMicPassthroughLevel(f32),
     Shutdown,
 }
 
@@ -57,7 +59,7 @@ impl AudioHandle {
     }
 }
 
-pub fn spawn() -> Result<AudioHandle, AudioError> {
+pub fn spawn(initial_passthrough: bool) -> Result<AudioHandle, AudioError> {
     let (cmd_tx, cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
 
@@ -65,7 +67,8 @@ pub fn spawn() -> Result<AudioHandle, AudioError> {
         .name("honkhonk-pw".into())
         .spawn(move || {
             let default_source = query_default_source_name();
-            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source) {
+            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source, initial_passthrough)
+            {
                 let _ = evt_tx.send(AudioEvent::Error(e.to_string()));
             }
         })
@@ -182,7 +185,9 @@ fn run_engine(
     cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
     default_source: Option<String>,
+    initial_passthrough: bool,
 ) -> Result<(), AudioError> {
+    let mic_passthrough: Rc<Cell<bool>> = Rc::new(Cell::new(initial_passthrough));
     let mainloop = pipewire::main_loop::MainLoopRc::new(None)
         .map_err(|e| AudioError::PipeWireInit(format!("main loop: {e}")))?;
 
@@ -197,7 +202,12 @@ fn run_engine(
     let _source = create_virtual_source(&core)?;
 
     let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
-    let _registry_guard = setup_registry_listener(&core, registry_sink_id.clone(), default_source)?;
+    let registry_guard = setup_registry_listener(
+        &core,
+        registry_sink_id.clone(),
+        default_source,
+        mic_passthrough,
+    )?;
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
@@ -240,6 +250,10 @@ fn run_engine(
                 ap.monitor_state.borrow_mut().set_volume(v);
             }
         }
+        AudioCommand::SetMicPassthrough(v) => {
+            registry_guard.apply_passthrough(v);
+        }
+        AudioCommand::SetMicPassthroughLevel(_) => {}
         AudioCommand::Shutdown => {
             let _ = ctx.active.borrow_mut().take();
             mainloop_quit.quit();
@@ -250,6 +264,22 @@ fn run_engine(
     mainloop.run();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_command_set_mic_passthrough_is_constructible() {
+        let _ = AudioCommand::SetMicPassthrough(true);
+        let _ = AudioCommand::SetMicPassthrough(false);
+    }
+
+    #[test]
+    fn audio_command_set_mic_passthrough_level_is_constructible() {
+        let _ = AudioCommand::SetMicPassthroughLevel(0.5);
+    }
 }
 
 fn handle_play(

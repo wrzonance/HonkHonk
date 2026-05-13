@@ -155,17 +155,136 @@ fn handle_registry_global(
     }
 }
 
-pub struct RegistryGuard<'a> {
-    _registry: pipewire::registry::RegistryBox<'a>,
+pub struct RegistryGuard {
+    _registry: pipewire::registry::RegistryRc,
     _listener: pipewire::registry::Listener,
-    _links: Rc<RefCell<Vec<pipewire::link::Link>>>,
+    _other_links: Rc<RefCell<Vec<pipewire::link::Link>>>,
+    mic_links: Rc<RefCell<Vec<pipewire::link::Link>>>,
+    state: Rc<RefCell<RegistryState>>,
+    mic_passthrough: Rc<Cell<bool>>,
+    core: pipewire::core::CoreRc,
+}
+
+impl RegistryGuard {
+    pub fn apply_passthrough(&self, enabled: bool) {
+        let core = &self.core;
+        self.mic_passthrough.set(enabled);
+        if enabled {
+            let mut s = self.state.borrow_mut();
+            let mut links = self.mic_links.borrow_mut();
+            try_create_mic_links(&mut s, core, &mut links);
+        } else {
+            let mut s = self.state.borrow_mut();
+            let mut links = self.mic_links.borrow_mut();
+            let pairs: Vec<(u32, u32)> = s
+                .mic_output_ports
+                .iter()
+                .zip(s.sink_input_ports.iter())
+                .map(|(&m, &k)| (m, k))
+                .collect();
+            links.clear(); // drop PipeWire link objects first
+            for pair in pairs {
+                s.linked_pairs.remove(&pair);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn make_state_with_ports() -> RegistryState {
+        let mut state = RegistryState {
+            preferred_source_name: None,
+            sink_node_id: Some(1),
+            sink_input_ports: vec![10, 11],
+            sink_output_ports: vec![],
+            vsource_node_id: None,
+            vsource_input_ports: vec![],
+            mic_node_id: Some(2),
+            mic_output_ports: vec![20, 21],
+            linked_pairs: HashSet::new(),
+        };
+        // Simulate what try_create_mic_links would do (without PipeWire):
+        // manually insert the pairs that would be created
+        state.linked_pairs.insert((20, 10));
+        state.linked_pairs.insert((21, 11));
+        state
+    }
+
+    #[test]
+    fn linked_pairs_removal_uses_zip_not_cross_product() {
+        // After disable, only the zipped pairs should be removed, not the full cross-product
+        let mut state = make_state_with_ports();
+        // Manually remove as apply_passthrough(false) would
+        let pairs: Vec<(u32, u32)> = state
+            .mic_output_ports
+            .iter()
+            .zip(state.sink_input_ports.iter())
+            .map(|(&m, &k)| (m, k))
+            .collect();
+        for pair in pairs {
+            state.linked_pairs.remove(&pair);
+        }
+        // All linked pairs should be gone
+        assert!(state.linked_pairs.is_empty());
+    }
+
+    #[test]
+    fn linked_pairs_removal_clears_only_mic_sink_pairs() {
+        // Monitor pairs (sink_output → vsource_input) should not be touched
+        let mut state = make_state_with_ports();
+        // Add a monitor pair that should not be removed
+        state.linked_pairs.insert((30, 40)); // sink_out → vsource_in
+
+        let pairs: Vec<(u32, u32)> = state
+            .mic_output_ports
+            .iter()
+            .zip(state.sink_input_ports.iter())
+            .map(|(&m, &k)| (m, k))
+            .collect();
+        for pair in pairs {
+            state.linked_pairs.remove(&pair);
+        }
+        // Monitor pair should still be present
+        assert!(state.linked_pairs.contains(&(30, 40)));
+        // Mic pairs should be gone
+        assert!(!state.linked_pairs.contains(&(20, 10)));
+        assert!(!state.linked_pairs.contains(&(21, 11)));
+    }
+
+    #[test]
+    fn linked_pairs_empty_state_removal_does_not_panic() {
+        let state = RegistryState {
+            preferred_source_name: None,
+            sink_node_id: None,
+            sink_input_ports: vec![],
+            sink_output_ports: vec![],
+            vsource_node_id: None,
+            vsource_input_ports: vec![],
+            mic_node_id: None,
+            mic_output_ports: vec![],
+            linked_pairs: HashSet::new(),
+        };
+        // zip of empty vecs should produce no iterations — should not panic
+        let pairs: Vec<(u32, u32)> = state
+            .mic_output_ports
+            .iter()
+            .zip(state.sink_input_ports.iter())
+            .map(|(&m, &k)| (m, k))
+            .collect();
+        assert!(pairs.is_empty());
+    }
 }
 
 pub fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
     shared_sink_id: Rc<Cell<Option<u32>>>,
     default_source_name: Option<String>,
-) -> Result<RegistryGuard<'_>, AudioError> {
+    mic_passthrough: Rc<Cell<bool>>,
+) -> Result<RegistryGuard, AudioError> {
     let state = Rc::new(RefCell::new(RegistryState {
         preferred_source_name: default_source_name,
         sink_node_id: None,
@@ -177,14 +296,17 @@ pub fn setup_registry_listener(
         mic_output_ports: Vec::new(),
         linked_pairs: HashSet::new(),
     }));
-    let all_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
+    let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
+    let other_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
 
     let registry = core
-        .get_registry()
+        .get_registry_rc()
         .map_err(|e| AudioError::PipeWireInit(format!("registry: {e}")))?;
 
     let state_ref = state.clone();
-    let links_ref = all_links.clone();
+    let mic_links_ref = mic_links.clone();
+    let other_links_ref = other_links.clone();
+    let mic_passthrough_ref = mic_passthrough.clone();
     let core_ref = core.clone();
     let listener = registry
         .add_listener_local()
@@ -194,15 +316,22 @@ pub fn setup_registry_listener(
             if let Some(id) = s.sink_node_id {
                 shared_sink_id.set(Some(id));
             }
-            let mut link_store = links_ref.borrow_mut();
-            try_create_mic_links(&mut s, &core_ref, &mut link_store);
-            try_create_monitor_links(&mut s, &core_ref, &mut link_store);
+            if mic_passthrough_ref.get() {
+                let mut ml = mic_links_ref.borrow_mut();
+                try_create_mic_links(&mut s, &core_ref, &mut ml);
+            }
+            let mut ol = other_links_ref.borrow_mut();
+            try_create_monitor_links(&mut s, &core_ref, &mut ol);
         })
         .register();
 
     Ok(RegistryGuard {
         _registry: registry,
         _listener: listener,
-        _links: all_links,
+        _other_links: other_links,
+        mic_links,
+        state,
+        mic_passthrough,
+        core: core.clone(),
     })
 }

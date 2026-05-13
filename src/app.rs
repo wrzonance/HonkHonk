@@ -77,6 +77,9 @@ pub enum Message {
     // Appearance
     ThemeChanged(theme::Theme),
     DensityChanged(Density),
+    // Audio
+    MicPassthroughChanged(bool),
+    MicPassthroughLevelChanged(f32),
 }
 
 impl Message {
@@ -606,6 +609,36 @@ impl HonkHonk {
                     if let Err(e) = self.config.save() {
                         eprintln!("honkhonk: config save error: {e}");
                     }
+                }
+                Task::none()
+            }
+            Message::MicPassthroughChanged(v) => {
+                let config = AppConfig {
+                    mic_passthrough: v,
+                    ..self.config.clone()
+                };
+                if let Err(e) = config.save() {
+                    eprintln!("honkhonk: failed to save config: {e}");
+                }
+                self.config = config;
+                if let Some(ref audio) = self.audio {
+                    audio.send(AudioCommand::SetMicPassthrough(v));
+                }
+                Task::none()
+            }
+            Message::MicPassthroughLevelChanged(v) => {
+                let config = AppConfig {
+                    mic_passthrough_level: v.clamp(0.0, 1.0),
+                    ..self.config.clone()
+                };
+                if let Err(e) = config.save() {
+                    eprintln!("honkhonk: failed to save config: {e}");
+                }
+                self.config = config;
+                if let Some(ref audio) = self.audio {
+                    audio.send(AudioCommand::SetMicPassthroughLevel(
+                        self.config.mic_passthrough_level,
+                    ));
                 }
                 Task::none()
             }
@@ -1362,5 +1395,17 @@ mod tests {
             crate::state::config::Density::Comfy,
         ));
         assert_eq!(app.config.density, crate::state::config::Density::Comfy);
+    }
+
+    #[test]
+    fn mic_passthrough_changed_message_carries_bool() {
+        let msg = Message::MicPassthroughChanged(false);
+        assert!(matches!(msg, Message::MicPassthroughChanged(false)));
+    }
+
+    #[test]
+    fn mic_passthrough_level_changed_message_carries_f32() {
+        let msg = Message::MicPassthroughLevelChanged(0.5);
+        assert!(matches!(msg, Message::MicPassthroughLevelChanged(_)));
     }
 }

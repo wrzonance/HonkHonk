@@ -209,6 +209,10 @@ pub fn render_setting_row<'a>(
                 })
                 .into()
         }
+        (ControlType::Toggle, SettingValue::Bool(v)) => render_toggle(def.id, v, t),
+        (ControlType::Slider { min, max, step }, SettingValue::F32(v)) => {
+            render_slider(def.id, v, (*min, *max, *step), t)
+        }
         _ => text("—")
             .size(theme::font::BODY)
             .color(t.ink_faint())
@@ -231,6 +235,8 @@ pub fn get_setting_value(id: SettingId, state: &HonkHonk) -> SettingValue {
         SettingId::RescanLibrary => SettingValue::None,
         SettingId::Theme => SettingValue::Index(state.config.theme.setting_index()),
         SettingId::Density => SettingValue::Index(state.config.density.setting_index()),
+        SettingId::MicPassthrough => SettingValue::Bool(state.config.mic_passthrough),
+        SettingId::MicPassthroughLevel => SettingValue::F32(state.config.mic_passthrough_level),
         _ => SettingValue::None,
     }
 }
@@ -244,6 +250,10 @@ pub fn setting_message(id: SettingId, value: SettingValue) -> Message {
         (SettingId::Density, SettingValue::Index(i)) => {
             Message::DensityChanged(crate::state::config::Density::from_setting_index(i))
         }
+        (SettingId::MicPassthrough, SettingValue::Bool(v)) => Message::MicPassthroughChanged(v),
+        (SettingId::MicPassthroughLevel, SettingValue::F32(v)) => {
+            Message::MicPassthroughLevelChanged(v)
+        }
         other => {
             debug_assert!(
                 false,
@@ -253,6 +263,63 @@ pub fn setting_message(id: SettingId, value: SettingValue) -> Message {
             Message::RescanLibrary
         }
     }
+}
+
+fn render_toggle(id: SettingId, v: bool, t: Theme) -> Element<'static, Message> {
+    row![
+        button(
+            text("On")
+                .size(theme::font::BODY)
+                .color(if v { t.bg() } else { t.ink() }),
+        )
+        .on_press(setting_message(id, SettingValue::Bool(true)))
+        .padding([6.0, 14.0])
+        .style(move |_t, _s| button::Style {
+            background: Some(theme::bg_color(if v { t.ink() } else { t.panel() })),
+            border: theme::tile_border(t.hairline2(), 1.0),
+            ..Default::default()
+        }),
+        button(
+            text("Off")
+                .size(theme::font::BODY)
+                .color(if !v { t.bg() } else { t.ink() }),
+        )
+        .on_press(setting_message(id, SettingValue::Bool(false)))
+        .padding([6.0, 14.0])
+        .style(move |_t, _s| button::Style {
+            background: Some(theme::bg_color(if !v { t.ink() } else { t.panel() })),
+            border: theme::tile_border(t.hairline2(), 1.0),
+            ..Default::default()
+        }),
+    ]
+    .spacing(theme::space::XS)
+    .into()
+}
+
+fn render_slider(
+    id: SettingId,
+    v: f32,
+    range: (f32, f32, f32),
+    t: Theme,
+) -> Element<'static, Message> {
+    let (min, max, step) = range;
+    row![
+        iced::widget::slider(min..=max, v, move |x| {
+            setting_message(id, SettingValue::F32(x))
+        })
+        .step(step)
+        .width(Length::Fixed(200.0)),
+        text(format!("{:.0}%", v * 100.0))
+            .size(theme::font::LABEL)
+            .color(t.ink_dim())
+            .font(iced::Font {
+                family: iced::font::Family::Monospace,
+                ..Default::default()
+            }),
+    ]
+    .spacing(theme::space::SM)
+    .align_y(Alignment::Center)
+    .into()
 }
 
 /// Shared section chrome: bold italic title + subtitle + 2px ink underline + body.

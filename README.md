@@ -30,7 +30,25 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 
 ## Status
 
-**Early development.** Architecture and specification phase. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design.
+**Phase 1 complete.** The core soundboard loop is working:
+
+| Feature | Status |
+|---------|--------|
+| Iced GUI — sound grid, search, categories, volume | ✅ Shipped |
+| PipeWire virtual mic (persistent sink + mic passthrough) | ✅ Shipped |
+| Play sound → virtual mic + local headset | ✅ Shipped |
+| Stop / volume / now-playing bar | ✅ Shipped |
+| System tray with quit | ✅ Shipped |
+| Settings panel (Audio, Library, Hotkeys, Appearance, About) | ✅ Shipped |
+| Theme persistence (Light / Dark / System) | ✅ Shipped |
+| Grid density (Compact / Regular / Comfy) | ✅ Shipped |
+| Mic passthrough toggle + level slider | ✅ Shipped |
+| XDG global shortcuts (20 fixed slots) | ✅ Shipped |
+| In-app shortcut assignment with conflict feedback | 🔜 Next (#77) |
+| Monitor output device selection | 🔜 Planned (#72) |
+| System-persistent virtual mic (survives app restart/reboot) | 🔜 Planned (#49) |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.
 
 ## Building
 
