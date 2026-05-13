@@ -258,6 +258,22 @@ fn run_engine(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_command_set_mic_passthrough_is_constructible() {
+        let _ = AudioCommand::SetMicPassthrough(true);
+        let _ = AudioCommand::SetMicPassthrough(false);
+    }
+
+    #[test]
+    fn audio_command_set_mic_passthrough_level_is_constructible() {
+        let _ = AudioCommand::SetMicPassthroughLevel(0.5);
+    }
+}
+
 fn handle_play(
     ctx: &EngineCtx,
     sound_id: String,

@@ -32,6 +32,7 @@ fn main() -> iced::Result {
         }
     };
 
+    // TODO(Task 7): replace `true` with config.mic_passthrough once Message handlers are wired
     let audio_handle = match honkhonk::audio::spawn(true) {
         Ok(handle) => handle,
         Err(e) => {
