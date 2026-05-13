@@ -46,6 +46,7 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 | XDG global shortcuts (20 fixed slots) | ✅ Shipped |
 | In-app shortcut assignment with conflict feedback | 🔜 Next (#77) |
 | Monitor output device selection | 🔜 Planned (#72) |
+| System-persistent virtual mic (survives app restart/reboot) | 🔜 Planned (#49) |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.
 

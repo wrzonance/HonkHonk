@@ -275,10 +275,12 @@ HonkHonk creates a single persistent virtual audio device on startup:
 ```
 
 Key design decisions:
-- **One persistent virtual sink** created at startup, destroyed at shutdown. No per-sound node creation/destruction (this is what caused PWSP's audio cutouts).
+- **One session-persistent virtual sink** created at startup, destroyed at shutdown (`object.linger = false`). No per-sound node creation/destruction (this is what caused PWSP's audio cutouts).
 - **Real mic passthrough** mixed into the virtual sink. User's voice + sound effects come through one device.
 - **Playback streams** write directly to the virtual sink. PipeWire handles mixing natively.
 - **Local monitoring** via a separate playback stream to the default audio output (headset), so the user hears the sound too.
+
+> **Known limitation (tracked in #49):** Both virtual nodes use `object.linger = false`, so they are destroyed when HonkHonk exits. External apps (Discord, OBS, Audacity) lose their "HonkHonk Mic" selection and must re-select it after each restart. JACK-based clients (e.g. Audacity in JACK mode) are particularly affected because JACK does not auto-reconnect to nodes that were destroyed and recreated. Fix: `pipewire.conf.d` drop-in makes the virtual source system-persistent — tracked in **#49**.
 
 ### Why this avoids PWSP's problems
 
@@ -329,6 +331,7 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 - Accent color intensity (theme variant complete, intensity slider pending)
 - Per-sound volume + mic passthrough gain (#29)
 - Overlap mode (concurrent vs. interrupt)
+- System-persistent virtual mic via `pipewire.conf.d` drop-in (#49)
 
 ### Phase 4: Advanced
 - App audio passthrough (route Spotify/YouTube to mic)
