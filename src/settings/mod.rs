@@ -68,6 +68,20 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
         control: ControlType::Radio(&["Compact", "Regular", "Comfy"]),
     },
     SettingDef {
+        id: SettingId::MicPassthrough,
+        category: SettingCategory::Audio,
+        label: "Mic passthrough",
+        hint: "Mix your real mic into the virtual mic.",
+        control: ControlType::Toggle,
+    },
+    SettingDef {
+        id: SettingId::MicPassthroughLevel,
+        category: SettingCategory::Audio,
+        label: "Passthrough level",
+        hint: "Mic gain into virtual mic. Audio effect lands in issue #29.",
+        control: ControlType::Slider { min: 0.0, max: 1.0, step: 0.01 },
+    },
+    SettingDef {
         id: SettingId::RescanLibrary,
         category: SettingCategory::Library,
         label: "Scan now",
@@ -107,12 +121,48 @@ mod tests {
     }
 
     #[test]
-    fn audio_category_has_no_phase2_entries() {
+    fn mic_passthrough_entry_exists_in_audio_category() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::MicPassthrough))
+            .expect("MicPassthrough must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.category, SettingCategory::Audio));
+    }
+
+    #[test]
+    fn mic_passthrough_control_is_toggle() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::MicPassthrough))
+            .expect("MicPassthrough must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.control, ControlType::Toggle));
+    }
+
+    #[test]
+    fn mic_passthrough_level_entry_exists_in_audio_category() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::MicPassthroughLevel))
+            .expect("MicPassthroughLevel must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.category, SettingCategory::Audio));
+    }
+
+    #[test]
+    fn mic_passthrough_level_control_is_slider() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::MicPassthroughLevel))
+            .expect("MicPassthroughLevel must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.control, ControlType::Slider { .. }));
+    }
+
+    #[test]
+    fn audio_category_has_two_entries() {
         let count = SETTINGS_REGISTRY
             .iter()
             .filter(|d| matches!(d.category, SettingCategory::Audio))
             .count();
-        assert_eq!(count, 0, "No audio settings wired in Phase 2 shell");
+        assert_eq!(count, 2, "Audio section must have MicPassthrough + MicPassthroughLevel");
     }
 
     #[test]
