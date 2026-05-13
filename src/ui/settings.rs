@@ -211,7 +211,7 @@ pub fn render_setting_row<'a>(
         }
         (ControlType::Toggle, SettingValue::Bool(v)) => render_toggle(def.id, v, t),
         (ControlType::Slider { min, max, step }, SettingValue::F32(v)) => {
-            render_slider(def.id, v, *min, *max, *step, t)
+            render_slider(def.id, v, (*min, *max, *step), t)
         }
         _ => text("—")
             .size(theme::font::BODY)
@@ -299,11 +299,10 @@ fn render_toggle(id: SettingId, v: bool, t: Theme) -> Element<'static, Message> 
 fn render_slider(
     id: SettingId,
     v: f32,
-    min: f32,
-    max: f32,
-    step: f32,
+    range: (f32, f32, f32),
     t: Theme,
 ) -> Element<'static, Message> {
+    let (min, max, step) = range;
     row![
         iced::widget::slider(min..=max, v, move |x| {
             setting_message(id, SettingValue::F32(x))

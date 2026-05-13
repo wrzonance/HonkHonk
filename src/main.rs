@@ -32,8 +32,7 @@ fn main() -> iced::Result {
         }
     };
 
-    // TODO(Task 7): replace `true` with config.mic_passthrough — currently forced on regardless of saved config
-    let audio_handle = match honkhonk::audio::spawn(true) {
+    let audio_handle = match honkhonk::audio::spawn(config.mic_passthrough) {
         Ok(handle) => handle,
         Err(e) => {
             eprintln!("fatal: failed to start audio engine: {e}");
