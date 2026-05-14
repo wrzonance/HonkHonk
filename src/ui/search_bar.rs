@@ -7,10 +7,23 @@ use crate::ui::theme::{self, Hh, Theme};
 pub fn view_search_bar(query: &str) -> Element<'_, Message> {
     let t = Theme::Dark;
 
+    // Reserve right space for the clear button so typed text doesn't run under it.
+    let padding = if query.is_empty() {
+        Padding::from(5.0)
+    } else {
+        Padding {
+            top: 5.0,
+            right: 30.0,
+            bottom: 5.0,
+            left: 10.0,
+        }
+    };
+
     let input: Element<'_, Message> = text_input("Find a sound to honk\u{2026}", query)
         .on_input(Message::SearchChanged)
         .size(theme::font::BODY)
         .width(Length::Fixed(300.0))
+        .padding(padding)
         .style(move |_theme, status| {
             let border_color = match status {
                 text_input::Status::Focused { .. } => t.accent(),
