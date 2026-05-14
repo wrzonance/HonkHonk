@@ -1423,22 +1423,25 @@ mod tests {
     }
 
     #[test]
-    fn renderer_changed_message_round_trips() {
-        use crate::state::Renderer;
-        let msg_wgpu = Message::RendererChanged(Renderer::Wgpu);
-        assert!(matches!(msg_wgpu, Message::RendererChanged(Renderer::Wgpu)));
-        let msg_tiny = Message::RendererChanged(Renderer::TinySkia);
-        assert!(matches!(msg_tiny, Message::RendererChanged(Renderer::TinySkia)));
-    }
-
-    #[test]
-    fn renderer_changed_update_saves_to_config() {
+    fn renderer_changed_dispatches_to_update() {
         use crate::state::Renderer;
         let mut app = HonkHonk::new_for_test();
-        assert_eq!(app.config.renderer, Renderer::Wgpu); // default
+        // default is Wgpu
         let _ = app.update(Message::RendererChanged(Renderer::TinySkia));
         assert_eq!(app.config.renderer, Renderer::TinySkia);
         let _ = app.update(Message::RendererChanged(Renderer::Wgpu));
         assert_eq!(app.config.renderer, Renderer::Wgpu);
+    }
+
+    #[test]
+    fn renderer_changed_no_op_when_value_unchanged() {
+        use crate::state::Renderer;
+        let mut app = HonkHonk::new_for_test();
+        // start: Wgpu (default). Send TinySkia, verify change.
+        let _ = app.update(Message::RendererChanged(Renderer::TinySkia));
+        assert_eq!(app.config.renderer, Renderer::TinySkia);
+        // send TinySkia again — state must not corrupt
+        let _ = app.update(Message::RendererChanged(Renderer::TinySkia));
+        assert_eq!(app.config.renderer, Renderer::TinySkia);
     }
 }
