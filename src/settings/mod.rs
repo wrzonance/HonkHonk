@@ -68,6 +68,13 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
         control: ControlType::Radio(&["Compact", "Regular", "Comfy"]),
     },
     SettingDef {
+        id: SettingId::Renderer,
+        category: SettingCategory::Appearance,
+        label: "GPU acceleration",
+        hint: "Disable for VMs or older hardware. Takes effect after restart.",
+        control: ControlType::Toggle,
+    },
+    SettingDef {
         id: SettingId::MicPassthrough,
         category: SettingCategory::Audio,
         label: "Mic passthrough",
@@ -210,5 +217,32 @@ mod tests {
             matches!(def.control, ControlType::Radio(opts) if opts.len() == 3),
             "Density must be Radio with 3 options"
         );
+    }
+
+    #[test]
+    fn renderer_entry_exists_in_appearance_category() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::Renderer))
+            .expect("Renderer must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.category, SettingCategory::Appearance));
+    }
+
+    #[test]
+    fn renderer_control_is_toggle() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::Renderer))
+            .expect("Renderer must be in SETTINGS_REGISTRY");
+        assert!(matches!(def.control, ControlType::Toggle));
+    }
+
+    #[test]
+    fn appearance_category_has_three_entries() {
+        let count = SETTINGS_REGISTRY
+            .iter()
+            .filter(|d| matches!(d.category, SettingCategory::Appearance))
+            .count();
+        assert_eq!(count, 3, "Appearance must have Theme + Density + Renderer");
     }
 }

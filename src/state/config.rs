@@ -40,6 +40,14 @@ impl Density {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Renderer {
+    #[default]
+    Wgpu,
+    TinySkia,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -69,6 +77,8 @@ pub struct AppConfig {
     pub mic_passthrough: bool,
     #[serde(default = "default_level")]
     pub mic_passthrough_level: f32,
+    #[serde(default)]
+    pub renderer: Renderer,
 }
 
 impl Default for AppConfig {
@@ -90,6 +100,7 @@ impl Default for AppConfig {
             density: Density::Regular,
             mic_passthrough: default_true(),
             mic_passthrough_level: default_level(),
+            renderer: Renderer::Wgpu,
         }
     }
 }
@@ -243,6 +254,7 @@ mod tests {
             density: Density::Compact,
             mic_passthrough: true,
             mic_passthrough_level: 0.75,
+            renderer: Renderer::Wgpu,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -265,6 +277,7 @@ mod tests {
             density: Density::Comfy,
             mic_passthrough: false,
             mic_passthrough_level: 0.5,
+            renderer: Renderer::Wgpu,
         };
 
         config.save_to(&path).unwrap();
@@ -338,5 +351,30 @@ mod tests {
         assert!(path.exists());
         let contents = fs::read_to_string(&path).unwrap();
         assert!(contents.contains("volume"));
+    }
+
+    #[test]
+    fn renderer_default_is_wgpu() {
+        assert_eq!(AppConfig::default().renderer, Renderer::Wgpu);
+    }
+
+    #[test]
+    fn renderer_round_trips_json() {
+        for (variant, expected_str) in [
+            (Renderer::Wgpu, "\"wgpu\""),
+            (Renderer::TinySkia, "\"tiny-skia\""),
+        ] {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(json, expected_str, "Renderer::{variant:?} serialized wrong");
+            let back: Renderer = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, variant);
+        }
+    }
+
+    #[test]
+    fn missing_renderer_field_deserializes_to_wgpu() {
+        let json = r#"{"sound_directories":[],"volume":0.85,"window_width":900,"window_height":600,"theme":"Dark","density":"regular","mic_passthrough":true,"mic_passthrough_level":1.0}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.renderer, Renderer::Wgpu);
     }
 }

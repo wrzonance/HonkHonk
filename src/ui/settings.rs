@@ -237,6 +237,9 @@ pub fn get_setting_value(id: SettingId, state: &HonkHonk) -> SettingValue {
         SettingId::Density => SettingValue::Index(state.config.density.setting_index()),
         SettingId::MicPassthrough => SettingValue::Bool(state.config.mic_passthrough),
         SettingId::MicPassthroughLevel => SettingValue::F32(state.config.mic_passthrough_level),
+        SettingId::Renderer => {
+            SettingValue::Bool(state.config.renderer == crate::state::Renderer::Wgpu)
+        }
         _ => SettingValue::None,
     }
 }
@@ -254,6 +257,11 @@ pub fn setting_message(id: SettingId, value: SettingValue) -> Message {
         (SettingId::MicPassthroughLevel, SettingValue::F32(v)) => {
             Message::MicPassthroughLevelChanged(v)
         }
+        (SettingId::Renderer, SettingValue::Bool(v)) => Message::RendererChanged(if v {
+            crate::state::Renderer::Wgpu
+        } else {
+            crate::state::Renderer::TinySkia
+        }),
         other => {
             debug_assert!(
                 false,
