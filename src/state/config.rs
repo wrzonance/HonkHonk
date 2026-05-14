@@ -360,7 +360,10 @@ mod tests {
 
     #[test]
     fn renderer_round_trips_json() {
-        for (variant, expected_str) in [(Renderer::Wgpu, "\"wgpu\""), (Renderer::TinySkia, "\"tiny-skia\"")] {
+        for (variant, expected_str) in [
+            (Renderer::Wgpu, "\"wgpu\""),
+            (Renderer::TinySkia, "\"tiny-skia\""),
+        ] {
             let json = serde_json::to_string(&variant).unwrap();
             assert_eq!(json, expected_str, "Renderer::{variant:?} serialized wrong");
             let back: Renderer = serde_json::from_str(&json).unwrap();
