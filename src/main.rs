@@ -46,12 +46,12 @@ fn main() -> iced::Result {
     let config = std::sync::Mutex::new(Some(config));
     let slots = std::sync::Mutex::new(Some(slots));
 
-    // Renderer selection: set ICED_BACKEND before iced::application so the
-    // Iced compositor picks up the preference. Both wgpu and tiny-skia are
-    // compiled in (see Cargo.toml features). ICED_BACKEND is read by
-    // iced_renderer::fallback::Compositor::with_backend during application
-    // init. Accepted values: "wgpu", "tiny-skia" (comma-separated for
-    // ordered preference list). wgpu is tried first when both are compiled.
+
+    // Renderer selection: HONKHONK_RENDERER (user-facing env var) is translated to
+    // ICED_BACKEND before iced::application runs. ICED_BACKEND is read by
+    // iced_renderer::fallback::Compositor::with_backend during init. Both wgpu and
+    // tiny-skia are compiled in (see Cargo.toml). Accepted ICED_BACKEND values:
+    // "wgpu", "tiny-skia" (comma-separated for ordered preference).
     iced::application(
         move || {
             let tray = tray_handle
