@@ -34,6 +34,27 @@ fn main() -> iced::Result {
 
     let slots = honkhonk::state::SlotMap::load();
 
+    // Renderer selection must happen before any threads are spawned.
+    // set_var is undefined behavior when other threads are live.
+    // At this point: config loaded, sounds scanned, slots loaded — no threads yet.
+    let renderer = effective_renderer(
+        std::env::var("HONKHONK_RENDERER").ok().as_deref(),
+        config.renderer,
+    );
+    let backend_value = match renderer {
+        Renderer::TinySkia => "tiny-skia",
+        Renderer::Wgpu => "wgpu",
+    };
+    // SAFETY: No threads have been spawned yet. pipewire::init() and gtk::init()
+    // do not spawn Rust threads visible to std::thread. The audio thread is
+    // spawned below (audio::spawn), and build_tray() does not spawn threads.
+    // ICED_BACKEND is read by iced_renderer::fallback::Compositor::with_backend
+    // during iced::application() init, which runs after this assignment.
+    #[allow(unused_unsafe)] // safe on edition 2021, required on edition 2024
+    unsafe {
+        std::env::set_var("ICED_BACKEND", backend_value);
+    }
+
     let tray_handle = match honkhonk::tray::build_tray() {
         Ok(handle) => handle,
         Err(e) => {
@@ -49,22 +70,6 @@ fn main() -> iced::Result {
             std::process::exit(1);
         }
     };
-
-    let renderer = effective_renderer(
-        std::env::var("HONKHONK_RENDERER").ok().as_deref(),
-        config.renderer,
-    );
-    let backend_value = match renderer {
-        Renderer::TinySkia => "tiny-skia",
-        Renderer::Wgpu => "wgpu",
-    };
-    // SAFETY: No other threads have been spawned at this point in main().
-    // ICED_BACKEND is read by iced_renderer::fallback::Compositor::with_backend
-    // during iced::application() init, which runs after this assignment.
-    #[allow(unused_unsafe)] // safe on edition 2021, required on edition 2024
-    unsafe {
-        std::env::set_var("ICED_BACKEND", backend_value);
-    }
 
     let tray_handle = std::sync::Mutex::new(Some(tray_handle));
     let audio_handle = std::sync::Mutex::new(Some(audio_handle));
