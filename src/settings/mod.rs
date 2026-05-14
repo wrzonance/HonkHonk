@@ -68,6 +68,13 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
         control: ControlType::Radio(&["Compact", "Regular", "Comfy"]),
     },
     SettingDef {
+        id: SettingId::Renderer,
+        category: SettingCategory::Appearance,
+        label: "GPU acceleration",
+        hint: "Disable for VMs or older hardware. Takes effect after restart.",
+        control: ControlType::Toggle,
+    },
+    SettingDef {
         id: SettingId::MicPassthrough,
         category: SettingCategory::Audio,
         label: "Mic passthrough",
@@ -84,13 +91,6 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
             max: 1.0,
             step: 0.01,
         },
-    },
-    SettingDef {
-        id: SettingId::Renderer,
-        category: SettingCategory::Appearance,
-        label: "GPU acceleration",
-        hint: "Disable for VMs or older hardware. Takes effect after restart.",
-        control: ControlType::Toggle,
     },
     SettingDef {
         id: SettingId::RescanLibrary,
