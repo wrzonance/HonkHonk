@@ -77,6 +77,7 @@ pub enum Message {
     // Appearance
     ThemeChanged(theme::Theme),
     DensityChanged(Density),
+    RendererChanged(crate::state::Renderer),
     // Audio
     MicPassthroughChanged(bool),
     MicPassthroughLevelChanged(f32),
@@ -604,6 +605,18 @@ impl HonkHonk {
                 if self.config.density != d {
                     self.config = AppConfig {
                         density: d,
+                        ..self.config.clone()
+                    };
+                    if let Err(e) = self.config.save() {
+                        eprintln!("honkhonk: config save error: {e}");
+                    }
+                }
+                Task::none()
+            }
+            Message::RendererChanged(r) => {
+                if self.config.renderer != r {
+                    self.config = AppConfig {
+                        renderer: r,
                         ..self.config.clone()
                     };
                     if let Err(e) = self.config.save() {
@@ -1407,5 +1420,25 @@ mod tests {
     fn mic_passthrough_level_changed_message_carries_f32() {
         let msg = Message::MicPassthroughLevelChanged(0.5);
         assert!(matches!(msg, Message::MicPassthroughLevelChanged(_)));
+    }
+
+    #[test]
+    fn renderer_changed_message_round_trips() {
+        use crate::state::Renderer;
+        let msg_wgpu = Message::RendererChanged(Renderer::Wgpu);
+        assert!(matches!(msg_wgpu, Message::RendererChanged(Renderer::Wgpu)));
+        let msg_tiny = Message::RendererChanged(Renderer::TinySkia);
+        assert!(matches!(msg_tiny, Message::RendererChanged(Renderer::TinySkia)));
+    }
+
+    #[test]
+    fn renderer_changed_update_saves_to_config() {
+        use crate::state::Renderer;
+        let mut app = HonkHonk::new_for_test();
+        assert_eq!(app.config.renderer, Renderer::Wgpu); // default
+        let _ = app.update(Message::RendererChanged(Renderer::TinySkia));
+        assert_eq!(app.config.renderer, Renderer::TinySkia);
+        let _ = app.update(Message::RendererChanged(Renderer::Wgpu));
+        assert_eq!(app.config.renderer, Renderer::Wgpu);
     }
 }
