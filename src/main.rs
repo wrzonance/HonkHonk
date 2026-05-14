@@ -54,9 +54,16 @@ fn main() -> iced::Result {
         std::env::var("HONKHONK_RENDERER").ok().as_deref(),
         config.renderer,
     );
-    if renderer == Renderer::TinySkia {
-        // ICED_BACKEND is read by iced_renderer::fallback::Compositor::with_backend.
-        std::env::set_var("ICED_BACKEND", "tiny-skia");
+    let backend_value = match renderer {
+        Renderer::TinySkia => "tiny-skia",
+        Renderer::Wgpu => "wgpu",
+    };
+    // SAFETY: No other threads have been spawned at this point in main().
+    // ICED_BACKEND is read by iced_renderer::fallback::Compositor::with_backend
+    // during iced::application() init, which runs after this assignment.
+    #[allow(unused_unsafe)] // safe on edition 2021, required on edition 2024
+    unsafe {
+        std::env::set_var("ICED_BACKEND", backend_value);
     }
 
     let tray_handle = std::sync::Mutex::new(Some(tray_handle));
@@ -64,7 +71,6 @@ fn main() -> iced::Result {
     let sounds = std::sync::Mutex::new(Some(sounds));
     let config = std::sync::Mutex::new(Some(config));
     let slots = std::sync::Mutex::new(Some(slots));
-
 
     // Renderer selection: HONKHONK_RENDERER (user-facing env var) is translated to
     // ICED_BACKEND before iced::application runs. ICED_BACKEND is read by
@@ -116,28 +122,43 @@ mod tests {
 
     #[test]
     fn effective_renderer_software_env_overrides_wgpu_config() {
-        assert_eq!(effective_renderer(Some("software"), Renderer::Wgpu), Renderer::TinySkia);
+        assert_eq!(
+            effective_renderer(Some("software"), Renderer::Wgpu),
+            Renderer::TinySkia
+        );
     }
 
     #[test]
     fn effective_renderer_tiny_skia_alias_works() {
-        assert_eq!(effective_renderer(Some("tiny-skia"), Renderer::Wgpu), Renderer::TinySkia);
+        assert_eq!(
+            effective_renderer(Some("tiny-skia"), Renderer::Wgpu),
+            Renderer::TinySkia
+        );
     }
 
     #[test]
     fn effective_renderer_wgpu_env_overrides_tiny_skia_config() {
-        assert_eq!(effective_renderer(Some("wgpu"), Renderer::TinySkia), Renderer::Wgpu);
+        assert_eq!(
+            effective_renderer(Some("wgpu"), Renderer::TinySkia),
+            Renderer::Wgpu
+        );
     }
 
     #[test]
     fn effective_renderer_no_env_uses_config() {
-        assert_eq!(effective_renderer(None, Renderer::TinySkia), Renderer::TinySkia);
+        assert_eq!(
+            effective_renderer(None, Renderer::TinySkia),
+            Renderer::TinySkia
+        );
         assert_eq!(effective_renderer(None, Renderer::Wgpu), Renderer::Wgpu);
     }
 
     #[test]
     fn effective_renderer_unknown_env_falls_back_to_config() {
-        assert_eq!(effective_renderer(Some("opengl"), Renderer::TinySkia), Renderer::TinySkia);
+        assert_eq!(
+            effective_renderer(Some("opengl"), Renderer::TinySkia),
+            Renderer::TinySkia
+        );
         assert_eq!(effective_renderer(Some(""), Renderer::Wgpu), Renderer::Wgpu);
     }
 }
