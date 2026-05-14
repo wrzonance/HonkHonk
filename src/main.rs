@@ -1,3 +1,13 @@
+use honkhonk::state::Renderer;
+
+fn effective_renderer(env_val: Option<&str>, config_pref: Renderer) -> Renderer {
+    match env_val {
+        Some("software") | Some("tiny-skia") => Renderer::TinySkia,
+        Some("wgpu") => Renderer::Wgpu,
+        _ => config_pref,
+    }
+}
+
 fn main() -> iced::Result {
     pipewire::init();
 
@@ -39,6 +49,15 @@ fn main() -> iced::Result {
             std::process::exit(1);
         }
     };
+
+    let renderer = effective_renderer(
+        std::env::var("HONKHONK_RENDERER").ok().as_deref(),
+        config.renderer,
+    );
+    if renderer == Renderer::TinySkia {
+        // ICED_BACKEND is read by iced_renderer::fallback::Compositor::with_backend.
+        std::env::set_var("ICED_BACKEND", "tiny-skia");
+    }
 
     let tray_handle = std::sync::Mutex::new(Some(tray_handle));
     let audio_handle = std::sync::Mutex::new(Some(audio_handle));
@@ -88,4 +107,37 @@ fn main() -> iced::Result {
     .subscription(honkhonk::app::HonkHonk::subscription)
     .theme(honkhonk::app::HonkHonk::theme)
     .run()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use honkhonk::state::Renderer;
+
+    #[test]
+    fn effective_renderer_software_env_overrides_wgpu_config() {
+        assert_eq!(effective_renderer(Some("software"), Renderer::Wgpu), Renderer::TinySkia);
+    }
+
+    #[test]
+    fn effective_renderer_tiny_skia_alias_works() {
+        assert_eq!(effective_renderer(Some("tiny-skia"), Renderer::Wgpu), Renderer::TinySkia);
+    }
+
+    #[test]
+    fn effective_renderer_wgpu_env_overrides_tiny_skia_config() {
+        assert_eq!(effective_renderer(Some("wgpu"), Renderer::TinySkia), Renderer::Wgpu);
+    }
+
+    #[test]
+    fn effective_renderer_no_env_uses_config() {
+        assert_eq!(effective_renderer(None, Renderer::TinySkia), Renderer::TinySkia);
+        assert_eq!(effective_renderer(None, Renderer::Wgpu), Renderer::Wgpu);
+    }
+
+    #[test]
+    fn effective_renderer_unknown_env_falls_back_to_config() {
+        assert_eq!(effective_renderer(Some("opengl"), Renderer::TinySkia), Renderer::TinySkia);
+        assert_eq!(effective_renderer(Some(""), Renderer::Wgpu), Renderer::Wgpu);
+    }
 }
