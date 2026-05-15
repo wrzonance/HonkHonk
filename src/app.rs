@@ -406,9 +406,10 @@ impl HonkHonk {
                         eprintln!("honkhonk: audio error: {e}");
                     }
                     AudioEvent::OutputDevicesChanged(devices) => {
-                        self.monitor_devices = devices;
                         if let Some(ref target) = self.config.monitor_device.clone() {
-                            if !self.monitor_devices.iter().any(|(n, _)| n == target) {
+                            let was_visible = self.monitor_devices.iter().any(|(n, _)| n == target);
+                            let still_visible = devices.iter().any(|(n, _)| n == target);
+                            if was_visible && !still_visible {
                                 let config = AppConfig {
                                     monitor_device: None,
                                     ..self.config.clone()
@@ -422,6 +423,7 @@ impl HonkHonk {
                                 }
                             }
                         }
+                        self.monitor_devices = devices;
                     }
                 }
                 Task::none()
@@ -1523,17 +1525,48 @@ mod tests {
     }
 
     #[test]
-    fn output_devices_changed_clears_stale_monitor_device() {
+    fn output_devices_changed_does_not_clear_device_before_it_is_first_seen() {
+        // Startup race: saved device not yet enumerated — must NOT clear config
         let mut app = HonkHonk::new_for_test();
         app.config = AppConfig {
-            monitor_device: Some("alsa_output.removed".into()),
+            monitor_device: Some("alsa_output.usb-headset".into()),
             ..AppConfig::default()
         };
-        // new list does not contain the saved device
+        // monitor_devices is empty (startup) — first event only contains a different sink
         let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(vec![
-            ("alsa_output.other".into(), "Other Device".into()),
+            ("alsa_output.hdmi".into(), "HDMI Audio".into()),
         ])));
-        assert!(app.config.monitor_device.is_none());
+        assert_eq!(
+            app.config.monitor_device.as_deref(),
+            Some("alsa_output.usb-headset"),
+            "must not clear saved device before it has been enumerated"
+        );
+    }
+
+    #[test]
+    fn output_devices_changed_clears_device_after_it_disappears() {
+        // Runtime removal: device was known, then removed — clear config
+        let mut app = HonkHonk::new_for_test();
+        app.config = AppConfig {
+            monitor_device: Some("alsa_output.usb-headset".into()),
+            ..AppConfig::default()
+        };
+        // First: device appears in list (now it's "seen")
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(vec![
+            ("alsa_output.usb-headset".into(), "USB Headset".into()),
+        ])));
+        assert_eq!(
+            app.config.monitor_device.as_deref(),
+            Some("alsa_output.usb-headset")
+        );
+        // Then: device disappears (unplugged)
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(vec![
+            ("alsa_output.pci".into(), "Built-in Audio".into()),
+        ])));
+        assert!(
+            app.config.monitor_device.is_none(),
+            "must clear config when device was visible and then removed"
+        );
     }
 
     #[test]
@@ -1543,8 +1576,13 @@ mod tests {
             monitor_device: Some("alsa_output.pci".into()),
             ..AppConfig::default()
         };
+        // Device appears, then stays in subsequent updates
         let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(vec![
             ("alsa_output.pci".into(), "Built-in Audio".into()),
+        ])));
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(vec![
+            ("alsa_output.pci".into(), "Built-in Audio".into()),
+            ("alsa_output.usb".into(), "USB Headset".into()),
         ])));
         assert_eq!(
             app.config.monitor_device.as_deref(),
