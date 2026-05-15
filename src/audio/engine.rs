@@ -24,6 +24,7 @@ pub enum AudioCommand {
     SetVolume(f32),
     SetMicPassthrough(bool),
     SetMicPassthroughLevel(f32),
+    SetMonitorDevice(Option<String>),
     Shutdown,
 }
 
@@ -34,6 +35,7 @@ pub enum AudioEvent {
     PlaybackFinished { sound_id: String },
     Progress(f32),
     Error(String),
+    OutputDevicesChanged(Vec<(String, String)>),
 }
 
 pub struct AudioHandle {
@@ -59,7 +61,10 @@ impl AudioHandle {
     }
 }
 
-pub fn spawn(initial_passthrough: bool) -> Result<AudioHandle, AudioError> {
+pub fn spawn(
+    initial_passthrough: bool,
+    initial_monitor_device: Option<String>,
+) -> Result<AudioHandle, AudioError> {
     let (cmd_tx, cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
 
@@ -67,8 +72,13 @@ pub fn spawn(initial_passthrough: bool) -> Result<AudioHandle, AudioError> {
         .name("honkhonk-pw".into())
         .spawn(move || {
             let default_source = query_default_source_name();
-            if let Err(e) = run_engine(cmd_rx, evt_tx.clone(), default_source, initial_passthrough)
-            {
+            if let Err(e) = run_engine(
+                cmd_rx,
+                evt_tx.clone(),
+                default_source,
+                initial_passthrough,
+                initial_monitor_device,
+            ) {
                 let _ = evt_tx.send(AudioEvent::Error(e.to_string()));
             }
         })
@@ -96,7 +106,7 @@ struct ActivePlayback {
     sink_state: Rc<RefCell<PlaybackState>>,
     monitor_state: Rc<RefCell<PlaybackState>>,
     _sink_stream: playback::PlaybackStream,
-    _monitor_stream: playback::PlaybackStream,
+    monitor_stream: Option<playback::PlaybackStream>,
 }
 
 struct EngineCtx {
@@ -105,6 +115,7 @@ struct EngineCtx {
     active: Rc<RefCell<Option<ActivePlayback>>>,
     evt_tx: mpsc::Sender<AudioEvent>,
     engine_volume: Rc<Cell<f32>>,
+    monitor_target: Rc<RefCell<Option<String>>>,
 }
 
 fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::Node, AudioError> {
@@ -186,8 +197,10 @@ fn run_engine(
     evt_tx: mpsc::Sender<AudioEvent>,
     default_source: Option<String>,
     initial_passthrough: bool,
+    initial_monitor_device: Option<String>,
 ) -> Result<(), AudioError> {
     let mic_passthrough: Rc<Cell<bool>> = Rc::new(Cell::new(initial_passthrough));
+    let monitor_target: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(initial_monitor_device));
     let mainloop = pipewire::main_loop::MainLoopRc::new(None)
         .map_err(|e| AudioError::PipeWireInit(format!("main loop: {e}")))?;
 
@@ -207,6 +220,7 @@ fn run_engine(
         registry_sink_id.clone(),
         default_source,
         mic_passthrough,
+        evt_tx.clone(),
     )?;
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
@@ -218,6 +232,7 @@ fn run_engine(
         active: active.clone(),
         evt_tx: evt_tx.clone(),
         engine_volume,
+        monitor_target,
     };
 
     let active_timer = active;
@@ -254,6 +269,10 @@ fn run_engine(
             registry_guard.apply_passthrough(v);
         }
         AudioCommand::SetMicPassthroughLevel(_) => {}
+        AudioCommand::SetMonitorDevice(target) => {
+            *ctx.monitor_target.borrow_mut() = target;
+            rebuild_monitor_stream(&ctx);
+        }
         AudioCommand::Shutdown => {
             let _ = ctx.active.borrow_mut().take();
             mainloop_quit.quit();
@@ -279,6 +298,42 @@ mod tests {
     #[test]
     fn audio_command_set_mic_passthrough_level_is_constructible() {
         let _ = AudioCommand::SetMicPassthroughLevel(0.5);
+    }
+
+    #[test]
+    fn audio_command_set_monitor_device_none_is_constructible() {
+        let _ = AudioCommand::SetMonitorDevice(None);
+    }
+
+    #[test]
+    fn audio_command_set_monitor_device_some_is_constructible() {
+        let _ = AudioCommand::SetMonitorDevice(Some("alsa_output.pci-test".into()));
+    }
+
+    #[test]
+    fn audio_event_output_devices_changed_is_constructible() {
+        let _ = AudioEvent::OutputDevicesChanged(vec![(
+            "alsa_output.pci-test".into(),
+            "Built-in Audio".into(),
+        )]);
+    }
+}
+
+fn rebuild_monitor_stream(ctx: &EngineCtx) {
+    if let Some(ref mut ap) = *ctx.active.borrow_mut() {
+        let (rate, ch) = {
+            let ms = ap.monitor_state.borrow();
+            (ms.sample_rate(), ms.channels())
+        };
+        let target = ctx.monitor_target.borrow().clone();
+        ap.monitor_stream = playback::create_monitor_stream(
+            ctx.core.clone(),
+            ap.monitor_state.clone(),
+            rate,
+            ch,
+            target.as_deref(),
+        )
+        .ok();
     }
 }
 
@@ -314,6 +369,7 @@ fn handle_play(
         .borrow_mut()
         .start(sound_id.clone(), samples, sample_rate, channels);
 
+    let target = ctx.monitor_target.borrow().clone();
     let sink_stream = playback::create_sink_stream(
         ctx.core.clone(),
         sink_state.clone(),
@@ -321,8 +377,13 @@ fn handle_play(
         sample_rate,
         channels,
     );
-    let mon_stream =
-        playback::create_monitor_stream(ctx.core.clone(), mon_state.clone(), sample_rate, channels);
+    let mon_stream = playback::create_monitor_stream(
+        ctx.core.clone(),
+        mon_state.clone(),
+        sample_rate,
+        channels,
+        target.as_deref(),
+    );
 
     match (sink_stream, mon_stream) {
         (Ok(sink_s), Ok(mon_s)) => {
@@ -331,7 +392,7 @@ fn handle_play(
                 sink_state,
                 monitor_state: mon_state,
                 _sink_stream: sink_s,
-                _monitor_stream: mon_s,
+                monitor_stream: Some(mon_s),
             });
             let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
         }

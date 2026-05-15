@@ -133,27 +133,43 @@ pub fn create_sink_stream(
     })
 }
 
-/// Create a PipeWire output stream targeting the default audio output.
+/// Create a PipeWire output stream for local monitoring.
 ///
-/// The stream fills PipeWire buffers from `state` on each process callback.
-/// This lets the operator monitor playback through their headset while the
-/// sink stream sends the same audio to the virtual sink.
+/// When `target` is `None`, PipeWire autoconnects to the default output.
+/// When `target` is `Some(node_name)`, the stream is pinned to that device
+/// and `NODE_DONT_RECONNECT` prevents PipeWire from overriding the target.
 pub fn create_monitor_stream(
     core: pw::core::CoreRc,
     state: Rc<RefCell<PlaybackState>>,
     sample_rate: u32,
     channels: u16,
+    target: Option<&str>,
 ) -> Result<PlaybackStream, AudioError> {
-    let stream = pw::stream::StreamRc::new(
-        core,
-        "honkhonk-monitor",
-        pw::properties::properties! {
-            *pw::keys::MEDIA_TYPE => "Audio",
-            *pw::keys::MEDIA_ROLE => "Music",
-            *pw::keys::MEDIA_CATEGORY => "Playback",
-            *pw::keys::AUDIO_CHANNELS => channels.to_string(),
-        },
-    )
+    let stream = if let Some(target_name) = target {
+        pw::stream::StreamRc::new(
+            core,
+            "honkhonk-monitor",
+            pw::properties::properties! {
+                *pw::keys::MEDIA_TYPE => "Audio",
+                *pw::keys::MEDIA_ROLE => "Music",
+                *pw::keys::MEDIA_CATEGORY => "Playback",
+                *pw::keys::AUDIO_CHANNELS => channels.to_string(),
+                "target.object" => target_name,
+                *pw::keys::NODE_DONT_RECONNECT => "true",
+            },
+        )
+    } else {
+        pw::stream::StreamRc::new(
+            core,
+            "honkhonk-monitor",
+            pw::properties::properties! {
+                *pw::keys::MEDIA_TYPE => "Audio",
+                *pw::keys::MEDIA_ROLE => "Music",
+                *pw::keys::MEDIA_CATEGORY => "Playback",
+                *pw::keys::AUDIO_CHANNELS => channels.to_string(),
+            },
+        )
+    }
     .map_err(|e| AudioError::StreamCreation(format!("monitor stream: {e}")))?;
 
     let listener = stream

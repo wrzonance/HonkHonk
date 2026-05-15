@@ -81,6 +81,7 @@ pub enum Message {
     // Audio
     MicPassthroughChanged(bool),
     MicPassthroughLevelChanged(f32),
+    MonitorDeviceChanged(Option<String>),
 }
 
 impl Message {
@@ -117,6 +118,7 @@ pub struct HonkHonk {
     view_mode: ViewMode,
     selected_slot: Option<u8>,
     pub(crate) settings_section: SettingsSection,
+    pub monitor_devices: Vec<(String, String)>,
 }
 
 fn shortcuts_stream_sub(
@@ -247,6 +249,7 @@ impl HonkHonk {
             view_mode: ViewMode::default(),
             selected_slot: None,
             settings_section: SettingsSection::default(),
+            monitor_devices: Vec::new(),
         }
     }
 
@@ -277,6 +280,7 @@ impl HonkHonk {
             view_mode: ViewMode::default(),
             selected_slot: None,
             settings_section: SettingsSection::default(),
+            monitor_devices: Vec::new(),
         }
     }
 
@@ -400,6 +404,9 @@ impl HonkHonk {
                     }
                     AudioEvent::Error(e) => {
                         eprintln!("honkhonk: audio error: {e}");
+                    }
+                    AudioEvent::OutputDevicesChanged(devices) => {
+                        self.monitor_devices = devices;
                     }
                 }
                 Task::none()
@@ -652,6 +659,20 @@ impl HonkHonk {
                     audio.send(AudioCommand::SetMicPassthroughLevel(
                         self.config.mic_passthrough_level,
                     ));
+                }
+                Task::none()
+            }
+            Message::MonitorDeviceChanged(target) => {
+                let config = AppConfig {
+                    monitor_device: target.clone(),
+                    ..self.config.clone()
+                };
+                if let Err(e) = config.save() {
+                    eprintln!("honkhonk: failed to save config: {e}");
+                }
+                self.config = config;
+                if let Some(ref audio) = self.audio {
+                    audio.send(AudioCommand::SetMonitorDevice(target));
                 }
                 Task::none()
             }
@@ -1443,5 +1464,61 @@ mod tests {
         // send TinySkia again — state must not corrupt
         let _ = app.update(Message::RendererChanged(Renderer::TinySkia));
         assert_eq!(app.config.renderer, Renderer::TinySkia);
+    }
+
+    #[test]
+    fn monitor_device_changed_to_none_clears_config() {
+        let mut app = HonkHonk::new_for_test();
+        app.config = AppConfig {
+            monitor_device: Some("alsa_output.pci-test".into()),
+            ..AppConfig::default()
+        };
+        let _ = app.update(Message::MonitorDeviceChanged(None));
+        assert!(app.config.monitor_device.is_none());
+    }
+
+    #[test]
+    fn monitor_device_changed_to_some_sets_config() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::MonitorDeviceChanged(Some(
+            "alsa_output.pci-test".into(),
+        )));
+        assert_eq!(
+            app.config.monitor_device.as_deref(),
+            Some("alsa_output.pci-test")
+        );
+    }
+
+    #[test]
+    fn monitor_device_changed_same_value_is_idempotent() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::MonitorDeviceChanged(None));
+        let _ = app.update(Message::MonitorDeviceChanged(None));
+        assert!(app.config.monitor_device.is_none());
+    }
+
+    #[test]
+    fn audio_event_output_devices_changed_updates_monitor_devices() {
+        let mut app = HonkHonk::new_for_test();
+        let devices = vec![("alsa_output.pci".into(), "Built-in Audio".into())];
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(
+            devices.clone(),
+        )));
+        assert_eq!(app.monitor_devices, devices);
+    }
+
+    #[test]
+    fn audio_event_output_devices_changed_replaces_previous_list() {
+        let mut app = HonkHonk::new_for_test();
+        let first = vec![("alsa_output.pci".into(), "Built-in Audio".into())];
+        let second = vec![
+            ("alsa_output.pci".into(), "Built-in Audio".into()),
+            ("alsa_output.usb".into(), "USB Headset".into()),
+        ];
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(first)));
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(
+            second.clone(),
+        )));
+        assert_eq!(app.monitor_devices, second);
     }
 }
