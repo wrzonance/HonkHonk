@@ -680,6 +680,9 @@ impl HonkHonk {
                 Task::none()
             }
             Message::MonitorDeviceChanged(target) => {
+                if self.config.monitor_device == target {
+                    return Task::none();
+                }
                 let config = AppConfig {
                     monitor_device: target.clone(),
                     ..self.config.clone()

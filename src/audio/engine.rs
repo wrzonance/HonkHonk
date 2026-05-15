@@ -336,6 +336,7 @@ fn rebuild_monitor_stream(ctx: &EngineCtx) {
             Ok(stream) => ap.monitor_stream = Some(stream),
             Err(e) => {
                 ap.monitor_stream = None;
+                ap.monitor_state.borrow_mut().stop();
                 let _ = ctx
                     .evt_tx
                     .send(AudioEvent::Error(format!("monitor stream rebuild: {e}")));
@@ -392,19 +393,29 @@ fn handle_play(
         target.as_deref(),
     );
 
-    match (sink_stream, mon_stream) {
-        (Ok(sink_s), Ok(mon_s)) => {
-            *ctx.active.borrow_mut() = Some(ActivePlayback {
-                sound_id: sound_id.clone(),
-                sink_state,
-                monitor_state: mon_state,
-                _sink_stream: sink_s,
-                monitor_stream: Some(mon_s),
-            });
-            let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
-        }
-        (Err(e), _) | (_, Err(e)) => {
+    let sink_s = match sink_stream {
+        Ok(s) => s,
+        Err(e) => {
             let _ = ctx.evt_tx.send(AudioEvent::Error(e.to_string()));
+            return;
         }
-    }
+    };
+    let monitor_stream = match mon_stream {
+        Ok(s) => Some(s),
+        Err(e) => {
+            mon_state.borrow_mut().stop();
+            let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
+                "monitor stream unavailable: {e}"
+            )));
+            None
+        }
+    };
+    *ctx.active.borrow_mut() = Some(ActivePlayback {
+        sound_id: sound_id.clone(),
+        sink_state,
+        monitor_state: mon_state,
+        _sink_stream: sink_s,
+        monitor_stream,
+    });
+    let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
 }
