@@ -407,6 +407,21 @@ impl HonkHonk {
                     }
                     AudioEvent::OutputDevicesChanged(devices) => {
                         self.monitor_devices = devices;
+                        if let Some(ref target) = self.config.monitor_device.clone() {
+                            if !self.monitor_devices.iter().any(|(n, _)| n == target) {
+                                let config = AppConfig {
+                                    monitor_device: None,
+                                    ..self.config.clone()
+                                };
+                                if let Err(e) = config.save() {
+                                    eprintln!("honkhonk: failed to save config: {e}");
+                                }
+                                self.config = config;
+                                if let Some(ref audio) = self.audio {
+                                    audio.send(AudioCommand::SetMonitorDevice(None));
+                                }
+                            }
+                        }
                     }
                 }
                 Task::none()
@@ -1505,6 +1520,36 @@ mod tests {
             devices.clone(),
         )));
         assert_eq!(app.monitor_devices, devices);
+    }
+
+    #[test]
+    fn output_devices_changed_clears_stale_monitor_device() {
+        let mut app = HonkHonk::new_for_test();
+        app.config = AppConfig {
+            monitor_device: Some("alsa_output.removed".into()),
+            ..AppConfig::default()
+        };
+        // new list does not contain the saved device
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(vec![
+            ("alsa_output.other".into(), "Other Device".into()),
+        ])));
+        assert!(app.config.monitor_device.is_none());
+    }
+
+    #[test]
+    fn output_devices_changed_keeps_valid_monitor_device() {
+        let mut app = HonkHonk::new_for_test();
+        app.config = AppConfig {
+            monitor_device: Some("alsa_output.pci".into()),
+            ..AppConfig::default()
+        };
+        let _ = app.update(Message::AudioEvent(AudioEvent::OutputDevicesChanged(vec![
+            ("alsa_output.pci".into(), "Built-in Audio".into()),
+        ])));
+        assert_eq!(
+            app.config.monitor_device.as_deref(),
+            Some("alsa_output.pci")
+        );
     }
 
     #[test]

@@ -133,19 +133,12 @@ pub fn create_sink_stream(
     })
 }
 
-/// Create a PipeWire output stream for local monitoring.
-///
-/// When `target` is `None`, PipeWire autoconnects to the default output.
-/// When `target` is `Some(node_name)`, the stream is pinned to that device
-/// and `NODE_DONT_RECONNECT` prevents PipeWire from overriding the target.
-pub fn create_monitor_stream(
+fn open_monitor_stream(
     core: pw::core::CoreRc,
-    state: Rc<RefCell<PlaybackState>>,
-    sample_rate: u32,
-    channels: u16,
     target: Option<&str>,
-) -> Result<PlaybackStream, AudioError> {
-    let stream = if let Some(target_name) = target {
+    channels: u16,
+) -> Result<pw::stream::StreamRc, AudioError> {
+    let result = if let Some(target_name) = target {
         pw::stream::StreamRc::new(
             core,
             "honkhonk-monitor",
@@ -169,8 +162,23 @@ pub fn create_monitor_stream(
                 *pw::keys::AUDIO_CHANNELS => channels.to_string(),
             },
         )
-    }
-    .map_err(|e| AudioError::StreamCreation(format!("monitor stream: {e}")))?;
+    };
+    result.map_err(|e| AudioError::StreamCreation(format!("monitor stream: {e}")))
+}
+
+/// Create a PipeWire output stream for local monitoring.
+///
+/// When `target` is `None`, PipeWire autoconnects to the default output.
+/// When `target` is `Some(node_name)`, the stream is pinned to that device
+/// and `NODE_DONT_RECONNECT` prevents PipeWire from overriding the target.
+pub fn create_monitor_stream(
+    core: pw::core::CoreRc,
+    state: Rc<RefCell<PlaybackState>>,
+    sample_rate: u32,
+    channels: u16,
+    target: Option<&str>,
+) -> Result<PlaybackStream, AudioError> {
+    let stream = open_monitor_stream(core, target, channels)?;
 
     let listener = stream
         .add_local_listener_with_user_data(())

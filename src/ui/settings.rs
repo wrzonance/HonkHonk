@@ -454,8 +454,8 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
         )
         .collect();
 
-    let selected_device = match &state.config.monitor_device {
-        None => Some(MonitorDeviceOption::Default),
+    let selected_device = Some(match &state.config.monitor_device {
+        None => MonitorDeviceOption::Default,
         Some(name) => state
             .monitor_devices
             .iter()
@@ -463,8 +463,9 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
             .map(|(n, d)| MonitorDeviceOption::Device {
                 node_name: n.clone(),
                 display_name: d.clone(),
-            }),
-    };
+            })
+            .unwrap_or(MonitorDeviceOption::Default),
+    });
 
     let device_row = container(
         row![

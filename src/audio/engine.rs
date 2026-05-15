@@ -326,14 +326,21 @@ fn rebuild_monitor_stream(ctx: &EngineCtx) {
             (ms.sample_rate(), ms.channels())
         };
         let target = ctx.monitor_target.borrow().clone();
-        ap.monitor_stream = playback::create_monitor_stream(
+        match playback::create_monitor_stream(
             ctx.core.clone(),
             ap.monitor_state.clone(),
             rate,
             ch,
             target.as_deref(),
-        )
-        .ok();
+        ) {
+            Ok(stream) => ap.monitor_stream = Some(stream),
+            Err(e) => {
+                ap.monitor_stream = None;
+                let _ = ctx
+                    .evt_tx
+                    .send(AudioEvent::Error(format!("monitor stream rebuild: {e}")));
+            }
+        }
     }
 }
 
