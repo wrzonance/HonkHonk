@@ -8,6 +8,9 @@ pub(crate) enum DesktopEnv {
     Gnome,
     Hyprland,
     Sway,
+    // Platform stubs — unimplemented; retained for future non-Linux ports.
+    // Constructed only under cfg(target_os = ...) so the compiler sees them as dead
+    // on Linux builds. The allow(dead_code) is intentional, not hiding a real issue.
     #[allow(dead_code)]
     Windows,
     #[allow(dead_code)]
@@ -61,7 +64,8 @@ impl ShortcutConfigService {
     }
 
     pub(crate) fn can_open(&self) -> bool {
-        self.portal_v2_available || matches!(self.desktop_env, DesktopEnv::Kde | DesktopEnv::Gnome)
+        (self.portal_v2_available && self.portal_cmd_tx.is_some())
+            || matches!(self.desktop_env, DesktopEnv::Kde | DesktopEnv::Gnome)
     }
 
     pub(crate) fn open(&self) {
@@ -179,10 +183,12 @@ mod tests {
 
     #[test]
     fn can_open_hyprland_with_portal_v2() {
+        use tokio::sync::mpsc;
+        let (tx, _rx) = mpsc::channel(1);
         let svc = ShortcutConfigService {
             desktop_env: DesktopEnv::Hyprland,
             portal_v2_available: true,
-            portal_cmd_tx: None,
+            portal_cmd_tx: Some(tx),
         };
         assert!(svc.can_open());
     }
