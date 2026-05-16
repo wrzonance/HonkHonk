@@ -81,6 +81,8 @@ pub struct AppConfig {
     pub renderer: Renderer,
     #[serde(default)]
     pub monitor_device: Option<String>,
+    #[serde(default)]
+    pub desired_triggers: [Option<String>; 20],
 }
 
 impl Default for AppConfig {
@@ -104,6 +106,7 @@ impl Default for AppConfig {
             mic_passthrough_level: default_level(),
             renderer: Renderer::Wgpu,
             monitor_device: None,
+            desired_triggers: std::array::from_fn(|_| None),
         }
     }
 }
@@ -259,6 +262,7 @@ mod tests {
             mic_passthrough_level: 0.75,
             renderer: Renderer::Wgpu,
             monitor_device: None,
+            desired_triggers: std::array::from_fn(|_| None),
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -283,6 +287,7 @@ mod tests {
             mic_passthrough_level: 0.5,
             renderer: Renderer::Wgpu,
             monitor_device: None,
+            desired_triggers: std::array::from_fn(|_| None),
         };
 
         config.save_to(&path).unwrap();
@@ -413,5 +418,25 @@ mod tests {
             back.monitor_device.as_deref(),
             Some("alsa_output.pci-0000_00_1f.3.analog-stereo")
         );
+    }
+
+    #[test]
+    fn missing_desired_triggers_field_deserializes_to_empty() {
+        // Simulates loading a config written before this field existed.
+        let json = r#"{"sound_directories":[],"volume":0.85,"window_width":900,"window_height":600,"theme":"Dark","density":"regular","mic_passthrough":true,"mic_passthrough_level":1.0,"renderer":"wgpu"}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.desired_triggers.iter().all(|t| t.is_none()));
+    }
+
+    #[test]
+    fn desired_triggers_round_trips_json() {
+        let mut config = AppConfig::default();
+        config.desired_triggers[0] = Some("Meta+1".into());
+        config.desired_triggers[4] = Some("Ctrl+Alt+F5".into());
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.desired_triggers[0].as_deref(), Some("Meta+1"));
+        assert_eq!(back.desired_triggers[4].as_deref(), Some("Ctrl+Alt+F5"));
+        assert!(back.desired_triggers[1].is_none());
     }
 }
