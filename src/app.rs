@@ -573,6 +573,7 @@ impl HonkHonk {
             Message::CloseContextMenu => {
                 self.context_menu = None;
                 self.context_menu_pos = None;
+                self.capturing_slot = None;
                 Task::none()
             }
             Message::CursorMoved(pos) => {
@@ -745,6 +746,9 @@ impl HonkHonk {
                 Task::none()
             }
             Message::StartCapture(idx) => {
+                if idx >= 20 {
+                    return Task::none();
+                }
                 // Only allow capture on bound slots
                 if self.slots.get(idx).is_some() {
                     self.capturing_slot = Some(idx);
@@ -758,40 +762,40 @@ impl HonkHonk {
             }
             Message::KeyPressed { key, modifiers } => {
                 use crate::shortcuts::capture::format_combo;
-                use iced::keyboard::key::Named;
 
                 let Some(idx) = self.capturing_slot else {
                     return Task::none();
                 };
 
-                match &key {
-                    iced::keyboard::Key::Named(Named::Escape) => {
-                        self.capturing_slot = None;
+                if let Some(combo) = format_combo(modifiers, &key) {
+                    self.capturing_slot = None;
+                    self.config.desired_triggers[idx as usize] = Some(combo.clone());
+                    if let Err(e) = self.config.save() {
+                        eprintln!("honkhonk: config save: {e}");
                     }
-                    _ => {
-                        if let Some(combo) = format_combo(modifiers, &key) {
-                            self.capturing_slot = None;
-                            self.config.desired_triggers[idx as usize] = Some(combo.clone());
-                            if let Err(e) = self.config.save() {
-                                eprintln!("honkhonk: config save: {e}");
-                            }
-                            if let Some(tx) = &self.portal_cmd_tx {
-                                let _ = tx.try_send(
-                                    crate::shortcuts::PortalCommand::RebindSlot { idx, trigger: combo },
-                                );
-                            }
+                    if let Some(tx) = &self.portal_cmd_tx {
+                        if let Err(e) = tx.try_send(
+                            crate::shortcuts::PortalCommand::RebindSlot { idx, trigger: combo },
+                        ) {
+                            eprintln!("honkhonk: rebind command dropped: {e}");
                         }
-                        // Bare key without modifier: keep capture open
                     }
                 }
+                // Bare key without modifier (or Escape, handled by CloseContextMenu): keep capture open
                 Task::none()
             }
             Message::RebindResult { changed_idx, bindings } => {
-                // Update all slot_triggers from the full rebind response
-                self.slot_triggers = std::array::from_fn(|_| None);
-                for (idx, trigger) in &bindings {
-                    if let Some(slot) = self.slot_triggers.get_mut(*idx as usize) {
-                        *slot = Some(trigger.clone());
+                if changed_idx >= 20 {
+                    return Task::none();
+                }
+                // Only reset and repopulate slot_triggers when the portal returned bindings.
+                // An empty response means the rebind failed — leave existing triggers intact.
+                if !bindings.is_empty() {
+                    self.slot_triggers = std::array::from_fn(|_| None);
+                    for (idx, trigger) in &bindings {
+                        if let Some(slot) = self.slot_triggers.get_mut(*idx as usize) {
+                            *slot = Some(trigger.clone());
+                        }
                     }
                 }
                 // Determine feedback for the specifically changed slot
@@ -807,7 +811,8 @@ impl HonkHonk {
                 Task::none()
             }
             Message::ShortcutsChangedExternal(bindings) => {
-                // Live sync when DE changes shortcuts externally
+                // Full reset+repopulate so removed external shortcuts are cleared, not left stale.
+                self.slot_triggers = std::array::from_fn(|_| None);
                 for (idx, trigger) in bindings {
                     if let Some(slot) = self.slot_triggers.get_mut(idx as usize) {
                         *slot = Some(trigger);
@@ -975,8 +980,15 @@ impl HonkHonk {
         let mut subs = vec![shortcuts, tray_poll, events];
 
         // Keyboard capture subscription — active only during capture mode.
+        // Escape is explicitly filtered out: the always-on `events` subscription already maps
+        // Escape → CloseContextMenu, which also clears capturing_slot. Emitting KeyPressed for
+        // Escape here would cause double-dispatch.
         if self.capturing_slot.is_some() {
             let capture = iced::event::listen_with(|event, _, _| match event {
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                    ..
+                }) => None,
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                     key,
                     modifiers,
@@ -1770,15 +1782,15 @@ mod tests {
     }
 
     #[test]
-    fn key_pressed_escape_cancels_capture() {
+    fn close_context_menu_cancels_capture() {
+        // Escape flows through CloseContextMenu (the always-on `events` sub), not KeyPressed.
+        // CloseContextMenu must clear capturing_slot to prevent double-dispatch.
         let mut app = HonkHonk::new_for_test();
         let path = std::path::PathBuf::from("/tmp/test.wav");
         let _ = app.update(Message::AssignSlot(0, path));
         let _ = app.update(Message::StartCapture(0));
-        let _ = app.update(Message::KeyPressed {
-            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
-            modifiers: iced::keyboard::Modifiers::empty(),
-        });
+        assert_eq!(app.capturing_slot, Some(0));
+        let _ = app.update(Message::CloseContextMenu);
         assert!(app.capturing_slot.is_none());
     }
 
