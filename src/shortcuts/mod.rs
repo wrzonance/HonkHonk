@@ -1,7 +1,4 @@
-pub mod error;
 pub mod portal;
-
-pub use error::PortalError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ShortcutsStatus {
