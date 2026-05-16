@@ -1,5 +1,44 @@
 use iced::keyboard::{self, key::Named};
 
+/// Maps F-key variants to their string representations.
+fn fkey_name(named: &Named) -> Option<&'static str> {
+    match named {
+        Named::F1 => Some("F1"),
+        Named::F2 => Some("F2"),
+        Named::F3 => Some("F3"),
+        Named::F4 => Some("F4"),
+        Named::F5 => Some("F5"),
+        Named::F6 => Some("F6"),
+        Named::F7 => Some("F7"),
+        Named::F8 => Some("F8"),
+        Named::F9 => Some("F9"),
+        Named::F10 => Some("F10"),
+        Named::F11 => Some("F11"),
+        Named::F12 => Some("F12"),
+        _ => None,
+    }
+}
+
+/// Maps named keys that require a modifier to their string representations.
+fn named_key_with_modifier(named: &Named) -> Option<&'static str> {
+    match named {
+        Named::Space => Some("Space"),
+        Named::Enter => Some("Return"),
+        Named::Tab => Some("Tab"),
+        Named::Delete => Some("Delete"),
+        Named::Backspace => Some("Backspace"),
+        Named::Home => Some("Home"),
+        Named::End => Some("End"),
+        Named::PageUp => Some("PageUp"),
+        Named::PageDown => Some("PageDown"),
+        Named::ArrowUp => Some("Up"),
+        Named::ArrowDown => Some("Down"),
+        Named::ArrowLeft => Some("Left"),
+        Named::ArrowRight => Some("Right"),
+        _ => None,
+    }
+}
+
 /// Formats a key press event into a portal-compatible trigger string.
 ///
 /// Returns `Some("Meta+1")` for valid combos, `None` for:
@@ -23,34 +62,15 @@ pub fn format_combo(modifiers: keyboard::Modifiers, key: &keyboard::Key) -> Opti
             | Named::Shift
             | Named::Super
             | Named::Meta => return None,
-            // F-keys: valid without modifier
-            Named::F1 => "F1".into(),
-            Named::F2 => "F2".into(),
-            Named::F3 => "F3".into(),
-            Named::F4 => "F4".into(),
-            Named::F5 => "F5".into(),
-            Named::F6 => "F6".into(),
-            Named::F7 => "F7".into(),
-            Named::F8 => "F8".into(),
-            Named::F9 => "F9".into(),
-            Named::F10 => "F10".into(),
-            Named::F11 => "F11".into(),
-            Named::F12 => "F12".into(),
-            // Named keys that need a modifier
-            Named::Space if has_modifier => "Space".into(),
-            Named::Enter if has_modifier => "Return".into(),
-            Named::Tab if has_modifier => "Tab".into(),
-            Named::Delete if has_modifier => "Delete".into(),
-            Named::Backspace if has_modifier => "Backspace".into(),
-            Named::Home if has_modifier => "Home".into(),
-            Named::End if has_modifier => "End".into(),
-            Named::PageUp if has_modifier => "PageUp".into(),
-            Named::PageDown if has_modifier => "PageDown".into(),
-            Named::ArrowUp if has_modifier => "Up".into(),
-            Named::ArrowDown if has_modifier => "Down".into(),
-            Named::ArrowLeft if has_modifier => "Left".into(),
-            Named::ArrowRight if has_modifier => "Right".into(),
-            _ => return None,
+            _ => {
+                if let Some(s) = fkey_name(named) {
+                    s.to_owned()
+                } else if has_modifier {
+                    named_key_with_modifier(named)?.to_owned()
+                } else {
+                    return None;
+                }
+            }
         },
         keyboard::Key::Character(c) if has_modifier => c.to_uppercase(),
         keyboard::Key::Character(_) | keyboard::Key::Unidentified => return None,
