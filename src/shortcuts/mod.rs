@@ -27,13 +27,13 @@ pub enum PortalCommand {
 }
 
 /// Newtype wrapping `tokio::sync::mpsc::Sender<PortalCommand>` so it can be
-/// included in `Message`, which derives `PartialEq`. Senders are never
-/// meaningfully equal; this impl always returns `false`.
+/// included in `Message`, which derives `PartialEq`. Two senders to the same
+/// channel are equal; senders to different channels are not.
 #[derive(Debug, Clone)]
 pub struct PortalCmdSender(pub tokio::sync::mpsc::Sender<PortalCommand>);
 
 impl PartialEq for PortalCmdSender {
-    fn eq(&self, _: &Self) -> bool {
-        false
+    fn eq(&self, other: &Self) -> bool {
+        self.0.same_channel(&other.0)
     }
 }
