@@ -126,8 +126,7 @@ pub struct HonkHonk {
     selected_slot: Option<u8>,
     pub(crate) settings_section: SettingsSection,
     pub monitor_devices: Vec<(String, String)>,
-    pub(crate) portal_cmd_tx: Option<tokio::sync::mpsc::Sender<crate::shortcuts::PortalCommand>>,
-    pub(crate) shortcuts_configure_available: bool,
+    shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService,
 }
 
 fn shortcuts_stream_sub(
@@ -262,8 +261,7 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
-            portal_cmd_tx: None,
-            shortcuts_configure_available: true,
+            shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
         }
     }
 
@@ -296,8 +294,7 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
-            portal_cmd_tx: None,
-            shortcuts_configure_available: true,
+            shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
         }
     }
 
@@ -714,20 +711,15 @@ impl HonkHonk {
                 Task::none()
             }
             Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender)) => {
-                self.portal_cmd_tx = Some(sender);
+                self.shortcut_config.set_portal_sender(sender);
                 Task::none()
             }
             Message::ShortcutsConfigureAvailable(available) => {
-                self.shortcuts_configure_available = available;
+                self.shortcut_config.set_portal_v2_available(available);
                 Task::none()
             }
             Message::OpenShortcutConfig => {
-                if let Some(tx) = &self.portal_cmd_tx {
-                    if let Err(e) = tx.try_send(crate::shortcuts::PortalCommand::ConfigureShortcuts)
-                    {
-                        eprintln!("honkhonk: configure_shortcuts command dropped: {e}");
-                    }
-                }
+                self.shortcut_config.open();
                 Task::none()
             }
         }
@@ -1004,7 +996,7 @@ impl HonkHonk {
                         slot_triggers: &self.slot_triggers,
                         sounds: &self.sounds,
                         selected_slot: self.selected_slot,
-                        configure_available: self.shortcuts_configure_available,
+                        configure_available: self.shortcut_config.can_open(),
                     },
                     t,
                 )
@@ -1648,7 +1640,8 @@ mod tests {
         use tokio::sync::mpsc;
         let mut app = HonkHonk::new_for_test();
         let (tx, mut rx) = mpsc::channel(8);
-        app.portal_cmd_tx = Some(tx);
+        app.shortcut_config.set_portal_sender(tx);
+        app.shortcut_config.set_portal_v2_available(true);
         let _ = app.update(Message::OpenShortcutConfig);
         assert!(rx.try_recv().is_ok());
     }

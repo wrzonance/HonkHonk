@@ -8,7 +8,9 @@ pub(crate) enum DesktopEnv {
     Gnome,
     Hyprland,
     Sway,
+    #[allow(dead_code)]
     Windows,
+    #[allow(dead_code)]
     MacOs,
     Unknown(String),
 }
@@ -59,8 +61,7 @@ impl ShortcutConfigService {
     }
 
     pub(crate) fn can_open(&self) -> bool {
-        self.portal_v2_available
-            || matches!(self.desktop_env, DesktopEnv::Kde | DesktopEnv::Gnome)
+        self.portal_v2_available || matches!(self.desktop_env, DesktopEnv::Kde | DesktopEnv::Gnome)
     }
 
     pub(crate) fn open(&self) {
@@ -79,10 +80,7 @@ impl ShortcutConfigService {
                 }
             }
             DesktopEnv::Gnome => {
-                if let Err(e) = Command::new("gnome-control-center")
-                    .arg("keyboard")
-                    .spawn()
-                {
+                if let Err(e) = Command::new("gnome-control-center").arg("keyboard").spawn() {
                     eprintln!("honkhonk: failed to open GNOME keyboard settings: {e}");
                 }
             }
