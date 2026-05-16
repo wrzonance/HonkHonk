@@ -68,7 +68,9 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
             .filter_map(|s| parse_binding(s.id(), s.trigger_description()))
             .collect();
 
+        let configure_available = proxy.version() >= 2;
         let _ = tx.send(ShortcutEvent::Handle(cmd_tx)).await;
+        let _ = tx.send(ShortcutEvent::ConfigureAvailable(configure_available)).await;
         let _ = tx.send(ShortcutEvent::Bindings(bindings)).await;
 
         let activated = match proxy.receive_activated().await {
@@ -117,6 +119,7 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
                                 .await
                             {
                                 eprintln!("honkhonk: configure_shortcuts unavailable: {e}");
+                                let _ = tx.send(ShortcutEvent::ConfigureAvailable(false)).await;
                             }
                         }
                     }

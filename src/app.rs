@@ -87,6 +87,8 @@ pub enum Message {
     ShortcutHandle(crate::shortcuts::PortalCmdSender),
     /// Opens the DE's native shortcut configuration dialog for this session.
     OpenShortcutConfig,
+    /// Whether `configure_shortcuts()` (portal v2) is available on this DE/backend.
+    ShortcutsConfigureAvailable(bool),
 }
 
 impl Message {
@@ -125,6 +127,7 @@ pub struct HonkHonk {
     pub(crate) settings_section: SettingsSection,
     pub monitor_devices: Vec<(String, String)>,
     pub(crate) portal_cmd_tx: Option<tokio::sync::mpsc::Sender<crate::shortcuts::PortalCommand>>,
+    pub(crate) shortcuts_configure_available: bool,
 }
 
 fn shortcuts_stream_sub(
@@ -142,6 +145,7 @@ fn shortcuts_stream_sub(
                 ShortcutEvent::Handle(sender) => {
                     Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender))
                 }
+                ShortcutEvent::ConfigureAvailable(v) => Message::ShortcutsConfigureAvailable(v),
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
                 ShortcutEvent::Bindings(b) => Message::ShortcutBindingsUpdated(b),
                 ShortcutEvent::Changed(b) => Message::ShortcutBindingsUpdated(b),
@@ -259,6 +263,7 @@ impl HonkHonk {
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
             portal_cmd_tx: None,
+            shortcuts_configure_available: true,
         }
     }
 
@@ -292,6 +297,7 @@ impl HonkHonk {
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
             portal_cmd_tx: None,
+            shortcuts_configure_available: true,
         }
     }
 
@@ -711,6 +717,10 @@ impl HonkHonk {
                 self.portal_cmd_tx = Some(sender);
                 Task::none()
             }
+            Message::ShortcutsConfigureAvailable(available) => {
+                self.shortcuts_configure_available = available;
+                Task::none()
+            }
             Message::OpenShortcutConfig => {
                 if let Some(tx) = &self.portal_cmd_tx {
                     if let Err(e) = tx.try_send(crate::shortcuts::PortalCommand::ConfigureShortcuts)
@@ -994,6 +1004,7 @@ impl HonkHonk {
                         slot_triggers: &self.slot_triggers,
                         sounds: &self.sounds,
                         selected_slot: self.selected_slot,
+                        configure_available: self.shortcuts_configure_available,
                     },
                     t,
                 )

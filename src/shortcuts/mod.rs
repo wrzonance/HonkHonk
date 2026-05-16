@@ -12,6 +12,9 @@ pub enum ShortcutEvent {
     Ready,
     /// The stream's command sender — store this to send commands to the portal.
     Handle(tokio::sync::mpsc::Sender<PortalCommand>),
+    /// Whether `configure_shortcuts()` (portal v2) is available.
+    /// Emitted once after session setup; re-emitted as false on first failed attempt.
+    ConfigureAvailable(bool),
     Activated(u8),
     /// Initial bindings from BindShortcuts response: (0-indexed slot, trigger string).
     Bindings(Vec<(u8, String)>),

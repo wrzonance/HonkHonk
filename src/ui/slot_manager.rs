@@ -13,6 +13,8 @@ pub struct SlotManagerCtx<'a> {
     pub slot_triggers: &'a [Option<String>; 20],
     pub sounds: &'a [SoundEntry],
     pub selected_slot: Option<u8>,
+    /// Whether portal v2 `configure_shortcuts()` is available on this DE/backend.
+    pub configure_available: bool,
 }
 
 fn tone_for(sound: &SoundEntry) -> Tone {
@@ -321,6 +323,7 @@ fn sidebar_bound<'a>(
     idx: u8,
     sound: &'a SoundEntry,
     trigger: Option<&'a str>,
+    configure_available: bool,
     t: Theme,
 ) -> Element<'a, Message> {
     let slot_label = text(format!("SLOT #{:02}", idx + 1))
@@ -328,22 +331,27 @@ fn sidebar_bound<'a>(
         .color(t.ink_dim());
     let hk_display = sidebar_bound_hotkey(trigger, t);
     let portal = sidebar_bound_portal(t);
-    let configure_btn = button(
-        text("Configure Shortcuts")
+    let configure_row: Element<'_, Message> = if configure_available {
+        button(
+            text("Configure Shortcuts")
+                .size(theme::font::LABEL)
+                .color(t.ink()),
+        )
+        .on_press(Message::OpenShortcutConfig)
+        .width(Length::Fill)
+        .style(move |_t, _s| button::Style {
+            background: Some(theme::bg_color(t.panel())),
+            text_color: t.ink(),
+            border: theme::tile_border(t.hairline(), 1.0),
+            ..Default::default()
+        })
+        .into()
+    } else {
+        text("Assign keys in System Settings → Shortcuts")
             .size(theme::font::LABEL)
-            .color(t.ink()),
-    )
-    .on_press(Message::OpenShortcutConfig)
-    .width(Length::Fill)
-    .style(move |_t, _s| button::Style {
-        background: Some(theme::bg_color(t.panel())),
-        text_color: t.ink(),
-        border: theme::tile_border(t.hairline(), 1.0),
-        ..Default::default()
-    });
-    let hint = text("Set keys via the dialog above, or in System Settings → Shortcuts")
-        .size(theme::font::LABEL)
-        .color(t.ink_faint());
+            .color(t.ink_faint())
+            .into()
+    };
     let unbind = button(
         text("Unbind")
             .size(theme::font::LABEL)
@@ -368,8 +376,7 @@ fn sidebar_bound<'a>(
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
         hk_display,
-        configure_btn,
-        hint,
+        configure_row,
         text("PORTAL STATUS")
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
@@ -428,7 +435,7 @@ fn sidebar<'a>(ctx: SlotManagerCtx<'a>, t: Theme) -> Element<'a, Message> {
                         .slot_triggers
                         .get(idx as usize)
                         .and_then(|t| t.as_deref());
-                    sidebar_bound(idx, s, trigger, t)
+                    sidebar_bound(idx, s, trigger, ctx.configure_available, t)
                 }
                 None => sidebar_empty(idx, t),
             }
