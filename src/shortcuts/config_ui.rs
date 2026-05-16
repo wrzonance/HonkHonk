@@ -76,6 +76,12 @@ impl ShortcutConfigService {
                 }
                 return;
             }
+            // v2 flagged but sender not yet received — don't fall through to DE tools,
+            // which would open the wrong UI for users who have portal v2.
+            eprintln!(
+                "honkhonk: configure_shortcuts: portal v2 available but handle not yet received"
+            );
+            return;
         }
         match &self.desktop_env {
             DesktopEnv::Kde => {
