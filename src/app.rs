@@ -591,23 +591,28 @@ impl HonkHonk {
             Message::ShowSlots => {
                 self.view_mode = ViewMode::SlotManager;
                 self.selected_slot = None;
+                self.capturing_slot = None;
                 Task::none()
             }
             Message::ShowMain => {
                 self.view_mode = ViewMode::Main;
                 self.selected_slot = None;
+                self.capturing_slot = None;
                 Task::none()
             }
             Message::ShowSettings => {
                 self.view_mode = ViewMode::Settings;
                 self.settings_section = SettingsSection::Audio;
+                self.capturing_slot = None;
                 Task::none()
             }
             Message::ShowSettingsSection(section) => {
                 self.settings_section = section;
+                self.capturing_slot = None;
                 Task::none()
             }
             Message::SelectSlot(idx) => {
+                self.capturing_slot = None;
                 self.selected_slot = Some(idx);
                 Task::none()
             }
