@@ -317,13 +317,13 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 
 **Click-to-play ships. Global hotkeys partially wired (binding via DE System Settings).**
 
-### Phase 2: Global Shortcuts — In Progress
+### Phase 2: Global Shortcuts — Complete ✅
 - ~~ashpd GlobalShortcuts integration~~ ✅
 - ~~20 fixed slots, user assigns sounds to slots~~ ✅
 - ~~Settings panel for slot management~~ ✅
-- In-app shortcut assignment with conflict feedback (#77)
-- Monitor output device selection (#72)
-- Renderer selection — wgpu vs tiny-skia (#73)
+- ~~In-app shortcut assignment with conflict feedback (#77)~~ ✅
+- ~~Monitor output device selection (#72)~~ ✅
+- ~~Renderer selection — wgpu vs tiny-skia (#73)~~ ✅
 
 ### Phase 3: Polish
 - Favorites / recently played

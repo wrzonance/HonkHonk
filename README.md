@@ -42,10 +42,11 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 | Settings panel (Audio, Library, Hotkeys, Appearance, About) | ✅ Shipped |
 | Theme persistence (Light / Dark / System) | ✅ Shipped |
 | Grid density (Compact / Regular / Comfy) | ✅ Shipped |
-| Mic passthrough toggle + level slider UI (audio mixer wiring in future dev) | ✅ Shipped |
+| Mic passthrough toggle + level slider | ✅ Shipped |
+| GPU renderer (wgpu default) / software fallback (tiny-skia) | ✅ Shipped |
 | XDG global shortcuts (20 fixed slots) | ✅ Shipped |
-| In-app shortcut assignment with conflict feedback | 🔜 Next (#77) |
-| Monitor output device selection | 🔜 Planned (#72) |
+| Monitor output device selection | ✅ Shipped |
+| In-app shortcut assignment with conflict feedback | ✅ Shipped |
 | System-persistent virtual mic (survives app restart/reboot) | 🔜 Planned (#49) |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.

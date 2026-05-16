@@ -5,6 +5,18 @@ use crate::app::Message;
 use crate::state::{SlotMap, SoundEntry};
 use crate::ui::theme::{self, Hh, Theme, Tone};
 
+/// Bundles the shared slot-manager view state to stay under clippy's
+/// `too-many-arguments` threshold (5).
+#[derive(Clone, Copy)]
+pub struct SlotManagerCtx<'a> {
+    pub slots: &'a SlotMap,
+    pub slot_triggers: &'a [Option<String>; 20],
+    pub sounds: &'a [SoundEntry],
+    pub selected_slot: Option<u8>,
+    /// Whether portal v2 `configure_shortcuts()` is available on this DE/backend.
+    pub configure_available: bool,
+}
+
 fn tone_for(sound: &SoundEntry) -> Tone {
     let idx = sound
         .id
@@ -14,14 +26,8 @@ fn tone_for(sound: &SoundEntry) -> Tone {
     Tone::from_index(idx)
 }
 
-pub fn view_slot_manager<'a>(
-    slots: &'a SlotMap,
-    slot_triggers: &'a [Option<String>; 20],
-    sounds: &'a [SoundEntry],
-    selected_slot: Option<u8>,
-    t: Theme,
-) -> Element<'a, Message> {
-    let bound_count = (0u8..20).filter(|&i| slots.get(i).is_some()).count();
+pub fn view_slot_manager<'a>(ctx: SlotManagerCtx<'a>, t: Theme) -> Element<'a, Message> {
+    let bound_count = (0u8..20).filter(|&i| ctx.slots.get(i).is_some()).count();
     let header = slot_header(bound_count, t);
     let divider = container(Space::new())
         .width(1)
@@ -30,8 +36,14 @@ pub fn view_slot_manager<'a>(
             background: Some(theme::bg_color(t.hairline())),
             ..Default::default()
         });
-    let grid = slot_grid(slots, slot_triggers, sounds, selected_slot, t);
-    let side = sidebar(slots, slot_triggers, sounds, selected_slot, t);
+    let grid = slot_grid(
+        ctx.slots,
+        ctx.slot_triggers,
+        ctx.sounds,
+        ctx.selected_slot,
+        t,
+    );
+    let side = sidebar(ctx, t);
     let body = row![grid, divider, side].height(Length::Fill);
     container(column![header, body].height(Length::Fill))
         .width(Length::Fill)
@@ -311,6 +323,7 @@ fn sidebar_bound<'a>(
     idx: u8,
     sound: &'a SoundEntry,
     trigger: Option<&'a str>,
+    configure_available: bool,
     t: Theme,
 ) -> Element<'a, Message> {
     let slot_label = text(format!("SLOT #{:02}", idx + 1))
@@ -318,6 +331,27 @@ fn sidebar_bound<'a>(
         .color(t.ink_dim());
     let hk_display = sidebar_bound_hotkey(trigger, t);
     let portal = sidebar_bound_portal(t);
+    let configure_row: Element<'_, Message> = if configure_available {
+        button(
+            text("Configure Shortcuts")
+                .size(theme::font::LABEL)
+                .color(t.ink()),
+        )
+        .on_press(Message::OpenShortcutConfig)
+        .width(Length::Fill)
+        .style(move |_t, _s| button::Style {
+            background: Some(theme::bg_color(t.panel())),
+            text_color: t.ink(),
+            border: theme::tile_border(t.hairline(), 1.0),
+            ..Default::default()
+        })
+        .into()
+    } else {
+        text("Assign keys in your desktop's shortcut settings")
+            .size(theme::font::LABEL)
+            .color(t.ink_faint())
+            .into()
+    };
     let unbind = button(
         text("Unbind")
             .size(theme::font::LABEL)
@@ -342,6 +376,7 @@ fn sidebar_bound<'a>(
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
         hk_display,
+        configure_row,
         text("PORTAL STATUS")
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
@@ -383,26 +418,24 @@ fn sidebar_empty<'a>(idx: u8, t: Theme) -> Element<'a, Message> {
         .into()
 }
 
-fn sidebar<'a>(
-    slots: &'a SlotMap,
-    slot_triggers: &'a [Option<String>; 20],
-    sounds: &'a [SoundEntry],
-    selected_slot: Option<u8>,
-    t: Theme,
-) -> Element<'a, Message> {
-    let inner: Element<'_, Message> = match selected_slot {
+fn sidebar<'a>(ctx: SlotManagerCtx<'a>, t: Theme) -> Element<'a, Message> {
+    let inner: Element<'_, Message> = match ctx.selected_slot {
         None => text("Select a slot to inspect it")
             .size(theme::font::BODY)
             .color(t.ink_faint())
             .into(),
         Some(idx) => {
-            let sound = slots
+            let sound = ctx
+                .slots
                 .get(idx)
-                .and_then(|p| sounds.iter().find(|s| &s.path == p));
+                .and_then(|p| ctx.sounds.iter().find(|s| &s.path == p));
             match sound {
                 Some(s) => {
-                    let trigger = slot_triggers.get(idx as usize).and_then(|t| t.as_deref());
-                    sidebar_bound(idx, s, trigger, t)
+                    let trigger = ctx
+                        .slot_triggers
+                        .get(idx as usize)
+                        .and_then(|t| t.as_deref());
+                    sidebar_bound(idx, s, trigger, ctx.configure_available, t)
                 }
                 None => sidebar_empty(idx, t),
             }

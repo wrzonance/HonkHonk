@@ -1,20 +1,23 @@
+use ashpd::desktop::global_shortcuts::NewShortcut;
 use ashpd::WindowIdentifier;
 use iced::futures::{SinkExt, Stream, StreamExt};
+use tokio::sync::mpsc;
 
-use super::ShortcutEvent;
+use super::{PortalCommand, ShortcutEvent};
 
 const SLOT_COUNT: u8 = 20;
 
 /// Returns a stream of shortcut events.
 ///
-/// Yields `ShortcutEvent::Bindings` once with current key assignments, then
+/// Yields `ShortcutEvent::Handle` once with the command sender, then
+/// `ShortcutEvent::Bindings` with current key assignments, then
 /// `ShortcutEvent::Ready` once the portal session is established, then
-/// `ShortcutEvent::Activated(idx)` (0-indexed) on each trigger.
+/// `ShortcutEvent::Activated(idx)` on each trigger press.
 /// Yields `ShortcutEvent::Failed(reason)` once on error, then ends.
 pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item = ShortcutEvent> {
     iced::stream::channel(32, async move |mut tx| {
         use ashpd::desktop::global_shortcuts::{
-            BindShortcutsOptions, GlobalShortcuts, NewShortcut,
+            BindShortcutsOptions, ConfigureShortcutsOptions, GlobalShortcuts,
         };
         use ashpd::desktop::CreateSessionOptions;
 
@@ -27,6 +30,8 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
             }};
         }
 
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<PortalCommand>(8);
+
         let proxy = match GlobalShortcuts::new().await {
             Ok(p) => p,
             Err(e) => bail!("connecting to portal", e),
@@ -37,9 +42,7 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
             Err(e) => bail!("creating session", e),
         };
 
-        let shortcuts: Vec<NewShortcut> = (1..=SLOT_COUNT)
-            .map(|n| NewShortcut::new(format!("slot-{n}"), format!("HonkHonk Slot {n}")))
-            .collect();
+        let shortcuts = build_shortcuts();
 
         let req = match proxy
             .bind_shortcuts(
@@ -65,23 +68,74 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
             .filter_map(|s| parse_binding(s.id(), s.trigger_description()))
             .collect();
 
+        let configure_available = proxy.version() >= 2;
+        let _ = tx.send(ShortcutEvent::Handle(cmd_tx)).await;
+        let _ = tx
+            .send(ShortcutEvent::ConfigureAvailable(configure_available))
+            .await;
         let _ = tx.send(ShortcutEvent::Bindings(bindings)).await;
 
-        let mut activated = match proxy.receive_activated().await {
+        let activated = match proxy.receive_activated().await {
             Ok(s) => s,
             Err(e) => bail!("subscribing to activations", e),
         };
 
+        let changed = match proxy.receive_shortcuts_changed().await {
+            Ok(s) => s,
+            Err(e) => bail!("subscribing to shortcut changes", e),
+        };
+
         let _ = tx.send(ShortcutEvent::Ready).await;
 
-        while let Some(event) = activated.next().await {
-            if let Some(idx) = parse_slot_index(event.shortcut_id()) {
-                if tx.send(ShortcutEvent::Activated(idx)).await.is_err() {
-                    break;
+        tokio::pin!(activated);
+        tokio::pin!(changed);
+
+        loop {
+            tokio::select! {
+                Some(event) = activated.next() => {
+                    if let Some(idx) = parse_slot_index(event.shortcut_id()) {
+                        if tx.send(ShortcutEvent::Activated(idx)).await.is_err() {
+                            break;
+                        }
+                    }
                 }
+                Some(changed_event) = changed.next() => {
+                    let bindings: Vec<(u8, String)> = changed_event
+                        .shortcuts()
+                        .iter()
+                        .filter_map(|s| parse_binding(s.id(), s.trigger_description()))
+                        .collect();
+                    if tx.send(ShortcutEvent::Changed(bindings)).await.is_err() {
+                        break;
+                    }
+                }
+                Some(cmd) = cmd_rx.recv() => {
+                    match cmd {
+                        PortalCommand::ConfigureShortcuts => {
+                            if let Err(e) = proxy
+                                .configure_shortcuts(
+                                    &session,
+                                    None,
+                                    ConfigureShortcutsOptions::default(),
+                                )
+                                .await
+                            {
+                                eprintln!("honkhonk: configure_shortcuts unavailable: {e}");
+                            }
+                        }
+                    }
+                }
+                else => break,
             }
         }
     })
+}
+
+/// Builds the full 20-slot shortcut list with no preferred_trigger hints.
+fn build_shortcuts() -> Vec<NewShortcut> {
+    (1..=SLOT_COUNT)
+        .map(|n| NewShortcut::new(format!("slot-{n}"), format!("HonkHonk Slot {n}")))
+        .collect()
 }
 
 /// Returns `Some((0-indexed slot, trigger))` for a valid, non-empty binding.
@@ -94,8 +148,6 @@ fn parse_binding(id: &str, trigger: &str) -> Option<(u8, String)> {
 }
 
 /// Parses "slot-N" → 0-indexed slot index.
-///
-/// "slot-1" → `Some(0)`, "slot-20" → `Some(19)`, everything else → `None`.
 fn parse_slot_index(id: &str) -> Option<u8> {
     let n_str = id.strip_prefix("slot-")?;
     let n: u8 = n_str.parse().ok()?;
@@ -107,7 +159,7 @@ fn parse_slot_index(id: &str) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_binding, parse_slot_index};
+    use super::{build_shortcuts, parse_binding, parse_slot_index};
 
     #[test]
     fn parse_valid_slot_ids() {
@@ -137,5 +189,11 @@ mod tests {
         );
         assert_eq!(parse_binding("slot-1", ""), None);
         assert_eq!(parse_binding("slot-0", "X"), None);
+    }
+
+    #[test]
+    fn build_shortcuts_returns_20_entries_no_preferred_trigger() {
+        let shortcuts = build_shortcuts();
+        assert_eq!(shortcuts.len(), 20);
     }
 }

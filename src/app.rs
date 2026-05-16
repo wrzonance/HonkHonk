@@ -82,6 +82,13 @@ pub enum Message {
     MicPassthroughChanged(bool),
     MicPassthroughLevelChanged(f32),
     MonitorDeviceChanged(Option<String>),
+    /// Carries the command sender from the portal stream.
+    /// Two `ShortcutHandle` messages are never meaningfully equal — treated as always-unequal.
+    ShortcutHandle(crate::shortcuts::PortalCmdSender),
+    /// Opens the DE's native shortcut configuration dialog for this session.
+    OpenShortcutConfig,
+    /// Whether `configure_shortcuts()` (portal v2) is available on this DE/backend.
+    ShortcutsConfigureAvailable(bool),
 }
 
 impl Message {
@@ -119,6 +126,7 @@ pub struct HonkHonk {
     selected_slot: Option<u8>,
     pub(crate) settings_section: SettingsSection,
     pub monitor_devices: Vec<(String, String)>,
+    shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService,
 }
 
 fn shortcuts_stream_sub(
@@ -133,8 +141,13 @@ fn shortcuts_stream_sub(
         while let Some(ev) = stream.next().await {
             let msg = match ev {
                 ShortcutEvent::Ready => Message::ShortcutsReady,
+                ShortcutEvent::Handle(sender) => {
+                    Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender))
+                }
+                ShortcutEvent::ConfigureAvailable(v) => Message::ShortcutsConfigureAvailable(v),
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
                 ShortcutEvent::Bindings(b) => Message::ShortcutBindingsUpdated(b),
+                ShortcutEvent::Changed(b) => Message::ShortcutBindingsUpdated(b),
                 ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
             };
             if tx.send(msg).await.is_err() {
@@ -153,8 +166,6 @@ fn shortcuts_stream_sub(
 }
 
 /// Zero-arg wrapper for `Subscription::run` (which requires a fn pointer, not a closure).
-/// Passes `None` as the window identifier — iced 0.14 does not expose `run_with_handle`,
-/// so we cannot acquire a Wayland surface handle from this side of the API.
 fn shortcuts_stream_sub_none() -> impl iced::futures::Stream<Item = Message> {
     shortcuts_stream_sub(None)
 }
@@ -250,11 +261,13 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
+            shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
         }
     }
 
     pub fn new_for_test() -> Self {
         let (_tx, rx) = std::sync::mpsc::channel();
+        let config = AppConfig::default();
         Self {
             visible: true,
             exit: false,
@@ -264,7 +277,7 @@ impl HonkHonk {
             sounds: Vec::new(),
             playing: None,
             active_category: None,
-            config: AppConfig::default(),
+            config,
             search_query: String::new(),
             progress: 0.0,
             slots: SlotMap::default(),
@@ -281,6 +294,7 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
+            shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
         }
     }
 
@@ -696,6 +710,18 @@ impl HonkHonk {
                 }
                 Task::none()
             }
+            Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender)) => {
+                self.shortcut_config.set_portal_sender(sender);
+                Task::none()
+            }
+            Message::ShortcutsConfigureAvailable(available) => {
+                self.shortcut_config.set_portal_v2_available(available);
+                Task::none()
+            }
+            Message::OpenShortcutConfig => {
+                self.shortcut_config.open();
+                Task::none()
+            }
         }
     }
 
@@ -828,8 +854,6 @@ impl HonkHonk {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        // iced 0.14 does not expose run_with_handle, so window_identifier stays None.
-        // We run the subscription unconditionally (no gating) to keep shortcuts functional.
         let shortcuts = Subscription::run(shortcuts_stream_sub_none);
 
         let tray_poll =
@@ -967,10 +991,13 @@ impl HonkHonk {
             ViewMode::SlotManager => {
                 let t = self.config.theme;
                 slot_manager::view_slot_manager(
-                    &self.slots,
-                    &self.slot_triggers,
-                    &self.sounds,
-                    self.selected_slot,
+                    slot_manager::SlotManagerCtx {
+                        slots: &self.slots,
+                        slot_triggers: &self.slot_triggers,
+                        sounds: &self.sounds,
+                        selected_slot: self.selected_slot,
+                        configure_available: self.shortcut_config.can_open(),
+                    },
                     t,
                 )
             }
@@ -1606,5 +1633,22 @@ mod tests {
             second.clone(),
         )));
         assert_eq!(app.monitor_devices, second);
+    }
+
+    #[test]
+    fn open_shortcut_config_sends_command_when_handle_present() {
+        use tokio::sync::mpsc;
+        let mut app = HonkHonk::new_for_test();
+        let (tx, mut rx) = mpsc::channel(8);
+        app.shortcut_config.set_portal_sender(tx);
+        app.shortcut_config.set_portal_v2_available(true);
+        let _ = app.update(Message::OpenShortcutConfig);
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn open_shortcut_config_is_noop_when_no_handle() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenShortcutConfig);
     }
 }
