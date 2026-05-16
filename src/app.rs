@@ -773,7 +773,12 @@ impl HonkHonk {
 
                 if let Some(combo) = format_combo(modifiers, &key) {
                     self.capturing_slot = None;
-                    self.config.desired_triggers[idx as usize] = Some(combo.clone());
+                    let mut new_triggers = self.config.desired_triggers.clone();
+                    new_triggers[idx as usize] = Some(combo.clone());
+                    self.config = AppConfig {
+                        desired_triggers: new_triggers,
+                        ..self.config.clone()
+                    };
                     if let Err(e) = self.config.save() {
                         eprintln!("honkhonk: config save: {e}");
                     }
@@ -1850,5 +1855,29 @@ mod tests {
             "Ctrl+F3".into(),
         )]));
         assert_eq!(app.slot_triggers[2].as_deref(), Some("Ctrl+F3"));
+    }
+
+    #[test]
+    fn key_pressed_valid_combo_clears_capture_and_saves_desired() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/test.wav");
+        let _ = app.update(Message::AssignSlot(0, path));
+        let _ = app.update(Message::StartCapture(0));
+        assert_eq!(app.capturing_slot, Some(0));
+
+        // Meta+1 is a valid combo (modifier + digit)
+        let _ = app.update(Message::KeyPressed {
+            key: iced::keyboard::Key::Character("1".into()),
+            modifiers: {
+                let mut m = iced::keyboard::Modifiers::empty();
+                m |= iced::keyboard::Modifiers::LOGO;
+                m
+            },
+        });
+
+        // Capture should be cleared after a valid combo
+        assert!(app.capturing_slot.is_none());
+        // Desired trigger should be saved
+        assert_eq!(app.config.desired_triggers[0].as_deref(), Some("Meta+1"));
     }
 }
