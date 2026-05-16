@@ -82,6 +82,23 @@ pub enum Message {
     MicPassthroughChanged(bool),
     MicPassthroughLevelChanged(f32),
     MonitorDeviceChanged(Option<String>),
+    // Shortcut capture
+    StartCapture(u8),
+    CancelCapture,
+    /// Raw key press — only processed during capture mode.
+    KeyPressed {
+        key: iced::keyboard::Key,
+        modifiers: iced::keyboard::Modifiers,
+    },
+    // Portal handle + rebind results
+    /// Carries the command sender from the portal stream.
+    /// Two `ShortcutHandle` messages are never meaningfully equal — treated as always-unequal.
+    ShortcutHandle(crate::shortcuts::PortalCmdSender),
+    RebindResult {
+        changed_idx: u8,
+        bindings: Vec<(u8, String)>,
+    },
+    ShortcutsChangedExternal(Vec<(u8, String)>),
 }
 
 impl Message {
@@ -119,25 +136,36 @@ pub struct HonkHonk {
     selected_slot: Option<u8>,
     pub(crate) settings_section: SettingsSection,
     pub monitor_devices: Vec<(String, String)>,
+    portal_cmd_tx: Option<tokio::sync::mpsc::Sender<crate::shortcuts::PortalCommand>>,
+    pub(crate) capturing_slot: Option<u8>,
+    pub(crate) bind_feedback: [crate::shortcuts::BindFeedback; 20],
+    /// Snapshot of desired_triggers at startup — passed to the portal subscription once.
+    /// Never updated after init so the subscription ID stays stable.
+    initial_desired_for_sub: std::sync::Arc<[Option<String>; 20]>,
 }
 
 fn shortcuts_stream_sub(
     window_id: Option<ashpd::WindowIdentifier>,
+    initial_desired: [Option<String>; 20],
 ) -> impl iced::futures::Stream<Item = Message> {
     use iced::futures::SinkExt;
     use iced::futures::StreamExt;
     iced::stream::channel(16, async move |mut tx| {
         use crate::shortcuts::{portal, ShortcutEvent};
-        let stream = portal::shortcut_stream(window_id, std::array::from_fn(|_| None));
+        let stream = portal::shortcut_stream(window_id, initial_desired);
         let mut stream = std::pin::pin!(stream);
         while let Some(ev) = stream.next().await {
             let msg = match ev {
                 ShortcutEvent::Ready => Message::ShortcutsReady,
-                ShortcutEvent::Handle(_) => continue, // Task 5: store handle for rebind commands
+                ShortcutEvent::Handle(sender) => {
+                    Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender))
+                }
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
                 ShortcutEvent::Bindings(b) => Message::ShortcutBindingsUpdated(b),
-                ShortcutEvent::RebindResult { .. } => continue, // Task 5: show rebind feedback
-                ShortcutEvent::Changed(_) => continue, // Task 5: update bindings in app state
+                ShortcutEvent::RebindResult { changed_idx, bindings } => {
+                    Message::RebindResult { changed_idx, bindings }
+                }
+                ShortcutEvent::Changed(b) => Message::ShortcutsChangedExternal(b),
                 ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
             };
             if tx.send(msg).await.is_err() {
@@ -155,11 +183,13 @@ fn shortcuts_stream_sub(
     })
 }
 
-/// Zero-arg wrapper for `Subscription::run` (which requires a fn pointer, not a closure).
-/// Passes `None` as the window identifier — iced 0.14 does not expose `run_with_handle`,
-/// so we cannot acquire a Wayland surface handle from this side of the API.
-fn shortcuts_stream_sub_none() -> impl iced::futures::Stream<Item = Message> {
-    shortcuts_stream_sub(None)
+/// Wrapper for `Subscription::run_with` — takes the initial desired triggers Arc.
+/// The Arc value is set once at startup and never changes, keeping the subscription ID stable.
+fn shortcuts_stream_with_initial(
+    initial: &std::sync::Arc<[Option<String>; 20]>,
+) -> impl iced::futures::Stream<Item = Message> {
+    let initial = (**initial).clone();
+    shortcuts_stream_sub(None, initial)
 }
 
 /// Builder for the one-shot duration scan subscription.
@@ -227,6 +257,7 @@ impl HonkHonk {
                 .map(|s| (s.id.clone(), s.path.clone()))
                 .collect::<Vec<_>>(),
         );
+        let initial_desired = config.desired_triggers.clone();
         Self {
             visible: true,
             exit: false,
@@ -253,11 +284,17 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
+            portal_cmd_tx: None,
+            capturing_slot: None,
+            bind_feedback: std::array::from_fn(|_| crate::shortcuts::BindFeedback::Unset),
+            initial_desired_for_sub: std::sync::Arc::new(initial_desired),
         }
     }
 
     pub fn new_for_test() -> Self {
         let (_tx, rx) = std::sync::mpsc::channel();
+        let config = AppConfig::default();
+        let initial_desired = config.desired_triggers.clone();
         Self {
             visible: true,
             exit: false,
@@ -267,7 +304,7 @@ impl HonkHonk {
             sounds: Vec::new(),
             playing: None,
             active_category: None,
-            config: AppConfig::default(),
+            config,
             search_query: String::new(),
             progress: 0.0,
             slots: SlotMap::default(),
@@ -284,6 +321,10 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
+            portal_cmd_tx: None,
+            capturing_slot: None,
+            bind_feedback: std::array::from_fn(|_| crate::shortcuts::BindFeedback::Unset),
+            initial_desired_for_sub: std::sync::Arc::new(initial_desired),
         }
     }
 
@@ -699,6 +740,81 @@ impl HonkHonk {
                 }
                 Task::none()
             }
+            Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender)) => {
+                self.portal_cmd_tx = Some(sender);
+                Task::none()
+            }
+            Message::StartCapture(idx) => {
+                // Only allow capture on bound slots
+                if self.slots.get(idx).is_some() {
+                    self.capturing_slot = Some(idx);
+                    self.bind_feedback[idx as usize] = crate::shortcuts::BindFeedback::Unset;
+                }
+                Task::none()
+            }
+            Message::CancelCapture => {
+                self.capturing_slot = None;
+                Task::none()
+            }
+            Message::KeyPressed { key, modifiers } => {
+                use crate::shortcuts::capture::format_combo;
+                use iced::keyboard::key::Named;
+
+                let Some(idx) = self.capturing_slot else {
+                    return Task::none();
+                };
+
+                match &key {
+                    iced::keyboard::Key::Named(Named::Escape) => {
+                        self.capturing_slot = None;
+                    }
+                    _ => {
+                        if let Some(combo) = format_combo(modifiers, &key) {
+                            self.capturing_slot = None;
+                            self.config.desired_triggers[idx as usize] = Some(combo.clone());
+                            if let Err(e) = self.config.save() {
+                                eprintln!("honkhonk: config save: {e}");
+                            }
+                            if let Some(tx) = &self.portal_cmd_tx {
+                                let _ = tx.try_send(
+                                    crate::shortcuts::PortalCommand::RebindSlot { idx, trigger: combo },
+                                );
+                            }
+                        }
+                        // Bare key without modifier: keep capture open
+                    }
+                }
+                Task::none()
+            }
+            Message::RebindResult { changed_idx, bindings } => {
+                // Update all slot_triggers from the full rebind response
+                self.slot_triggers = std::array::from_fn(|_| None);
+                for (idx, trigger) in &bindings {
+                    if let Some(slot) = self.slot_triggers.get_mut(*idx as usize) {
+                        *slot = Some(trigger.clone());
+                    }
+                }
+                // Determine feedback for the specifically changed slot
+                let requested = self.config.desired_triggers[changed_idx as usize].as_deref();
+                let granted = self.slot_triggers[changed_idx as usize].as_deref();
+                self.bind_feedback[changed_idx as usize] = match (requested, granted) {
+                    (Some(req), Some(got)) if req == got => {
+                        crate::shortcuts::BindFeedback::Saved
+                    }
+                    (Some(_), _) => crate::shortcuts::BindFeedback::NotSaved,
+                    _ => crate::shortcuts::BindFeedback::Unset,
+                };
+                Task::none()
+            }
+            Message::ShortcutsChangedExternal(bindings) => {
+                // Live sync when DE changes shortcuts externally
+                for (idx, trigger) in bindings {
+                    if let Some(slot) = self.slot_triggers.get_mut(idx as usize) {
+                        *slot = Some(trigger);
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -831,9 +947,10 @@ impl HonkHonk {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        // iced 0.14 does not expose run_with_handle, so window_identifier stays None.
-        // We run the subscription unconditionally (no gating) to keep shortcuts functional.
-        let shortcuts = Subscription::run(shortcuts_stream_sub_none);
+        let shortcuts = Subscription::run_with(
+            std::sync::Arc::clone(&self.initial_desired_for_sub),
+            shortcuts_stream_with_initial,
+        );
 
         let tray_poll =
             iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
@@ -856,6 +973,19 @@ impl HonkHonk {
         });
 
         let mut subs = vec![shortcuts, tray_poll, events];
+
+        // Keyboard capture subscription — active only during capture mode.
+        if self.capturing_slot.is_some() {
+            let capture = iced::event::listen_with(|event, _, _| match event {
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    ..
+                }) => Some(Message::KeyPressed { key, modifiers }),
+                _ => None,
+            });
+            subs.push(capture);
+        }
 
         if !self.durations_loaded {
             subs.push(Subscription::run_with(
@@ -1609,5 +1739,90 @@ mod tests {
             second.clone(),
         )));
         assert_eq!(app.monitor_devices, second);
+    }
+
+    #[test]
+    fn start_capture_sets_capturing_slot_for_bound_slot() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/test.wav");
+        let _ = app.update(Message::AssignSlot(0, path));
+        assert!(app.capturing_slot.is_none());
+        let _ = app.update(Message::StartCapture(0));
+        assert_eq!(app.capturing_slot, Some(0));
+    }
+
+    #[test]
+    fn start_capture_ignored_for_empty_slot() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::StartCapture(3));
+        assert!(app.capturing_slot.is_none());
+    }
+
+    #[test]
+    fn cancel_capture_clears_capturing_slot() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/test.wav");
+        let _ = app.update(Message::AssignSlot(0, path));
+        let _ = app.update(Message::StartCapture(0));
+        assert!(app.capturing_slot.is_some());
+        let _ = app.update(Message::CancelCapture);
+        assert!(app.capturing_slot.is_none());
+    }
+
+    #[test]
+    fn key_pressed_escape_cancels_capture() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/test.wav");
+        let _ = app.update(Message::AssignSlot(0, path));
+        let _ = app.update(Message::StartCapture(0));
+        let _ = app.update(Message::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+            modifiers: iced::keyboard::Modifiers::empty(),
+        });
+        assert!(app.capturing_slot.is_none());
+    }
+
+    #[test]
+    fn key_pressed_bare_letter_does_not_snap() {
+        let mut app = HonkHonk::new_for_test();
+        let path = std::path::PathBuf::from("/tmp/test.wav");
+        let _ = app.update(Message::AssignSlot(0, path));
+        let _ = app.update(Message::StartCapture(0));
+        let _ = app.update(Message::KeyPressed {
+            key: iced::keyboard::Key::Character("a".into()),
+            modifiers: iced::keyboard::Modifiers::empty(),
+        });
+        // Capture still active — bare key rejected
+        assert_eq!(app.capturing_slot, Some(0));
+    }
+
+    #[test]
+    fn rebind_result_sets_saved_feedback_when_trigger_matches() {
+        let mut app = HonkHonk::new_for_test();
+        app.config.desired_triggers[0] = Some("Meta+1".into());
+        let _ = app.update(Message::RebindResult {
+            changed_idx: 0,
+            bindings: vec![(0, "Meta+1".into())],
+        });
+        assert_eq!(app.bind_feedback[0], crate::shortcuts::BindFeedback::Saved);
+        assert_eq!(app.slot_triggers[0].as_deref(), Some("Meta+1"));
+    }
+
+    #[test]
+    fn rebind_result_sets_not_saved_when_trigger_absent() {
+        let mut app = HonkHonk::new_for_test();
+        app.config.desired_triggers[0] = Some("Meta+1".into());
+        let _ = app.update(Message::RebindResult {
+            changed_idx: 0,
+            bindings: vec![], // portal rejected it — absent from response
+        });
+        assert_eq!(app.bind_feedback[0], crate::shortcuts::BindFeedback::NotSaved);
+    }
+
+    #[test]
+    fn shortcuts_changed_external_updates_slot_triggers() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ShortcutsChangedExternal(vec![(2, "Ctrl+F3".into())]));
+        assert_eq!(app.slot_triggers[2].as_deref(), Some("Ctrl+F3"));
     }
 }

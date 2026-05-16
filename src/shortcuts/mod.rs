@@ -35,6 +35,18 @@ pub enum PortalCommand {
     RebindSlot { idx: u8, trigger: String },
 }
 
+/// Newtype wrapping `tokio::sync::mpsc::Sender<PortalCommand>` so it can be
+/// carried inside `Message`, which derives `PartialEq`. Two senders are never
+/// meaningfully equal, so `PartialEq` is always `false`.
+#[derive(Debug, Clone)]
+pub struct PortalCmdSender(pub tokio::sync::mpsc::Sender<PortalCommand>);
+
+impl PartialEq for PortalCmdSender {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BindFeedback {
     #[default]
