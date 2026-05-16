@@ -1,3 +1,4 @@
+pub mod config_ui;
 pub mod portal;
 
 #[derive(Debug, Clone, PartialEq)]
