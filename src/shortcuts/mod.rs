@@ -1,5 +1,6 @@
 pub mod error;
 pub mod portal;
+pub mod capture;
 
 pub use error::PortalError;
 
@@ -13,7 +14,41 @@ pub enum ShortcutsStatus {
 #[derive(Debug, Clone)]
 pub enum ShortcutEvent {
     Ready,
-    Activated(u8),               // 0-indexed slot (0 = Slot 1)
-    Bindings(Vec<(u8, String)>), // (0-indexed slot, trigger string e.g. "Meta+1")
+    /// The stream's command sender — store this to send rebind requests.
+    Handle(tokio::sync::mpsc::Sender<PortalCommand>),
+    Activated(u8),
+    /// Initial bindings from BindShortcuts response: (0-indexed slot, trigger string).
+    Bindings(Vec<(u8, String)>),
+    /// Result of a RebindSlot command: full binding set returned by portal.
+    RebindResult {
+        changed_idx: u8,
+        bindings: Vec<(u8, String)>,
+    },
+    /// DE changed shortcuts externally (user reconfigured in System Settings).
+    Changed(Vec<(u8, String)>),
     Failed(String),
+}
+
+/// Commands sent into the running portal stream.
+#[derive(Debug)]
+pub enum PortalCommand {
+    RebindSlot { idx: u8, trigger: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BindFeedback {
+    #[default]
+    Unset,
+    Saved,
+    NotSaved,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bind_feedback_default_is_unset() {
+        assert_eq!(BindFeedback::default(), BindFeedback::Unset);
+    }
 }

@@ -133,8 +133,11 @@ fn shortcuts_stream_sub(
         while let Some(ev) = stream.next().await {
             let msg = match ev {
                 ShortcutEvent::Ready => Message::ShortcutsReady,
+                ShortcutEvent::Handle(_) => continue, // Task 5: store handle for rebind commands
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
                 ShortcutEvent::Bindings(b) => Message::ShortcutBindingsUpdated(b),
+                ShortcutEvent::RebindResult { .. } => continue, // Task 5: show rebind feedback
+                ShortcutEvent::Changed(_) => continue, // Task 5: update bindings in app state
                 ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
             };
             if tx.send(msg).await.is_err() {
