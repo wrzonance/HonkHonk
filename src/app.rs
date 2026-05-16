@@ -713,7 +713,9 @@ impl HonkHonk {
             }
             Message::OpenShortcutConfig => {
                 if let Some(tx) = &self.portal_cmd_tx {
-                    let _ = tx.try_send(crate::shortcuts::PortalCommand::ConfigureShortcuts);
+                    if let Err(e) = tx.try_send(crate::shortcuts::PortalCommand::ConfigureShortcuts) {
+                        eprintln!("honkhonk: configure_shortcuts command dropped: {e}");
+                    }
                 }
                 Task::none()
             }
