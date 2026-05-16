@@ -13,8 +13,6 @@ pub struct SlotManagerCtx<'a> {
     pub slot_triggers: &'a [Option<String>; 20],
     pub sounds: &'a [SoundEntry],
     pub selected_slot: Option<u8>,
-    pub capturing_slot: Option<u8>,
-    pub bind_feedback: &'a [crate::shortcuts::BindFeedback; 20],
 }
 
 fn tone_for(sound: &SoundEntry) -> Tone {
