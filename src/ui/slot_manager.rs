@@ -5,6 +5,18 @@ use crate::app::Message;
 use crate::state::{SlotMap, SoundEntry};
 use crate::ui::theme::{self, Hh, Theme, Tone};
 
+/// Bundles the shared slot-manager view state to stay under clippy's
+/// `too-many-arguments` threshold (5).
+#[derive(Clone, Copy)]
+pub struct SlotManagerCtx<'a> {
+    pub slots: &'a SlotMap,
+    pub slot_triggers: &'a [Option<String>; 20],
+    pub sounds: &'a [SoundEntry],
+    pub selected_slot: Option<u8>,
+    pub capturing_slot: Option<u8>,
+    pub bind_feedback: &'a [crate::shortcuts::BindFeedback; 20],
+}
+
 fn tone_for(sound: &SoundEntry) -> Tone {
     let idx = sound
         .id
@@ -14,14 +26,8 @@ fn tone_for(sound: &SoundEntry) -> Tone {
     Tone::from_index(idx)
 }
 
-pub fn view_slot_manager<'a>(
-    slots: &'a SlotMap,
-    slot_triggers: &'a [Option<String>; 20],
-    sounds: &'a [SoundEntry],
-    selected_slot: Option<u8>,
-    t: Theme,
-) -> Element<'a, Message> {
-    let bound_count = (0u8..20).filter(|&i| slots.get(i).is_some()).count();
+pub fn view_slot_manager<'a>(ctx: SlotManagerCtx<'a>, t: Theme) -> Element<'a, Message> {
+    let bound_count = (0u8..20).filter(|&i| ctx.slots.get(i).is_some()).count();
     let header = slot_header(bound_count, t);
     let divider = container(Space::new())
         .width(1)
@@ -30,8 +36,8 @@ pub fn view_slot_manager<'a>(
             background: Some(theme::bg_color(t.hairline())),
             ..Default::default()
         });
-    let grid = slot_grid(slots, slot_triggers, sounds, selected_slot, t);
-    let side = sidebar(slots, slot_triggers, sounds, selected_slot, t);
+    let grid = slot_grid(ctx.slots, ctx.slot_triggers, ctx.sounds, ctx.selected_slot, t);
+    let side = sidebar(ctx, t);
     let body = row![grid, divider, side].height(Length::Fill);
     container(column![header, body].height(Length::Fill))
         .width(Length::Fill)
@@ -307,10 +313,55 @@ fn sidebar_bound_portal<'a>(t: Theme) -> Element<'a, Message> {
     .into()
 }
 
+fn status_dot<'a>(color: iced::Color) -> Element<'a, Message> {
+    container(Space::new())
+        .width(theme::space::SM)
+        .height(theme::space::SM)
+        .style(move |_t| container::Style {
+            background: Some(theme::bg_color(color)),
+            border: iced::Border {
+                radius: 4.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn sidebar_bound_feedback<'a>(
+    feedback: crate::shortcuts::BindFeedback,
+    t: Theme,
+) -> Option<Element<'a, Message>> {
+    match feedback {
+        crate::shortcuts::BindFeedback::Saved => Some(
+            row![
+                status_dot(t.good()),
+                text("Saved").size(theme::font::LABEL).color(t.good()),
+            ]
+            .spacing(theme::space::XS)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        ),
+        crate::shortcuts::BindFeedback::NotSaved => Some(
+            row![
+                status_dot(t.accent()),
+                text("Not saved — may be in use by another app")
+                    .size(theme::font::LABEL)
+                    .color(t.accent()),
+            ]
+            .spacing(theme::space::XS)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        ),
+        crate::shortcuts::BindFeedback::Unset => None,
+    }
+}
+
 fn sidebar_bound<'a>(
     idx: u8,
     sound: &'a SoundEntry,
     trigger: Option<&'a str>,
+    feedback: crate::shortcuts::BindFeedback,
     t: Theme,
 ) -> Element<'a, Message> {
     let slot_label = text(format!("SLOT #{:02}", idx + 1))
@@ -318,6 +369,17 @@ fn sidebar_bound<'a>(
         .color(t.ink_dim());
     let hk_display = sidebar_bound_hotkey(trigger, t);
     let portal = sidebar_bound_portal(t);
+    let set_hotkey_btn = button(
+        text("Set Hotkey").size(theme::font::LABEL).color(t.ink()),
+    )
+    .on_press(Message::StartCapture(idx))
+    .width(Length::Fill)
+    .style(move |_t, _s| button::Style {
+        background: Some(theme::bg_color(t.panel())),
+        text_color: t.ink(),
+        border: theme::tile_border(t.hairline(), 1.0),
+        ..Default::default()
+    });
     let unbind = button(
         text("Unbind")
             .size(theme::font::LABEL)
@@ -335,18 +397,70 @@ fn sidebar_bound<'a>(
         },
         ..Default::default()
     });
-    column![
+    let mut col = column![
         slot_label,
         sound_header(sound, t),
         text("GLOBAL HOTKEY")
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
         hk_display,
-        text("PORTAL STATUS")
+        set_hotkey_btn,
+    ]
+    .spacing(theme::space::MD);
+    if let Some(fb) = sidebar_bound_feedback(feedback, t) {
+        col = col.push(fb);
+    }
+    col.push(text("PORTAL STATUS").size(theme::font::LABEL).color(t.ink_dim()))
+        .push(portal)
+        .push(unbind)
+        .into()
+}
+
+fn sidebar_capture_mode<'a>(idx: u8, sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
+    let slot_label = text(format!("SLOT #{:02}", idx + 1))
+        .size(theme::font::LABEL)
+        .color(t.ink_dim());
+    let prompt = container(
+        column![
+            text("Press a key combo…")
+                .size(theme::font::BODY)
+                .color(t.ink()),
+            text("e.g. Meta+1, Ctrl+Alt+F.  F-keys work alone.")
+                .size(theme::font::LABEL)
+                .color(t.ink_dim()),
+        ]
+        .spacing(theme::space::XS)
+        .padding(theme::space::MD),
+    )
+    .width(Length::Fill)
+    .style(move |_t| container::Style {
+        background: Some(theme::bg_color(t.panel())),
+        border: iced::Border {
+            color: t.accent(),
+            width: 1.5,
+            radius: 10.0.into(),
+        },
+        ..Default::default()
+    });
+    let cancel_btn = button(
+        text("Cancel").size(theme::font::LABEL).color(t.ink_dim()),
+    )
+    .on_press(Message::CancelCapture)
+    .width(Length::Fill)
+    .style(move |_t, _s| button::Style {
+        background: None,
+        text_color: t.ink_dim(),
+        border: theme::tile_border(t.hairline(), 1.0),
+        ..Default::default()
+    });
+    column![
+        slot_label,
+        sound_header(sound, t),
+        text("CAPTURING HOTKEY")
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
-        portal,
-        unbind,
+        prompt,
+        cancel_btn,
     ]
     .spacing(theme::space::MD)
     .into()
@@ -383,26 +497,34 @@ fn sidebar_empty<'a>(idx: u8, t: Theme) -> Element<'a, Message> {
         .into()
 }
 
-fn sidebar<'a>(
-    slots: &'a SlotMap,
-    slot_triggers: &'a [Option<String>; 20],
-    sounds: &'a [SoundEntry],
-    selected_slot: Option<u8>,
-    t: Theme,
-) -> Element<'a, Message> {
-    let inner: Element<'_, Message> = match selected_slot {
+fn sidebar<'a>(ctx: SlotManagerCtx<'a>, t: Theme) -> Element<'a, Message> {
+    let inner: Element<'_, Message> = match ctx.selected_slot {
         None => text("Select a slot to inspect it")
             .size(theme::font::BODY)
             .color(t.ink_faint())
             .into(),
         Some(idx) => {
-            let sound = slots
+            let sound = ctx
+                .slots
                 .get(idx)
-                .and_then(|p| sounds.iter().find(|s| &s.path == p));
+                .and_then(|p| ctx.sounds.iter().find(|s| &s.path == p));
             match sound {
                 Some(s) => {
-                    let trigger = slot_triggers.get(idx as usize).and_then(|t| t.as_deref());
-                    sidebar_bound(idx, s, trigger, t)
+                    let trigger = ctx
+                        .slot_triggers
+                        .get(idx as usize)
+                        .and_then(|t| t.as_deref());
+                    let feedback = ctx
+                        .bind_feedback
+                        .get(idx as usize)
+                        .copied()
+                        .unwrap_or(crate::shortcuts::BindFeedback::Unset);
+                    let is_capturing = ctx.capturing_slot == Some(idx);
+                    if is_capturing {
+                        sidebar_capture_mode(idx, s, t)
+                    } else {
+                        sidebar_bound(idx, s, trigger, feedback, t)
+                    }
                 }
                 None => sidebar_empty(idx, t),
             }
