@@ -30,7 +30,7 @@ pub enum ShortcutEvent {
 }
 
 /// Commands sent into the running portal stream.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PortalCommand {
     RebindSlot { idx: u8, trigger: String },
 }
