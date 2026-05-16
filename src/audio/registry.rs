@@ -1,7 +1,9 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::sync::mpsc;
 
+use super::engine::AudioEvent;
 use super::error::AudioError;
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
@@ -17,6 +19,7 @@ struct RegistryState {
     mic_node_id: Option<u32>,
     mic_output_ports: Vec<u32>,
     linked_pairs: HashSet<(u32, u32)>,
+    output_sinks: Vec<(u32, String, String)>,
 }
 
 fn try_create_mic_links(
@@ -104,10 +107,10 @@ fn try_create_monitor_links(
 fn handle_registry_global(
     global: &pipewire::registry::GlobalObject<&pipewire::spa::utils::dict::DictRef>,
     state: &mut RegistryState,
-) {
+) -> bool {
     let props = match global.props {
         Some(p) => p,
-        None => return,
+        None => return false,
     };
 
     match global.type_ {
@@ -130,6 +133,12 @@ fn handle_registry_global(
                     }
                     None => {}
                 }
+            } else if class == "Audio/Sink" && name != SINK_NODE_NAME && name != SOURCE_NODE_NAME {
+                let description = props.get("node.description").unwrap_or(name);
+                state
+                    .output_sinks
+                    .push((global.id, name.to_owned(), description.to_owned()));
+                return true;
             }
         }
         pipewire::types::ObjectType::Port => {
@@ -153,6 +162,7 @@ fn handle_registry_global(
         }
         _ => {}
     }
+    false
 }
 
 pub struct RegistryGuard {
@@ -206,6 +216,7 @@ mod tests {
             mic_node_id: Some(2),
             mic_output_ports: vec![20, 21],
             linked_pairs: HashSet::new(),
+            output_sinks: Vec::<(u32, String, String)>::new(),
         };
         // Simulate what try_create_mic_links would do (without PipeWire):
         // manually insert the pairs that would be created
@@ -267,6 +278,7 @@ mod tests {
             mic_node_id: None,
             mic_output_ports: vec![],
             linked_pairs: HashSet::new(),
+            output_sinks: Vec::<(u32, String, String)>::new(),
         };
         // zip of empty vecs should produce no iterations — should not panic
         let pairs: Vec<(u32, u32)> = state
@@ -279,11 +291,20 @@ mod tests {
     }
 }
 
+fn sink_names(state: &RegistryState) -> Vec<(String, String)> {
+    state
+        .output_sinks
+        .iter()
+        .map(|(_, n, d)| (n.clone(), d.clone()))
+        .collect()
+}
+
 pub fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
     shared_sink_id: Rc<Cell<Option<u32>>>,
     default_source_name: Option<String>,
     mic_passthrough: Rc<Cell<bool>>,
+    evt_tx: mpsc::Sender<AudioEvent>,
 ) -> Result<RegistryGuard, AudioError> {
     let state = Rc::new(RefCell::new(RegistryState {
         preferred_source_name: default_source_name,
@@ -295,6 +316,7 @@ pub fn setup_registry_listener(
         mic_node_id: None,
         mic_output_ports: Vec::new(),
         linked_pairs: HashSet::new(),
+        output_sinks: Vec::new(),
     }));
     let mic_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
     let other_links: Rc<RefCell<Vec<pipewire::link::Link>>> = Rc::new(RefCell::new(Vec::new()));
@@ -304,15 +326,17 @@ pub fn setup_registry_listener(
         .map_err(|e| AudioError::PipeWireInit(format!("registry: {e}")))?;
 
     let state_ref = state.clone();
+    let state_remove_ref = state.clone();
     let mic_links_ref = mic_links.clone();
     let other_links_ref = other_links.clone();
     let mic_passthrough_ref = mic_passthrough.clone();
     let core_ref = core.clone();
+    let evt_tx_remove = evt_tx.clone();
     let listener = registry
         .add_listener_local()
         .global(move |global| {
             let mut s = state_ref.borrow_mut();
-            handle_registry_global(global, &mut s);
+            let sinks_changed = handle_registry_global(global, &mut s);
             if let Some(id) = s.sink_node_id {
                 shared_sink_id.set(Some(id));
             }
@@ -322,6 +346,19 @@ pub fn setup_registry_listener(
             }
             let mut ol = other_links_ref.borrow_mut();
             try_create_monitor_links(&mut s, &core_ref, &mut ol);
+            if sinks_changed {
+                let sinks = sink_names(&s);
+                let _ = evt_tx.send(AudioEvent::OutputDevicesChanged(sinks));
+            }
+        })
+        .global_remove(move |id| {
+            let mut s = state_remove_ref.borrow_mut();
+            let before = s.output_sinks.len();
+            s.output_sinks.retain(|(sink_id, _, _)| *sink_id != id);
+            if s.output_sinks.len() != before {
+                let sinks = sink_names(&s);
+                let _ = evt_tx_remove.send(AudioEvent::OutputDevicesChanged(sinks));
+            }
         })
         .register();
 

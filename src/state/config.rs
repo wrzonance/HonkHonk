@@ -79,6 +79,8 @@ pub struct AppConfig {
     pub mic_passthrough_level: f32,
     #[serde(default)]
     pub renderer: Renderer,
+    #[serde(default)]
+    pub monitor_device: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -101,6 +103,7 @@ impl Default for AppConfig {
             mic_passthrough: default_true(),
             mic_passthrough_level: default_level(),
             renderer: Renderer::Wgpu,
+            monitor_device: None,
         }
     }
 }
@@ -255,6 +258,7 @@ mod tests {
             mic_passthrough: true,
             mic_passthrough_level: 0.75,
             renderer: Renderer::Wgpu,
+            monitor_device: None,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -278,6 +282,7 @@ mod tests {
             mic_passthrough: false,
             mic_passthrough_level: 0.5,
             renderer: Renderer::Wgpu,
+            monitor_device: None,
         };
 
         config.save_to(&path).unwrap();
@@ -376,5 +381,37 @@ mod tests {
         let json = r#"{"sound_directories":[],"volume":0.85,"window_width":900,"window_height":600,"theme":"Dark","density":"regular","mic_passthrough":true,"mic_passthrough_level":1.0}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.renderer, Renderer::Wgpu);
+    }
+
+    #[test]
+    fn missing_monitor_device_field_deserializes_to_none() {
+        let json = r#"{"sound_directories":[],"volume":0.85,"window_width":900,"window_height":600,"theme":"Dark","density":"regular","mic_passthrough":true,"mic_passthrough_level":1.0,"renderer":"wgpu"}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.monitor_device.is_none());
+    }
+
+    #[test]
+    fn monitor_device_none_round_trips_json() {
+        let config = AppConfig {
+            monitor_device: None,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(back.monitor_device.is_none());
+    }
+
+    #[test]
+    fn monitor_device_some_round_trips_json() {
+        let config = AppConfig {
+            monitor_device: Some("alsa_output.pci-0000_00_1f.3.analog-stereo".into()),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.monitor_device.as_deref(),
+            Some("alsa_output.pci-0000_00_1f.3.analog-stereo")
+        );
     }
 }
