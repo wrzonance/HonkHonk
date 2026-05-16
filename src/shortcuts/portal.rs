@@ -121,7 +121,6 @@ pub fn shortcut_stream(window_id: Option<WindowIdentifier>) -> impl Stream<Item 
                                 .await
                             {
                                 eprintln!("honkhonk: configure_shortcuts unavailable: {e}");
-                                let _ = tx.send(ShortcutEvent::ConfigureAvailable(false)).await;
                             }
                         }
                     }

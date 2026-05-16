@@ -347,7 +347,7 @@ fn sidebar_bound<'a>(
         })
         .into()
     } else {
-        text("Assign keys in System Settings → Shortcuts")
+        text("Assign keys in your desktop's shortcut settings")
             .size(theme::font::LABEL)
             .color(t.ink_faint())
             .into()
