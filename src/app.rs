@@ -162,9 +162,13 @@ fn shortcuts_stream_sub(
                 }
                 ShortcutEvent::Activated(i) => Message::ShortcutActivated(i),
                 ShortcutEvent::Bindings(b) => Message::ShortcutBindingsUpdated(b),
-                ShortcutEvent::RebindResult { changed_idx, bindings } => {
-                    Message::RebindResult { changed_idx, bindings }
-                }
+                ShortcutEvent::RebindResult {
+                    changed_idx,
+                    bindings,
+                } => Message::RebindResult {
+                    changed_idx,
+                    bindings,
+                },
                 ShortcutEvent::Changed(b) => Message::ShortcutsChangedExternal(b),
                 ShortcutEvent::Failed(r) => Message::ShortcutsUnavailable(r),
             };
@@ -774,9 +778,10 @@ impl HonkHonk {
                         eprintln!("honkhonk: config save: {e}");
                     }
                     if let Some(tx) = &self.portal_cmd_tx {
-                        if let Err(e) = tx.try_send(
-                            crate::shortcuts::PortalCommand::RebindSlot { idx, trigger: combo },
-                        ) {
+                        if let Err(e) = tx.try_send(crate::shortcuts::PortalCommand::RebindSlot {
+                            idx,
+                            trigger: combo,
+                        }) {
                             eprintln!("honkhonk: rebind command dropped: {e}");
                         }
                     }
@@ -784,7 +789,10 @@ impl HonkHonk {
                 // Bare key without modifier (or Escape, handled by CloseContextMenu): keep capture open
                 Task::none()
             }
-            Message::RebindResult { changed_idx, bindings } => {
+            Message::RebindResult {
+                changed_idx,
+                bindings,
+            } => {
                 if changed_idx >= 20 {
                     return Task::none();
                 }
@@ -802,9 +810,7 @@ impl HonkHonk {
                 let requested = self.config.desired_triggers[changed_idx as usize].as_deref();
                 let granted = self.slot_triggers[changed_idx as usize].as_deref();
                 self.bind_feedback[changed_idx as usize] = match (requested, granted) {
-                    (Some(req), Some(got)) if req == got => {
-                        crate::shortcuts::BindFeedback::Saved
-                    }
+                    (Some(req), Some(got)) if req == got => crate::shortcuts::BindFeedback::Saved,
                     (Some(_), _) => crate::shortcuts::BindFeedback::NotSaved,
                     _ => crate::shortcuts::BindFeedback::Unset,
                 };
@@ -990,9 +996,7 @@ impl HonkHonk {
                     ..
                 }) => None,
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                    key,
-                    modifiers,
-                    ..
+                    key, modifiers, ..
                 }) => Some(Message::KeyPressed { key, modifiers }),
                 _ => None,
             });
@@ -1832,13 +1836,19 @@ mod tests {
             changed_idx: 0,
             bindings: vec![], // portal rejected it — absent from response
         });
-        assert_eq!(app.bind_feedback[0], crate::shortcuts::BindFeedback::NotSaved);
+        assert_eq!(
+            app.bind_feedback[0],
+            crate::shortcuts::BindFeedback::NotSaved
+        );
     }
 
     #[test]
     fn shortcuts_changed_external_updates_slot_triggers() {
         let mut app = HonkHonk::new_for_test();
-        let _ = app.update(Message::ShortcutsChangedExternal(vec![(2, "Ctrl+F3".into())]));
+        let _ = app.update(Message::ShortcutsChangedExternal(vec![(
+            2,
+            "Ctrl+F3".into(),
+        )]));
         assert_eq!(app.slot_triggers[2].as_deref(), Some("Ctrl+F3"));
     }
 }

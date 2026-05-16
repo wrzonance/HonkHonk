@@ -1,6 +1,6 @@
+pub mod capture;
 pub mod error;
 pub mod portal;
-pub mod capture;
 
 pub use error::PortalError;
 

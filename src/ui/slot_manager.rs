@@ -36,7 +36,13 @@ pub fn view_slot_manager<'a>(ctx: SlotManagerCtx<'a>, t: Theme) -> Element<'a, M
             background: Some(theme::bg_color(t.hairline())),
             ..Default::default()
         });
-    let grid = slot_grid(ctx.slots, ctx.slot_triggers, ctx.sounds, ctx.selected_slot, t);
+    let grid = slot_grid(
+        ctx.slots,
+        ctx.slot_triggers,
+        ctx.sounds,
+        ctx.selected_slot,
+        t,
+    );
     let side = sidebar(ctx, t);
     let body = row![grid, divider, side].height(Length::Fill);
     container(column![header, body].height(Length::Fill))
@@ -369,17 +375,15 @@ fn sidebar_bound<'a>(
         .color(t.ink_dim());
     let hk_display = sidebar_bound_hotkey(trigger, t);
     let portal = sidebar_bound_portal(t);
-    let set_hotkey_btn = button(
-        text("Set Hotkey").size(theme::font::LABEL).color(t.ink()),
-    )
-    .on_press(Message::StartCapture(idx))
-    .width(Length::Fill)
-    .style(move |_t, _s| button::Style {
-        background: Some(theme::bg_color(t.panel())),
-        text_color: t.ink(),
-        border: theme::tile_border(t.hairline(), 1.0),
-        ..Default::default()
-    });
+    let set_hotkey_btn = button(text("Set Hotkey").size(theme::font::LABEL).color(t.ink()))
+        .on_press(Message::StartCapture(idx))
+        .width(Length::Fill)
+        .style(move |_t, _s| button::Style {
+            background: Some(theme::bg_color(t.panel())),
+            text_color: t.ink(),
+            border: theme::tile_border(t.hairline(), 1.0),
+            ..Default::default()
+        });
     let unbind = button(
         text("Unbind")
             .size(theme::font::LABEL)
@@ -410,10 +414,14 @@ fn sidebar_bound<'a>(
     if let Some(fb) = sidebar_bound_feedback(feedback, t) {
         col = col.push(fb);
     }
-    col.push(text("PORTAL STATUS").size(theme::font::LABEL).color(t.ink_dim()))
-        .push(portal)
-        .push(unbind)
-        .into()
+    col.push(
+        text("PORTAL STATUS")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+    )
+    .push(portal)
+    .push(unbind)
+    .into()
 }
 
 fn sidebar_capture_mode<'a>(idx: u8, sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> {
@@ -442,17 +450,15 @@ fn sidebar_capture_mode<'a>(idx: u8, sound: &'a SoundEntry, t: Theme) -> Element
         },
         ..Default::default()
     });
-    let cancel_btn = button(
-        text("Cancel").size(theme::font::LABEL).color(t.ink_dim()),
-    )
-    .on_press(Message::CancelCapture)
-    .width(Length::Fill)
-    .style(move |_t, _s| button::Style {
-        background: None,
-        text_color: t.ink_dim(),
-        border: theme::tile_border(t.hairline(), 1.0),
-        ..Default::default()
-    });
+    let cancel_btn = button(text("Cancel").size(theme::font::LABEL).color(t.ink_dim()))
+        .on_press(Message::CancelCapture)
+        .width(Length::Fill)
+        .style(move |_t, _s| button::Style {
+            background: None,
+            text_color: t.ink_dim(),
+            border: theme::tile_border(t.hairline(), 1.0),
+            ..Default::default()
+        });
     column![
         slot_label,
         sound_header(sound, t),

@@ -49,10 +49,8 @@ fn named_key_with_modifier(named: &Named) -> Option<&'static str> {
 ///
 /// F-keys (F1–F12) are accepted without a modifier.
 pub fn format_combo(modifiers: keyboard::Modifiers, key: &keyboard::Key) -> Option<String> {
-    let has_modifier = modifiers.control()
-        || modifiers.alt()
-        || modifiers.shift()
-        || modifiers.logo();
+    let has_modifier =
+        modifiers.control() || modifiers.alt() || modifiers.shift() || modifiers.logo();
 
     let key_str: String = match key {
         keyboard::Key::Named(named) => match named {
