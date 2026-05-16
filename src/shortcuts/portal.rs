@@ -108,37 +108,47 @@ pub fn shortcut_stream(
                 Some(cmd) = cmd_rx.recv() => {
                     match cmd {
                         PortalCommand::RebindSlot { idx, trigger } => {
+                            if idx as usize >= current_desired.len() {
+                                continue;
+                            }
+                            let old = current_desired[idx as usize].clone();
                             current_desired[idx as usize] = Some(trigger);
                             let shortcuts = build_shortcuts(&current_desired);
-                            let rebind_result = proxy
+                            let event = match proxy
                                 .bind_shortcuts(
                                     &session,
                                     &shortcuts,
                                     window_id.as_ref(),
                                     BindShortcutsOptions::default(),
                                 )
-                                .await;
-                            let event = match rebind_result {
+                                .await
+                            {
                                 Ok(req) => match req.response() {
                                     Ok(info) => {
                                         let bindings = info
                                             .shortcuts()
                                             .iter()
-                                            .filter_map(|s| {
-                                                parse_binding(s.id(), s.trigger_description())
-                                            })
+                                            .filter_map(|s| parse_binding(s.id(), s.trigger_description()))
                                             .collect();
                                         ShortcutEvent::RebindResult {
                                             changed_idx: idx,
                                             bindings,
                                         }
                                     }
-                                    Err(e) => ShortcutEvent::Failed(format!(
-                                        "rebind response error: {e}"
-                                    )),
+                                    Err(_) => {
+                                        current_desired[idx as usize] = old;
+                                        ShortcutEvent::RebindResult {
+                                            changed_idx: idx,
+                                            bindings: vec![],
+                                        }
+                                    }
                                 },
-                                Err(e) => {
-                                    ShortcutEvent::Failed(format!("rebind portal error: {e}"))
+                                Err(_) => {
+                                    current_desired[idx as usize] = old;
+                                    ShortcutEvent::RebindResult {
+                                        changed_idx: idx,
+                                        bindings: vec![],
+                                    }
                                 }
                             };
                             if tx.send(event).await.is_err() {
