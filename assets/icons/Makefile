@@ -60,10 +60,17 @@ social: $(OUT)/social-preview.png
 $(OUT)/social-preview.png: $(SVG_COLOR)
 	@mkdir -p $(OUT)
 	$(RESVG) --width 512 --height 512 $< $(OUT)/social-icon.png
+	# Strip all metadata + clear date attributes so the PNG output is
+	# byte-for-byte reproducible across runs. ImageMagick embeds
+	# `tIME` and `tEXt` (date:create/date:modify/date:timestamp)
+	# chunks by default; both must be suppressed for the CI freshness
+	# gate to be stable.
 	$(MAGICK) -size 1280x640 xc:'#1a1a2e' \
 	  $(OUT)/social-icon.png -gravity center -composite \
 	  -font DejaVu-Sans-Bold -pointsize 96 -fill white \
-	  -gravity south -annotate +0+80 'HonkHonk' $@
+	  -gravity south -annotate +0+80 'HonkHonk' \
+	  -strip \
+	  -define png:exclude-chunks=date,time $@
 	rm $(OUT)/social-icon.png
 
 clean:
