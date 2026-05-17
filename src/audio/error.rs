@@ -7,8 +7,8 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum WatcherError {
     /// `core.get_registry_rc()` failed during watcher startup.
-    #[error("failed to acquire PipeWire registry: {0}")]
-    RegistryAcquire(String),
+    #[error("failed to acquire PipeWire registry")]
+    RegistryAcquire(#[source] pipewire::Error),
 }
 
 #[derive(Error, Debug)]

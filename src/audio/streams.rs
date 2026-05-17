@@ -151,7 +151,7 @@ pub fn start(
 
     let registry = core
         .get_registry_rc()
-        .map_err(|e| AudioError::StreamWatcherInit(WatcherError::RegistryAcquire(e.to_string())))?;
+        .map_err(|e| AudioError::StreamWatcherInit(WatcherError::RegistryAcquire(e)))?;
 
     let tracked_nodes: Rc<RefCell<HashMap<u32, TrackedNode>>> =
         Rc::new(RefCell::new(HashMap::new()));
