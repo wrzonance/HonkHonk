@@ -180,7 +180,7 @@ Short "Icon" section at end of repo README explaining the pipeline, the placehol
 
 | Check | What it catches |
 |---|---|
-| `cargo install resvg --locked` | Toolchain availability + version pin |
+| `cargo install resvg --locked` | Toolchain availability + reproducible dep graph (note: `--locked` pins resvg's transitive deps, not resvg's own version — see "resvg version drift" below) |
 | `make icons` exits 0 | All targets build with installed tools |
 | `git diff --exit-code assets/icons/generated/` | Committed outputs match source SVGs (drift gate) |
 | File-existence tests for key outputs | Makefile rules accidentally skipped |
@@ -188,7 +188,7 @@ Short "Icon" section at end of repo README explaining the pipeline, the placehol
 
 ### Manual smoke (post-merge)
 
-1. `cp -r assets/icons/generated/hicolor ~/.local/share/icons/hicolor && gtk-update-icon-cache ~/.local/share/icons/hicolor`
+1. `mkdir -p ~/.local/share/icons/hicolor && cp -r assets/icons/generated/hicolor/. ~/.local/share/icons/hicolor/ && gtk-update-icon-cache ~/.local/share/icons/hicolor` (merges into existing target without nesting `hicolor/hicolor`)
 2. Open `gnome-tweaks` → Icon picker → verify `HonkHonk` appears at 16/22/24/32/48
 3. Toggle DE theme light ↔ dark → verify symbolic icon recolors
 4. Open `assets/icons/generated/favicon.ico` in Firefox + Chrome — all res tiers render
@@ -205,7 +205,7 @@ Short "Icon" section at end of repo README explaining the pipeline, the placehol
 - **`resvg` / `magick` not installed**: `check-tools` target fails fast with install hint.
 - **ImageMagick ICO policy disabled**: documented in `assets/icons/README.md` with policy-edit one-liner for Fedora/RHEL. CI uses default-policy Ubuntu image.
 - **Stale partial outputs after Makefile edit**: runbook documents `make clean && make icons` for full regen.
-- **resvg version drift**: pinned via `cargo install resvg --locked` (uses `Cargo.lock` from latest resvg release crate). Recorded in `assets/icons/README.md`.
+- **resvg version drift**: `cargo install resvg --locked` reproduces the dep graph from `Cargo.lock` of whatever resvg release is current on crates.io — it does NOT pin resvg's own version. For deterministic CI add `--version <X.Y.Z>` (deferred: would require coordinated bumps across spec + workflow + README and is out of scope for this sub-MVP). Tradeoff documented in `assets/icons/README.md`.
 - **Real-icon swap diff is large**: expected — all PNGs regenerate. PR description should call out "binary-only diff under `generated/`".
 - **Existing `assets/icons/hicolor/256x256/apps/honkhonk.png`** stays in place; AppImage references unchanged. Additive PR only.
 
