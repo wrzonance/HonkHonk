@@ -4,23 +4,32 @@ SVG_COLOR    = icon.svg
 SVG_SYMBOLIC = icon-symbolic.svg
 OUT          = generated
 
-RESVG ?= resvg
+RESVG  ?= resvg
 MAGICK ?= magick
+
+# Build explicit size-x-size directory targets:
+#   generated/hicolor/16x16/apps/io.github.wrzonance.HonkHonk.png, etc.
+# A `foreach`+`eval` template emits one concrete rule per size — Make's
+# pattern-rule syntax only honors the FIRST `%`, so SIZExSIZE paths
+# cannot be expressed with a single static pattern.
+HICOLOR_PNGS = $(foreach s,$(SIZES),$(OUT)/hicolor/$(s)x$(s)/apps/$(APPID).png)
 
 .PHONY: icons hicolor symbolic favicon social clean check-tools
 
 icons: check-tools hicolor symbolic favicon social
 
 check-tools:
-	@command -v $(RESVG) >/dev/null || { echo "ERROR: resvg missing — cargo install resvg --locked"; exit 1; }
+	@command -v $(RESVG)  >/dev/null || { echo "ERROR: resvg missing — cargo install resvg --locked"; exit 1; }
 	@command -v $(MAGICK) >/dev/null || { echo "ERROR: ImageMagick missing"; exit 1; }
 
-hicolor: $(SIZES:%=$(OUT)/hicolor/%x%/apps/$(APPID).png) \
-         $(OUT)/hicolor/scalable/apps/$(APPID).svg
+hicolor: $(HICOLOR_PNGS) $(OUT)/hicolor/scalable/apps/$(APPID).svg
 
-$(OUT)/hicolor/%x%/apps/$(APPID).png: $(SVG_COLOR)
-	@mkdir -p $(dir $@)
-	$(RESVG) --width $* --height $* $< $@
+define HICOLOR_PNG_RULE
+$(OUT)/hicolor/$(1)x$(1)/apps/$(APPID).png: $(SVG_COLOR)
+	@mkdir -p $$(dir $$@)
+	$(RESVG) --width $(1) --height $(1) $$< $$@
+endef
+$(foreach s,$(SIZES),$(eval $(call HICOLOR_PNG_RULE,$(s))))
 
 $(OUT)/hicolor/scalable/apps/$(APPID).svg: $(SVG_COLOR)
 	@mkdir -p $(dir $@)
