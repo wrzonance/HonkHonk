@@ -7,5 +7,5 @@ pub mod streams;
 
 pub use decoder::{decode, DecodedAudio};
 pub use engine::{spawn, AudioCommand, AudioEvent, AudioHandle};
-pub use error::AudioError;
+pub use error::{AudioError, WatcherError};
 pub use streams::{Direction, StreamEvent, StreamWatcher};

@@ -18,13 +18,13 @@
 //! per CLAUDE.md "self-contained unit, one clear purpose".
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::mpsc;
 
 use pipewire::spa::utils::dict::DictRef;
 
-use super::error::AudioError;
+use super::error::{AudioError, WatcherError};
 
 const STREAM_OUTPUT_AUDIO: &str = "Stream/Output/Audio";
 
@@ -79,7 +79,19 @@ pub enum StreamEvent {
 pub struct StreamWatcher {
     _registry: pipewire::registry::RegistryRc,
     _listener: pipewire::registry::Listener,
-    _tracked: Rc<RefCell<HashMap<u32, TrackedNode>>>,
+    _tracked_nodes: Rc<RefCell<HashMap<u32, TrackedNode>>>,
+    _tracked_ports: Rc<RefCell<HashSet<u32>>>,
+}
+
+/// Shared state needed by the registry `global` callback. Wrapping these
+/// in one struct keeps `handle_global`'s arg count within
+/// `too-many-arguments-threshold = 5` (clippy.toml).
+struct HandleGlobalCtx {
+    self_pid: u32,
+    registry: pipewire::registry::RegistryRc,
+    tracked_nodes: Rc<RefCell<HashMap<u32, TrackedNode>>>,
+    tracked_ports: Rc<RefCell<HashSet<u32>>>,
+    tx: mpsc::Sender<StreamEvent>,
 }
 
 /// Per-node bookkeeping: proxy keeps the bind alive, listener fires
@@ -139,32 +151,42 @@ pub fn start(
 
     let registry = core
         .get_registry_rc()
-        .map_err(|e| AudioError::StreamWatcherInit(format!("get_registry: {e}")))?;
+        .map_err(|e| AudioError::StreamWatcherInit(WatcherError::RegistryAcquire(e.to_string())))?;
 
-    let tracked: Rc<RefCell<HashMap<u32, TrackedNode>>> = Rc::new(RefCell::new(HashMap::new()));
+    let tracked_nodes: Rc<RefCell<HashMap<u32, TrackedNode>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let tracked_ports: Rc<RefCell<HashSet<u32>>> = Rc::new(RefCell::new(HashSet::new()));
 
-    let tracked_global = tracked.clone();
-    let tracked_remove = tracked.clone();
-    let registry_for_bind = registry.clone();
-    let tx_global = tx.clone();
-    let tx_remove = tx.clone();
+    let ctx = Rc::new(HandleGlobalCtx {
+        self_pid,
+        registry: registry.clone(),
+        tracked_nodes: tracked_nodes.clone(),
+        tracked_ports: tracked_ports.clone(),
+        tx: tx.clone(),
+    });
+    let ctx_global = ctx.clone();
+
+    let tracked_nodes_remove = tracked_nodes.clone();
+    let tracked_ports_remove = tracked_ports.clone();
+    let tx_remove = tx;
 
     let listener = registry
         .add_listener_local()
         .global(move |global| {
-            handle_global(
-                global,
-                self_pid,
-                &registry_for_bind,
-                &tracked_global,
-                &tx_global,
-            );
+            handle_global(global, &ctx_global);
         })
         .global_remove(move |id| {
-            // Always forward removals — consumers ignore IDs they don't track.
-            // Drop our own bookkeeping if we had a proxy for it.
-            tracked_remove.borrow_mut().remove(&id);
-            let _ = tx_remove.send(StreamEvent::SourceRemoved { id });
+            // Distinguish node vs port lifecycle so consumers can reconcile
+            // each independently. A removed ID belongs to exactly one of:
+            // a tracked stream node, a tracked port, or something we never
+            // observed (silently ignored).
+            if tracked_nodes_remove.borrow_mut().remove(&id).is_some() {
+                let _ = tx_remove.send(StreamEvent::SourceRemoved { id });
+                return;
+            }
+            if tracked_ports_remove.borrow_mut().remove(&id) {
+                let _ = tx_remove.send(StreamEvent::PortRemoved { id });
+            }
         })
         .register();
 
@@ -172,19 +194,14 @@ pub fn start(
         StreamWatcher {
             _registry: registry,
             _listener: listener,
-            _tracked: tracked,
+            _tracked_nodes: tracked_nodes,
+            _tracked_ports: tracked_ports,
         },
         rx,
     ))
 }
 
-fn handle_global(
-    global: &pipewire::registry::GlobalObject<&DictRef>,
-    self_pid: u32,
-    registry: &pipewire::registry::RegistryRc,
-    tracked: &Rc<RefCell<HashMap<u32, TrackedNode>>>,
-    tx: &mpsc::Sender<StreamEvent>,
-) {
+fn handle_global(global: &pipewire::registry::GlobalObject<&DictRef>, ctx: &HandleGlobalCtx) {
     let props = match global.props {
         Some(p) => p,
         None => return,
@@ -195,13 +212,19 @@ fn handle_global(
             if props.get("media.class") != Some(STREAM_OUTPUT_AUDIO) {
                 return;
             }
-            if is_own_node(props, self_pid) {
+            if is_own_node(props, ctx.self_pid) {
                 return;
             }
-            bind_and_track_node(global, registry, tracked, tx);
+            bind_and_track_node(global, &ctx.registry, &ctx.tracked_nodes, &ctx.tx);
         }
         pipewire::types::ObjectType::Port => {
-            forward_port_event(global, props, tracked, tx);
+            forward_port_event(
+                global,
+                props,
+                &ctx.tracked_nodes,
+                &ctx.tracked_ports,
+                &ctx.tx,
+            );
         }
         _ => {}
     }
@@ -276,14 +299,15 @@ fn on_node_info(
 fn forward_port_event(
     global: &pipewire::registry::GlobalObject<&DictRef>,
     props: &DictRef,
-    tracked: &Rc<RefCell<HashMap<u32, TrackedNode>>>,
+    tracked_nodes: &Rc<RefCell<HashMap<u32, TrackedNode>>>,
+    tracked_ports: &Rc<RefCell<HashSet<u32>>>,
     tx: &mpsc::Sender<StreamEvent>,
 ) {
     let node_id: u32 = match props.get("node.id").and_then(|s| s.parse().ok()) {
         Some(v) => v,
         None => return,
     };
-    if !tracked.borrow().contains_key(&node_id) {
+    if !tracked_nodes.borrow().contains_key(&node_id) {
         return;
     }
     let channel = props.get("audio.channel").unwrap_or("UNKNOWN").to_owned();
@@ -292,6 +316,8 @@ fn forward_port_event(
         Some("out") => Direction::Output,
         _ => return,
     };
+    // Record the port so global_remove can emit the matching PortRemoved.
+    tracked_ports.borrow_mut().insert(global.id);
     let _ = tx.send(StreamEvent::PortAdded {
         id: global.id,
         node_id,

@@ -193,6 +193,28 @@ fn setup_completion_timer(
     Ok(timer)
 }
 
+/// Bootstrap the external-stream observer (issue #26).
+///
+/// Starts the `streams::start` watcher bound to the engine's PipeWire core,
+/// then spawns a daemon thread to drain emitted events. The returned
+/// `StreamWatcher` MUST be held to end-of-scope; dropping it detaches the
+/// registry listener.
+fn spawn_stream_watcher(
+    core: &pipewire::core::CoreRc,
+) -> Result<streams::StreamWatcher, AudioError> {
+    let self_pid = std::process::id();
+    let (stream_watcher, stream_rx) = streams::start(core, self_pid)?;
+    std::thread::Builder::new()
+        .name("honkhonk-stream-drain".into())
+        .spawn(move || {
+            while let Ok(event) = stream_rx.recv() {
+                eprintln!("honkhonk stream: {event:?}");
+            }
+        })
+        .map_err(AudioError::ThreadSpawn)?;
+    Ok(stream_watcher)
+}
+
 fn run_engine(
     cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
@@ -226,16 +248,7 @@ fn run_engine(
 
     // External-stream observer (issue #26). Held to end-of-scope so its
     // Drop detaches the registry listener at shutdown.
-    let self_pid = std::process::id();
-    let (_stream_watcher, stream_rx) = streams::start(&core, self_pid)?;
-    std::thread::Builder::new()
-        .name("honkhonk-stream-drain".into())
-        .spawn(move || {
-            while let Ok(event) = stream_rx.recv() {
-                eprintln!("honkhonk stream: {event:?}");
-            }
-        })
-        .map_err(AudioError::ThreadSpawn)?;
+    let _stream_watcher = spawn_stream_watcher(&core)?;
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
