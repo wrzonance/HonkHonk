@@ -42,6 +42,7 @@ pub enum Message {
     StopAll,
     SelectCategory(Option<String>),
     SearchChanged(String),
+    EscapePressed,
     VolumeChanged(f32),
     VolumeSaveRequested,
     // Shortcut lifecycle
@@ -111,6 +112,9 @@ pub struct HonkHonk {
     active_category: Option<String>,
     pub(crate) config: AppConfig,
     search_query: String,
+    // True after SearchChanged fires; first Escape consumes it as a blur,
+    // second Escape clears the query. Resets when SearchChanged fires again.
+    search_had_focus: bool,
     progress: f32,
     slots: SlotMap,
     pub(crate) slot_triggers: [Option<String>; 20],
@@ -246,6 +250,7 @@ impl HonkHonk {
             active_category: None,
             config,
             search_query: String::new(),
+            search_had_focus: false,
             progress: 0.0,
             slots,
             slot_triggers: std::array::from_fn(|_| None),
@@ -279,6 +284,7 @@ impl HonkHonk {
             active_category: None,
             config,
             search_query: String::new(),
+            search_had_focus: false,
             progress: 0.0,
             slots: SlotMap::default(),
             slot_triggers: std::array::from_fn(|_| None),
@@ -459,7 +465,20 @@ impl HonkHonk {
                 self.active_category = cat;
                 Task::none()
             }
+            Message::EscapePressed => {
+                self.context_menu = None;
+                self.context_menu_pos = None;
+                if self.search_had_focus {
+                    // First Esc: treat as blur — Iced already handled unfocus.
+                    self.search_had_focus = false;
+                } else if !self.search_query.is_empty() {
+                    // Second Esc (or Esc when not from search): clear query.
+                    self.search_query = String::new();
+                }
+                Task::none()
+            }
             Message::SearchChanged(query) => {
+                self.search_had_focus = true;
                 self.search_query = query;
                 Task::none()
             }
@@ -863,7 +882,7 @@ impl HonkHonk {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                 ..
-            }) => Some(Message::CloseContextMenu),
+            }) => Some(Message::EscapePressed),
             iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                 Some(Message::CursorMoved(position))
             }
