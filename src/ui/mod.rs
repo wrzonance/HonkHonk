@@ -3,8 +3,11 @@ pub mod search_bar;
 pub mod settings;
 pub mod slot_manager;
 pub mod sound_grid;
+pub mod sound_tile;
 pub mod theme;
 pub mod volume;
+
+pub use sound_tile::{Glyph, SoundTile, SoundTileData};
 
 pub fn fmt_duration(ms: Option<u64>) -> String {
     match ms {

@@ -247,3 +247,100 @@ fn hsl_to_color(h: f32, s: f32, l: f32) -> Color {
     let m = l - c / 2.0;
     Color::from_rgb(r1 + m, g1 + m, b1 + m)
 }
+
+// Sticker tile palette (issue #13) — distinct from app `Tone` so the
+// existing slot-manager / tile-tint paths stay untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StickerTone {
+    Pink,
+    Mint,
+    Lemon,
+    Sky,
+    Lilac,
+    Coral,
+    Peach,
+    Sage,
+}
+
+pub const STICKER_TONES: [StickerTone; 8] = [
+    StickerTone::Pink,
+    StickerTone::Mint,
+    StickerTone::Lemon,
+    StickerTone::Sky,
+    StickerTone::Lilac,
+    StickerTone::Coral,
+    StickerTone::Peach,
+    StickerTone::Sage,
+];
+
+impl StickerTone {
+    /// Solid fill color for the sticker disc.
+    pub fn fill(self) -> Color {
+        match self {
+            StickerTone::Pink => Color::from_rgb8(0xff, 0xc1, 0xd6),
+            StickerTone::Mint => Color::from_rgb8(0xc1, 0xf0, 0xd6),
+            StickerTone::Lemon => Color::from_rgb8(0xff, 0xf0, 0xa8),
+            StickerTone::Sky => Color::from_rgb8(0xa8, 0xd6, 0xff),
+            StickerTone::Lilac => Color::from_rgb8(0xd6, 0xc1, 0xff),
+            StickerTone::Coral => Color::from_rgb8(0xff, 0xa8, 0x96),
+            StickerTone::Peach => Color::from_rgb8(0xff, 0xd6, 0xa8),
+            StickerTone::Sage => Color::from_rgb8(0xb8, 0xd0, 0xa8),
+        }
+    }
+
+    /// Lighter highlight color used for the radial gloss overlay.
+    /// Blends `fill` toward white at 35% strength; alpha 0.85.
+    pub fn gloss(self) -> Color {
+        let base = self.fill();
+        Color::from_rgba(
+            base.r + (1.0 - base.r) * 0.35,
+            base.g + (1.0 - base.g) * 0.35,
+            base.b + (1.0 - base.b) * 0.35,
+            0.85,
+        )
+    }
+}
+
+/// Dark ink color shared by glyph strokes and disc outline on sticker tiles.
+pub fn sticker_ink() -> Color {
+    Color::from_rgb8(0x1a, 0x1a, 0x2e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sticker_tone_palette_complete() {
+        // Each variant returns a distinct, non-default color.
+        for tone in STICKER_TONES {
+            let c = tone.fill();
+            assert_ne!(c, Color::BLACK, "{tone:?} fill must not be default black");
+            assert_ne!(c, Color::WHITE, "{tone:?} fill must not be white");
+        }
+    }
+
+    #[test]
+    fn sticker_gloss_is_lighter_than_fill() {
+        // Gloss must be at least as light (per-channel) as the underlying fill
+        // for every variant so the radial highlight reads as a brighter blob.
+        for tone in STICKER_TONES {
+            let fill = tone.fill();
+            let gloss = tone.gloss();
+            assert!(
+                gloss.r >= fill.r && gloss.g >= fill.g && gloss.b >= fill.b,
+                "{tone:?}: gloss {gloss:?} must be lighter (per-channel) than fill {fill:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn sticker_ink_is_dark() {
+        // Ink is used as text/stroke on light sticker discs; must be dark.
+        let ink = sticker_ink();
+        assert!(
+            ink.r < 0.3 && ink.g < 0.3 && ink.b < 0.3,
+            "ink {ink:?} must be dark"
+        );
+    }
+}
