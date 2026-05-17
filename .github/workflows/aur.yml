@@ -1,0 +1,55 @@
+name: AUR PKGBUILD validation
+
+on:
+  push:
+    paths:
+      - 'packaging/aur/**'
+      - '.github/workflows/aur.yml'
+  pull_request:
+    paths:
+      - 'packaging/aur/**'
+      - '.github/workflows/aur.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: namcap + .SRCINFO + makepkg
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install validation tooling
+        run: |
+          pacman -Sy --noconfirm --needed namcap pacman-contrib git
+
+      - name: Create non-root build user
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+          chown -R builder packaging/aur/honkhonk-bin
+
+      - name: namcap lint
+        working-directory: packaging/aur/honkhonk-bin
+        run: sudo -u builder namcap PKGBUILD
+
+      - name: .SRCINFO freshness check
+        working-directory: packaging/aur/honkhonk-bin
+        run: |
+          sudo -u builder makepkg --printsrcinfo > /tmp/.SRCINFO.fresh
+          diff -u .SRCINFO /tmp/.SRCINFO.fresh
+
+      - name: Refresh sha256sums + build + install
+        working-directory: packaging/aur/honkhonk-bin
+        run: |
+          sudo -u builder updpkgsums
+          sudo -u builder makepkg --noconfirm --syncdeps --install
+
+      - name: Installed file manifest
+        run: |
+          pacman -Ql honkhonk-bin
+          pacman -Ql honkhonk-bin | grep -q '/usr/bin/honkhonk$'
+          pacman -Ql honkhonk-bin | grep -q '/usr/share/applications/honkhonk.desktop$'
