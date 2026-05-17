@@ -6,7 +6,9 @@
 
 ## Goal
 
-Replace the current basic-button tile rendering in `src/ui/sound_grid.rs` with a `canvas::Program`-based sticker tile: radial-gradient gloss disc, deterministic ±3° rotation, 8 hand-drawn glyph primitives, favorite-star indicator, and an 8-color Tone palette. Tile visuals derive deterministically from the sound id so the same sound looks identical across restarts. Hover and playing-state animations are deferred to a follow-up PR (#92) to stay under the CLAUDE.md 500-LOC ceiling.
+Replace the current basic-button tile rendering in `src/ui/sound_grid.rs` with a `canvas::Program`-based sticker tile: radial-gradient gloss disc, deterministic ±3° rotation, 8 hand-drawn glyph primitives, favorite-star indicator, and an 8-color `StickerTone` palette. Tile visuals derive deterministically from the sound id so the same sound looks identical across restarts. Hover and playing-state animations are deferred to a follow-up PR (#92) to stay under the CLAUDE.md 500-LOC ceiling.
+
+> **Note on naming:** `StickerTone` is a NEW enum kept separate from the existing `Tone` enum used elsewhere in the app (slot-manager tile tints). The two are intentionally distinct to avoid a cross-module refactor and a `Pink` variant clash. The disc fill/gloss accessors are methods on `StickerTone` itself (`StickerTone::fill`, `StickerTone::gloss`), and the shared dark ink color is exposed as a module-level free function `sticker_ink()` (not a `Theme` method).
 
 ## Scope
 
@@ -15,10 +17,10 @@ Replace the current basic-button tile rendering in `src/ui/sound_grid.rs` with a
 | File | Purpose | LOC est. |
 |---|---|---|
 | `src/ui/sound_tile.rs` (new) | `SoundTile` canvas::Program, `SoundTileData` struct, `Glyph` enum (8 variants), 8 glyph paint helpers, sticker disc + favorite star + label rendering, hash-derived tone/glyph/seed utilities | ~340 |
-| `src/ui/theme.rs` | Append `Tone` enum (Pink/Mint/Lemon/Sky/Lilac/Coral/Peach/Sage); `sticker_fill(Tone)`, `sticker_gloss(Tone)`, `ink()` accessors | ~40 |
+| `src/ui/theme.rs` | Append `StickerTone` enum (Pink/Mint/Lemon/Sky/Lilac/Coral/Peach/Sage); `StickerTone::fill()`, `StickerTone::gloss()` methods; free function `sticker_ink()` | ~40 |
 | `src/ui/sound_grid.rs` | Replace existing per-slot tile widget with `canvas(SoundTile::new(...))` wrapped in existing `mouse_area` click handler; build `SoundTileData` at view time from slot state | ~20 (net delta) |
 | `src/ui/mod.rs` | `mod sound_tile;` + `pub use sound_tile::{SoundTile, SoundTileData, Glyph};` | ~2 |
-| Unit tests (in `sound_tile.rs`) | Determinism of derive_* + distribution sanity + rotation-math bounds + Tone palette coverage | ~60 |
+| Unit tests (in `sound_tile.rs`) | Determinism of derive_* + distribution sanity + rotation-math bounds + `StickerTone` palette coverage | ~60 |
 
 **Total: ~462 LOC.** Under CLAUDE.md 500 LOC ceiling.
 
@@ -28,7 +30,7 @@ Replace the current basic-button tile rendering in `src/ui/sound_grid.rs` with a
 
 - Hover rotation amplification (idle ±3° → hover ±8°)
 - Hover ink ring around sticker disc
-- Playing state accent ring (Tone-derived)
+- Playing state accent ring (`StickerTone`-derived)
 - Playing state outer glow / drop shadow
 - Animation easing / timing (~150ms ease-out)
 - Right-click context menu changes (already exists in `sound_grid.rs::context_menu_overlay`)
@@ -43,14 +45,14 @@ Replace the current basic-button tile rendering in `src/ui/sound_grid.rs` with a
 ```rust
 use iced::widget::canvas::{self, Cache, Frame, Geometry, Path, Stroke};
 use iced::{Color, Point, Rectangle, Renderer, Size};
-use crate::ui::theme::{Theme, Tone};
+use crate::ui::theme::{sticker_ink, StickerTone, Theme, STICKER_TONES};
 
 #[derive(Debug, Clone)]
 pub struct SoundTileData {
     pub id: String,
     pub name: String,
     pub category: String,
-    pub tone: Tone,                  // derived from id hash via `derive_tone`
+    pub tone: StickerTone,           // derived from id hash via `derive_tone`
     pub duration_secs: f32,
     pub hotkey: Option<String>,
     pub favorite: bool,
@@ -104,18 +106,18 @@ fn paint_sticker(frame: &mut Frame, data: &SoundTileData, theme: &Theme) {
     frame.translate(iced::Vector::new(center.x, center.y));
     frame.rotate(angle_deg.to_radians());
 
-    // Radial gradient fill: sticker_fill at center → sticker_gloss at edge
+    // Radial gradient fill: StickerTone::fill at center → StickerTone::gloss at edge
     let disc = Path::circle(Point::ORIGIN, radius);
     let fill = iced::widget::canvas::Fill {
-        style: iced::widget::canvas::Style::Solid(theme.sticker_fill(data.tone)),
+        style: iced::widget::canvas::Style::Solid(data.tone.fill()),
         ..Default::default()
     };
     frame.fill(&disc, fill);
     // Gloss highlight (lighter inner disc, offset upward)
     let gloss_disc = Path::circle(Point::new(0.0, -radius * 0.25), radius * 0.55);
-    frame.fill(&gloss_disc, theme.sticker_gloss(data.tone));
+    frame.fill(&gloss_disc, data.tone.gloss());
     // Outline
-    frame.stroke(&disc, Stroke::default().with_color(theme.ink()).with_width(2.5));
+    frame.stroke(&disc, Stroke::default().with_color(sticker_ink()).with_width(2.5));
 
     // Reset transform; subsequent paints use untranslated coords.
     frame.rotate(-(angle_deg.to_radians()));
@@ -135,7 +137,7 @@ fn paint_glyph(frame: &mut Frame, data: &SoundTileData, theme: &Theme) {
     }
 }
 
-// 8 glyph helpers — each builds Path of strokes/fills using theme.ink().
+// 8 glyph helpers — each builds Path of strokes/fills using sticker_ink().
 // Adapted from docs/design-reference/src-rust/ui/sound_tile.rs.
 fn paint_goose(frame: &mut Frame, theme: &Theme) { /* ~25 LOC */ }
 // ... 7 more
@@ -150,10 +152,8 @@ fn paint_label(frame: &mut Frame, data: &SoundTileData, theme: &Theme) {
 
 // Hash-derived assignment ----------------------------------------------
 
-pub fn derive_tone(sound_id: &str) -> Tone {
-    const TONES: [Tone; 8] = [Tone::Pink, Tone::Mint, Tone::Lemon, Tone::Sky,
-                              Tone::Lilac, Tone::Coral, Tone::Peach, Tone::Sage];
-    TONES[hash(sound_id) % 8]
+pub fn derive_tone(sound_id: &str) -> StickerTone {
+    STICKER_TONES[hash(sound_id) % STICKER_TONES.len()]
 }
 
 pub fn derive_glyph(sound_id: &str) -> Glyph {
@@ -184,25 +184,34 @@ fn hash(s: &str) -> usize {
 ### `src/ui/theme.rs` extension
 
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tone { Pink, Mint, Lemon, Sky, Lilac, Coral, Peach, Sage }
+// New enum kept SEPARATE from the existing `Tone` (slot tints) to avoid
+// a cross-module refactor and a `Pink` variant clash in slot_manager.rs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StickerTone { Pink, Mint, Lemon, Sky, Lilac, Coral, Peach, Sage }
 
-impl Theme {
-    pub fn sticker_fill(&self, tone: Tone) -> Color {
-        match tone {
-            Tone::Pink   => Color::from_rgb8(0xff, 0xc1, 0xd6),
-            Tone::Mint   => Color::from_rgb8(0xc1, 0xf0, 0xd6),
-            Tone::Lemon  => Color::from_rgb8(0xff, 0xf0, 0xa8),
-            Tone::Sky    => Color::from_rgb8(0xa8, 0xd6, 0xff),
-            Tone::Lilac  => Color::from_rgb8(0xd6, 0xc1, 0xff),
-            Tone::Coral  => Color::from_rgb8(0xff, 0xa8, 0x96),
-            Tone::Peach  => Color::from_rgb8(0xff, 0xd6, 0xa8),
-            Tone::Sage   => Color::from_rgb8(0xb8, 0xd0, 0xa8),
+pub const STICKER_TONES: [StickerTone; 8] = [
+    StickerTone::Pink, StickerTone::Mint, StickerTone::Lemon, StickerTone::Sky,
+    StickerTone::Lilac, StickerTone::Coral, StickerTone::Peach, StickerTone::Sage,
+];
+
+impl StickerTone {
+    /// Solid fill color for the sticker disc.
+    pub fn fill(self) -> Color {
+        match self {
+            StickerTone::Pink  => Color::from_rgb8(0xff, 0xc1, 0xd6),
+            StickerTone::Mint  => Color::from_rgb8(0xc1, 0xf0, 0xd6),
+            StickerTone::Lemon => Color::from_rgb8(0xff, 0xf0, 0xa8),
+            StickerTone::Sky   => Color::from_rgb8(0xa8, 0xd6, 0xff),
+            StickerTone::Lilac => Color::from_rgb8(0xd6, 0xc1, 0xff),
+            StickerTone::Coral => Color::from_rgb8(0xff, 0xa8, 0x96),
+            StickerTone::Peach => Color::from_rgb8(0xff, 0xd6, 0xa8),
+            StickerTone::Sage  => Color::from_rgb8(0xb8, 0xd0, 0xa8),
         }
     }
-    pub fn sticker_gloss(&self, tone: Tone) -> Color {
-        // Lighter variant: blend toward white at 35% strength.
-        let base = self.sticker_fill(tone);
+    /// Lighter highlight used for the radial gloss overlay.
+    /// Blends `fill` toward white at 35% strength; alpha 0.85.
+    pub fn gloss(self) -> Color {
+        let base = self.fill();
         Color::from_rgba(
             base.r + (1.0 - base.r) * 0.35,
             base.g + (1.0 - base.g) * 0.35,
@@ -210,8 +219,12 @@ impl Theme {
             0.85,
         )
     }
-    pub fn ink(&self) -> Color { Color::from_rgb8(0x1a, 0x1a, 0x2e) }
 }
+
+/// Dark ink color shared by glyph strokes and disc outline on sticker tiles.
+/// Free function rather than a `Theme` method so canvas code can grab it
+/// without holding a `Theme` reference.
+pub fn sticker_ink() -> Color { Color::from_rgb8(0x1a, 0x1a, 0x2e) }
 ```
 
 ### `src/ui/sound_grid.rs` integration
@@ -257,15 +270,15 @@ pub use sound_tile::{SoundTile, SoundTileData, Glyph};
 
 | Test | Asserts |
 |---|---|
-| `derive_tone_deterministic` | Same `sound_id` returns same `Tone` across 100 calls |
+| `derive_tone_deterministic` | Same `sound_id` returns same `StickerTone` across 100 calls |
 | `derive_glyph_deterministic` | Same for `Glyph` |
 | `derive_seed_deterministic` | Same for `u32` |
-| `derive_tone_distribution` | 1000 sequential ids cover all 8 `Tone` variants ≥1 time |
+| `derive_tone_distribution` | 1000 sequential ids cover all 8 `StickerTone` variants ≥1 time |
 | `derive_glyph_distribution` | 1000 sequential ids cover all 8 `Glyph` variants ≥1 time |
 | `rotation_for_seed_bounds` | `rotation_for_seed(0)` and `rotation_for_seed(u32::MAX)` both within `[-3.0, 3.0]` |
 | `rotation_for_seed_midpoint` | `rotation_for_seed(u32::MAX / 2) ≈ 0.0` (within 0.01) |
-| `tone_palette_complete` | Every `Tone` variant returns a non-default `Color` from `sticker_fill` |
-| `gloss_is_lighter_than_fill` | `sticker_gloss(tone).r >= sticker_fill(tone).r` for all 8 tones |
+| `tone_palette_complete` | Every `StickerTone` variant returns a non-default `Color` from `StickerTone::fill()` |
+| `gloss_is_lighter_than_fill` | `tone.gloss().r >= tone.fill().r` for all 8 `StickerTone` variants |
 
 ### Manual smoke (post-merge)
 
@@ -305,7 +318,7 @@ pub use sound_tile::{SoundTile, SoundTileData, Glyph};
 5. RED: `rotation_for_seed_bounds` + `rotation_for_seed_midpoint`.
 6. GREEN: implement `rotation_for_seed`.
 7. RED: `tone_palette_complete` + `gloss_is_lighter_than_fill`.
-8. GREEN: extend `theme.rs` with `Tone` enum + accessors.
+8. GREEN: extend `theme.rs` with `StickerTone` enum, `STICKER_TONES` const, `fill`/`gloss` methods, and `sticker_ink()` free function.
 9. RED: skeleton `SoundTile` canvas::Program returning empty Geometry → `cargo build` fails until impl complete.
 10. GREEN: implement `paint_sticker`, then each glyph helper one at a time, then `paint_favorite_star`, then `paint_label`.
 11. Integrate into `sound_grid.rs` — manual smoke verifies tiles render.
