@@ -97,9 +97,9 @@ async fn create_session_fixed_token(
 
     // Portal returns session_handle as string or ObjectPath (known xdg-desktop-portal quirk).
     // See ashpd CreateSessionResponse deserializer for context.
-    let handle = results.get("session_handle").ok_or_else(|| {
-        ashpd::Error::Zbus(zbus::Error::Failure("missing session_handle".into()))
-    })?;
+    let handle = results
+        .get("session_handle")
+        .ok_or_else(|| ashpd::Error::Zbus(zbus::Error::Failure("missing session_handle".into())))?;
 
     let path_str = handle
         .downcast_ref::<&str>()
@@ -109,9 +109,7 @@ async fn create_session_fixed_token(
                 .downcast_ref::<zbus::zvariant::ObjectPath<'_>>()
                 .map(|p| p.as_str().to_owned())
         })
-        .map_err(|_| {
-            ashpd::Error::Zbus(zbus::Error::Failure("bad session_handle type".into()))
-        })?;
+        .map_err(|_| ashpd::Error::Zbus(zbus::Error::Failure("bad session_handle type".into())))?;
 
     debug_assert_eq!(
         path_str,
@@ -149,11 +147,15 @@ async fn bind_shortcuts_raw(
         .await?;
     let mut response_stream = req_proxy.receive_signal("Response").await?;
 
-    let options: HashMap<&str, Value<'_>> =
-        [("handle-token", Value::new("honkhonk_bs"))].into_iter().collect();
+    let options: HashMap<&str, Value<'_>> = [("handle-token", Value::new("honkhonk_bs"))]
+        .into_iter()
+        .collect();
 
     portal
-        .call_method("BindShortcuts", &(session_path.as_ref(), shortcuts, "", &options))
+        .call_method(
+            "BindShortcuts",
+            &(session_path.as_ref(), shortcuts, "", &options),
+        )
         .await?;
 
     let msg = response_stream
