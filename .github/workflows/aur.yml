@@ -24,7 +24,7 @@ jobs:
 
       - name: Install validation tooling
         run: |
-          pacman -Sy --noconfirm --needed namcap pacman-contrib git
+          pacman -Syu --noconfirm --needed namcap pacman-contrib git
 
       - name: Create non-root build user
         run: |
