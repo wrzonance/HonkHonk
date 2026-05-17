@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <title>HonkHonk symbolic</title>
+  <!-- Single path, monochrome, currentColor so DE themes can recolor. -->
+  <path fill="currentColor" d="M2 3 H3 V7 H5 V3 H6 V13 H5 V8 H3 V13 H2 Z M9 3 H10 V7 H12 V3 H13 V13 H12 V8 H10 V13 H9 Z"/>
+</svg>
