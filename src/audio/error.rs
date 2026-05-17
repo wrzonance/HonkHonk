@@ -37,4 +37,7 @@ pub enum AudioError {
 
     #[error("failed to create playback stream: {0}")]
     StreamCreation(String),
+
+    #[error("stream watcher initialization failed: {0}")]
+    StreamWatcherInit(String),
 }

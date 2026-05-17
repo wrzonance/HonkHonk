@@ -6,6 +6,7 @@ use std::sync::Arc;
 use super::error::AudioError;
 use super::playback::{self, PlaybackState};
 use super::registry::setup_registry_listener;
+use super::streams;
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SINK_DESCRIPTION: &str = "HonkHonk Mix";
@@ -222,6 +223,19 @@ fn run_engine(
         mic_passthrough,
         evt_tx.clone(),
     )?;
+
+    // External-stream observer (issue #26). Held to end-of-scope so its
+    // Drop detaches the registry listener at shutdown.
+    let self_pid = std::process::id();
+    let (_stream_watcher, stream_rx) = streams::start(&core, self_pid)?;
+    std::thread::Builder::new()
+        .name("honkhonk-stream-drain".into())
+        .spawn(move || {
+            while let Ok(event) = stream_rx.recv() {
+                eprintln!("honkhonk stream: {event:?}");
+            }
+        })
+        .map_err(AudioError::ThreadSpawn)?;
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
