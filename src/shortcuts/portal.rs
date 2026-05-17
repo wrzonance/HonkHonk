@@ -4,6 +4,7 @@ use ashpd::desktop::global_shortcuts::NewShortcut;
 use ashpd::WindowIdentifier;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use tokio::sync::mpsc;
+use tokio::time::{timeout, Duration};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 use super::{PortalCommand, ShortcutEvent};
@@ -71,9 +72,10 @@ async fn create_session_fixed_token(
         .await?;
     let mut response_stream = req_proxy.receive_signal("Response").await?;
 
+    // Portal spec uses underscores: handle_token, session_handle_token.
     let options: HashMap<&str, Value<'_>> = [
-        ("handle-token", Value::new("honkhonk_cs")),
-        ("session-handle-token", Value::new(SESSION_TOKEN)),
+        ("handle_token", Value::new("honkhonk_cs")),
+        ("session_handle_token", Value::new(SESSION_TOKEN)),
     ]
     .into_iter()
     .collect();
@@ -81,10 +83,11 @@ async fn create_session_fixed_token(
     // CreateSession returns the Request path; discard it — we already know it.
     portal.call_method("CreateSession", &(&options,)).await?;
 
-    // SignalStream::Item = Message (not Result<Message>) — single ? suffices.
-    let msg = response_stream
-        .next()
+    // SignalStream::Item = Message (not Result<Message>). Timeout prevents
+    // indefinite hang if portal never emits (e.g. path/token mismatch).
+    let msg = timeout(Duration::from_secs(10), response_stream.next())
         .await
+        .map_err(|_| ashpd::Error::Zbus(zbus::Error::Failure("no response within 10s".into())))?
         .ok_or_else(|| ashpd::Error::Zbus(zbus::Error::Failure("no response".into())))?;
 
     let (status, results): (u32, HashMap<String, OwnedValue>) = msg.body().deserialize()?;
@@ -147,7 +150,7 @@ async fn bind_shortcuts_raw(
         .await?;
     let mut response_stream = req_proxy.receive_signal("Response").await?;
 
-    let options: HashMap<&str, Value<'_>> = [("handle-token", Value::new("honkhonk_bs"))]
+    let options: HashMap<&str, Value<'_>> = [("handle_token", Value::new("honkhonk_bs"))]
         .into_iter()
         .collect();
 
@@ -158,9 +161,9 @@ async fn bind_shortcuts_raw(
         )
         .await?;
 
-    let msg = response_stream
-        .next()
+    let msg = timeout(Duration::from_secs(10), response_stream.next())
         .await
+        .map_err(|_| ashpd::Error::Zbus(zbus::Error::Failure("no response within 10s".into())))?
         .ok_or_else(|| ashpd::Error::Zbus(zbus::Error::Failure("no response".into())))?;
 
     let (status, _): (u32, HashMap<String, OwnedValue>) = msg.body().deserialize()?;
