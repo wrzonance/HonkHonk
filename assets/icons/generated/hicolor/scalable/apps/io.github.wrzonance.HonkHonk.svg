@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>HonkHonk</title>
+  <!-- Placeholder geometric mark. Real Krita art replaces this in a follow-up PR. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="180" ry="180" fill="#1a1a2e"/>
+  <!-- Left H -->
+  <rect x="200" y="280" width="80" height="464" fill="#f7d34a"/>
+  <rect x="380" y="280" width="80" height="464" fill="#f7d34a"/>
+  <rect x="200" y="480" width="260" height="64" fill="#f7d34a"/>
+  <!-- Right H -->
+  <rect x="564" y="280" width="80" height="464" fill="#f7d34a"/>
+  <rect x="744" y="280" width="80" height="464" fill="#f7d34a"/>
+  <rect x="564" y="480" width="260" height="64" fill="#f7d34a"/>
+</svg>
