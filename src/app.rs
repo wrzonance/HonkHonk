@@ -42,6 +42,7 @@ pub enum Message {
     StopAll,
     SelectCategory(Option<String>),
     SearchChanged(String),
+    EscapePressed,
     VolumeChanged(f32),
     VolumeSaveRequested,
     // Shortcut lifecycle
@@ -111,6 +112,9 @@ pub struct HonkHonk {
     active_category: Option<String>,
     pub(crate) config: AppConfig,
     search_query: String,
+    // True after SearchChanged fires; first Escape consumes it as a blur,
+    // second Escape clears the query. Resets when SearchChanged fires again.
+    search_had_focus: bool,
     progress: f32,
     slots: SlotMap,
     pub(crate) slot_triggers: [Option<String>; 20],
@@ -246,6 +250,7 @@ impl HonkHonk {
             active_category: None,
             config,
             search_query: String::new(),
+            search_had_focus: false,
             progress: 0.0,
             slots,
             slot_triggers: std::array::from_fn(|_| None),
@@ -279,6 +284,7 @@ impl HonkHonk {
             active_category: None,
             config,
             search_query: String::new(),
+            search_had_focus: false,
             progress: 0.0,
             slots: SlotMap::default(),
             slot_triggers: std::array::from_fn(|_| None),
@@ -459,7 +465,22 @@ impl HonkHonk {
                 self.active_category = cat;
                 Task::none()
             }
+            Message::EscapePressed => {
+                if self.context_menu.is_some() {
+                    // Context menu takes priority — close it, leave search state intact.
+                    self.context_menu = None;
+                    self.context_menu_pos = None;
+                } else if self.search_had_focus {
+                    // First Esc: treat as blur — Iced already handled unfocus.
+                    self.search_had_focus = false;
+                } else if !self.search_query.is_empty() {
+                    // Second Esc (or Esc when unfocused): clear query.
+                    self.search_query = String::new();
+                }
+                Task::none()
+            }
             Message::SearchChanged(query) => {
+                self.search_had_focus = true;
                 self.search_query = query;
                 Task::none()
             }
@@ -863,7 +884,7 @@ impl HonkHonk {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                 key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                 ..
-            }) => Some(Message::CloseContextMenu),
+            }) => Some(Message::EscapePressed),
             iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
                 Some(Message::CursorMoved(position))
             }
@@ -1650,5 +1671,42 @@ mod tests {
     fn open_shortcut_config_is_noop_when_no_handle() {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::OpenShortcutConfig);
+    }
+
+    #[test]
+    fn escape_first_press_consumes_search_focus_flag_without_clearing_query() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SearchChanged("honk".into()));
+        assert!(app.search_had_focus);
+        let _ = app.update(Message::EscapePressed);
+        assert!(!app.search_had_focus);
+        assert_eq!(app.search_query(), "honk");
+    }
+
+    #[test]
+    fn escape_second_press_clears_query() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SearchChanged("honk".into()));
+        let _ = app.update(Message::EscapePressed); // consume focus flag
+        let _ = app.update(Message::EscapePressed); // clear query
+        assert_eq!(app.search_query(), "");
+    }
+
+    #[test]
+    fn escape_closes_context_menu_without_consuming_search_focus() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SearchChanged("honk".into()));
+        let _ = app.update(Message::OpenContextMenu("test-id".into()));
+        let _ = app.update(Message::EscapePressed);
+        assert!(app.context_menu().is_none());
+        assert!(app.search_had_focus); // not consumed — menu took priority
+    }
+
+    #[test]
+    fn search_changed_sets_search_had_focus() {
+        let mut app = HonkHonk::new_for_test();
+        assert!(!app.search_had_focus);
+        let _ = app.update(Message::SearchChanged("test".into()));
+        assert!(app.search_had_focus);
     }
 }
