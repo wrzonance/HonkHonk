@@ -52,6 +52,16 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.
 
+## Installing
+
+### Arch Linux (AUR)
+
+```bash
+yay -S honkhonk-bin    # or: paru -S honkhonk-bin
+```
+
+Pre-built binary from GitHub Releases. Source build (`honkhonk`) and VCS (`honkhonk-git`) variants are planned. See [`packaging/aur/README.md`](packaging/aur/README.md) for maintainer notes.
+
 ## Building
 
 ```bash
