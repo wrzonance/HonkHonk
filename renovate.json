@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "minimumReleaseAge": "7 days",
+  "automerge": false,
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "chore(deps):",
+  "packageRules": [
+    {
+      "matchManagers": ["cargo"],
+      "groupName": "cargo-deps"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "labels": ["ci"],
+      "commitMessagePrefix": "chore(ci):",
+      "groupName": "github-actions"
+    }
+  ]
+}
