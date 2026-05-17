@@ -116,7 +116,7 @@ async fn create_session_with_token(
 
 ashpd `Session` is a thin `zbus::Proxy` wrapper. If a public from-path constructor exists, use it to hand the session back to the existing ashpd API surface. If not (implementation discovery required at plan time), implement `bind_shortcuts`, `configure_shortcuts`, and signal subscriptions via raw zbus as well — keeping the same logical flow as the current `shortcut_stream`.
 
-**Cargo.toml:** Add `zbus = "4"` as direct dependency. Already compiled in transitively via ashpd — no new binary weight.
+**Cargo.toml:** Add `zbus = "5"` as direct dependency (matches lock file: 5.15.0, already compiled in via ashpd — no new binary weight).
 
 ### Files Changed
 
