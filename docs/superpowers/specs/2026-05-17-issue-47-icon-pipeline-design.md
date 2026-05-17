@@ -184,7 +184,7 @@ Short "Icon" section at end of repo README explaining the pipeline, the placehol
 | `make icons` exits 0 | All targets build with installed tools |
 | `git diff --exit-code assets/icons/generated/` | Committed outputs match source SVGs (drift gate) |
 | File-existence tests for key outputs | Makefile rules accidentally skipped |
-| `file favicon.ico | grep 'MS Windows icon'` | Multi-res ICO format correct |
+| `file favicon.ico \| grep 'MS Windows icon'` | Multi-res ICO format correct |
 
 ### Manual smoke (post-merge)
 
