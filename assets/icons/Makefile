@@ -5,7 +5,12 @@ SVG_SYMBOLIC = icon-symbolic.svg
 OUT          = generated
 
 RESVG  ?= resvg
-MAGICK ?= magick
+# ImageMagick 6 ships `convert`; IM7 ships `magick` (and keeps a
+# `convert` compatibility wrapper). The default Ubuntu apt package
+# `imagemagick` is IM6, so we standardize on `convert` for portability
+# across Ubuntu/Debian (IM6), Arch (IM7 with `convert` compat), and
+# Fedora (IM7 with `convert` compat).
+MAGICK ?= convert
 
 # Build explicit size-x-size directory targets:
 #   generated/hicolor/16x16/apps/io.github.wrzonance.HonkHonk.png, etc.
@@ -20,7 +25,7 @@ icons: check-tools hicolor symbolic favicon social
 
 check-tools:
 	@command -v $(RESVG)  >/dev/null || { echo "ERROR: resvg missing — cargo install resvg --locked"; exit 1; }
-	@command -v $(MAGICK) >/dev/null || { echo "ERROR: ImageMagick missing"; exit 1; }
+	@command -v $(MAGICK) >/dev/null || { echo "ERROR: ImageMagick missing (need 'convert' binary)"; exit 1; }
 
 hicolor: $(HICOLOR_PNGS) $(OUT)/hicolor/scalable/apps/$(APPID).svg
 
