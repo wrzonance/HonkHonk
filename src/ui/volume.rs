@@ -13,7 +13,11 @@ pub fn view_volume(volume: f32) -> Element<'static, Message> {
         .step(0.01)
         .width(140.0);
 
-    let label = text(pct).size(theme::font::LABEL).color(t.ink_dim());
+    let label = text(pct)
+        .size(theme::font::LABEL)
+        .color(t.ink_dim())
+        .width(32.0)
+        .align_x(iced::alignment::Horizontal::Right);
 
     row![vol_slider, label]
         .spacing(theme::space::SM)
