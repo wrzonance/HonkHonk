@@ -88,6 +88,22 @@ HonkHonk builds on ideas and lessons learned from the Linux audio community. We'
 - [obs-wayland-hotkeys](https://github.com/leia-uwu/obs-wayland-hotkeys) — proved GlobalShortcuts portal works on KDE6
 - [Cosmic DE](https://github.com/pop-os/cosmic-epoch) — large-scale Iced application reference
 
+## Icons
+
+HonkHonk's icons are generated from two SVG sources via a small
+`make`-driven pipeline. The current art is a placeholder geometric
+"HH" mark — real Krita-designed artwork lands in a follow-up PR.
+
+See [`assets/icons/README.md`](assets/icons/README.md) for:
+
+- The swap-real-art runbook
+- `resvg` + ImageMagick install hints (Arch / Fedora / Ubuntu)
+- Why the symbolic SVG must use `fill="currentColor"`
+
+CI enforces icon freshness via `.github/workflows/icons.yml`: every
+push that touches `assets/icons/` regenerates outputs and fails if
+the committed PNGs/ICO/SVGs drift from the sources.
+
 ## License
 
 [MIT](LICENSE)
