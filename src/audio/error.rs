@@ -1,5 +1,16 @@
 use thiserror::Error;
 
+/// Structured failure modes for the external-stream watcher (issue #26).
+///
+/// Crossed via `AudioError::StreamWatcherInit` so callers can match on
+/// the underlying cause instead of parsing an opaque message string.
+#[derive(Error, Debug)]
+pub enum WatcherError {
+    /// `core.get_registry_rc()` failed during watcher startup.
+    #[error("failed to acquire PipeWire registry")]
+    RegistryAcquire(#[source] pipewire::Error),
+}
+
 #[derive(Error, Debug)]
 pub enum AudioError {
     #[error("failed to open audio file")]
@@ -37,4 +48,7 @@ pub enum AudioError {
 
     #[error("failed to create playback stream: {0}")]
     StreamCreation(String),
+
+    #[error("stream watcher initialization failed")]
+    StreamWatcherInit(#[source] WatcherError),
 }
