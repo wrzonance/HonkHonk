@@ -62,6 +62,8 @@ AppDir/
 *.rpm
 *.pkg.tar.*
 *.snap
+packaging/aur/*/pkg/
+packaging/aur/*/src/
 
 # Test fixtures — small generated files, committed for reproducible tests
 # (regenerate via: ffmpeg -f lavfi -i "sine=frequency=440:duration=1:sample_rate=48000" ...)

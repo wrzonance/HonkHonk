@@ -1,0 +1,37 @@
+# Maintainer: thewrz <adam@wrze.ski>
+# GPG: B514 CBC5 B44C AACF 02EA  0D68 B461 236C F8EA 7961
+
+pkgname=honkhonk-bin
+pkgver=0.1.0.alpha.1
+_pkgtag=v0.1.0-alpha.1
+pkgrel=1
+pkgdesc="Wayland-native Linux soundboard — Iced GUI + PipeWire audio (binary release)"
+arch=('x86_64')
+url="https://github.com/wrzonance/HonkHonk"
+license=('MIT')
+depends=(
+    'pipewire'
+    'wayland'
+    'libxkbcommon'
+    'gtk3'
+    'xdotool'
+    'libayatana-appindicator'
+    'xdg-desktop-portal'
+)
+provides=('honkhonk')
+conflicts=('honkhonk' 'honkhonk-git')
+source=("$pkgname-$pkgver.deb::$url/releases/download/$_pkgtag/honkhonk_${pkgver}-1_amd64.deb")
+sha256sums=('SKIP')
+
+prepare() {
+    bsdtar -xf "$pkgname-$pkgver.deb" -C "$srcdir"
+    bsdtar -xf "$srcdir"/data.tar* -C "$srcdir"
+}
+
+package() {
+    install -Dm755 "$srcdir/usr/bin/honkhonk" "$pkgdir/usr/bin/honkhonk"
+    install -Dm644 "$srcdir/usr/share/applications/honkhonk.desktop" \
+        "$pkgdir/usr/share/applications/honkhonk.desktop"
+    install -Dm644 "$srcdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png" \
+        "$pkgdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png"
+}
