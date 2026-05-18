@@ -1,0 +1,60 @@
+name: Icon pipeline freshness
+
+# This workflow uses no external untrusted inputs (no github.event.issue.*,
+# no PR titles/bodies in run: blocks, no head_ref). All run: scripts use
+# only static path literals and tools installed in the same step.
+
+on:
+  push:
+    paths:
+      - 'assets/icons/**'
+      - '.github/workflows/icons.yml'
+  pull_request:
+    paths:
+      - 'assets/icons/**'
+      - '.github/workflows/icons.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ImageMagick + DejaVu fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends imagemagick fonts-dejavu-core
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install resvg
+        run: cargo install resvg --locked
+
+      - name: Regenerate icons
+        working-directory: assets/icons
+        run: make icons
+
+      - name: Diff committed vs regenerated
+        run: git diff --exit-code assets/icons/generated/
+
+      - name: Validate icon set
+        run: |
+          test -f assets/icons/generated/hicolor/16x16/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/22x22/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/24x24/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/32x32/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/48x48/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/64x64/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/128x128/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/256x256/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/512x512/apps/io.github.wrzonance.HonkHonk.png
+          test -f assets/icons/generated/hicolor/scalable/apps/io.github.wrzonance.HonkHonk.svg
+          test -f assets/icons/generated/hicolor/symbolic/apps/io.github.wrzonance.HonkHonk-symbolic.svg
+          test -f assets/icons/generated/favicon.ico
+          test -f assets/icons/generated/social-preview.png
+          file assets/icons/generated/favicon.ico | grep -q 'MS Windows icon'
+          grep -q 'currentColor' assets/icons/generated/hicolor/symbolic/apps/io.github.wrzonance.HonkHonk-symbolic.svg
