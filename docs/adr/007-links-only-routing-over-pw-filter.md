@@ -2,6 +2,8 @@
 
 ## Status: Accepted
 
+> **Addendum (2026-05-17, PR #95):** The observation watcher referenced throughout this ADR as `graph.rs` shipped under `src/audio/streams.rs` in #26. Semantic rename: `graph.rs` suggests full PipeWire graph awareness (nodes + ports + links + factories), but the module only watches external app *streams* (`media.class == Stream/Output/Audio`). Stable identity props (`app_name`, `app_binary`, `app_pid`) are exposed on `StreamEvent::SourceAdded` exactly as this ADR specifies. #27's `AppIdentity` struct maps 1:1 to those fields.
+
 ## Context
 
 HonkHonk Phase 4A routes audio from other applications (browser, Spotify, games) into the virtual mic. Two architectural approaches exist:
