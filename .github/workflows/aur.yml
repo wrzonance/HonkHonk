@@ -64,9 +64,14 @@ jobs:
         # release profile's `lto = true` peaks too high in memory and OOM-kills the
         # 7 GB runner (exit 137). This validates the PKGBUILD builds; it does not
         # ship the binary, so a non-LTO CI build is fine. `-bin` ignores these
-        # (it re-extracts a .deb, no compile). `-E` preserves the env under sudo.
+        # (it re-extracts a .deb, no compile).
+        #
+        # NOTE: pass the vars via `env` (NOT `sudo -E`). `sudo -E` would also keep
+        # HOME=/github/home (root's home), which `builder` can't write — cargo's
+        # registry cache then fails with EACCES. Plain `sudo -u builder` resets
+        # HOME to /home/builder; `env` injects only the two CARGO_* overrides.
         run: |
-          sudo -E -u builder env \
+          sudo -u builder env \
             CARGO_PROFILE_RELEASE_LTO=false \
             CARGO_BUILD_JOBS=2 \
             makepkg --noconfirm --syncdeps --install
