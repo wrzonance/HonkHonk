@@ -5,20 +5,27 @@ on:
     paths:
       - 'packaging/aur/**'
       - '.github/workflows/aur.yml'
+      - 'Cargo.toml'
   pull_request:
     paths:
       - 'packaging/aur/**'
       - '.github/workflows/aur.yml'
+      - 'Cargo.toml'
 
 permissions:
   contents: read
 
 jobs:
   validate:
-    name: namcap + .SRCINFO + makepkg
+    name: ${{ matrix.pkg }} — namcap + .SRCINFO + makepkg
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        # honkhonk: source build (recommended). honkhonk-bin: .deb re-extract.
+        pkg: [honkhonk, honkhonk-bin]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -30,26 +37,24 @@ jobs:
         run: |
           useradd -m builder
           echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-          chown -R builder packaging/aur/honkhonk-bin
+          chown -R builder "packaging/aur/${{ matrix.pkg }}"
 
       - name: namcap lint
-        working-directory: packaging/aur/honkhonk-bin
+        working-directory: packaging/aur/${{ matrix.pkg }}
         run: sudo -u builder namcap PKGBUILD
 
       - name: .SRCINFO freshness check
-        working-directory: packaging/aur/honkhonk-bin
+        working-directory: packaging/aur/${{ matrix.pkg }}
         run: |
           sudo -u builder makepkg --printsrcinfo > /tmp/.SRCINFO.fresh
           diff -u .SRCINFO /tmp/.SRCINFO.fresh
 
-      - name: Refresh sha256sums + build + install
-        working-directory: packaging/aur/honkhonk-bin
-        run: |
-          sudo -u builder updpkgsums
-          sudo -u builder makepkg --noconfirm --syncdeps --install
+      - name: Build + install
+        working-directory: packaging/aur/${{ matrix.pkg }}
+        run: sudo -u builder makepkg --noconfirm --syncdeps --install
 
       - name: Installed file manifest
         run: |
-          pacman -Ql honkhonk-bin
-          pacman -Ql honkhonk-bin | grep -q '/usr/bin/honkhonk$'
-          pacman -Ql honkhonk-bin | grep -q '/usr/share/applications/honkhonk.desktop$'
+          pacman -Ql ${{ matrix.pkg }}
+          pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/bin/honkhonk$'
+          pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/applications/honkhonk.desktop$'
