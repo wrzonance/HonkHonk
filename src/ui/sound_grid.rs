@@ -2,7 +2,7 @@ use iced::widget::{button, column, container, mouse_area, row, text};
 use iced::{Border, Element, Length};
 
 use crate::app::Message;
-use crate::state::{SlotMap, SoundEntry};
+use crate::state::{SlotMap, SoundEntry, SoundMetaStore};
 use crate::ui::theme::{self, Hh, Theme, Tone};
 
 #[derive(Clone, Copy)]
@@ -17,12 +17,14 @@ pub struct GridCtx<'a> {
     pub triggers: &'a [Option<String>; 20],
     pub shortcuts_active: bool,
     pub columns: usize,
+    pub sound_meta: &'a SoundMetaStore,
 }
 
 #[derive(Clone, Copy)]
 struct TileCtx<'a> {
     slot_ctx: SlotCtx<'a>,
     shortcuts_active: bool,
+    sound_meta: &'a SoundMetaStore,
 }
 
 pub fn view_grid<'a>(
@@ -49,6 +51,7 @@ pub fn view_grid<'a>(
             triggers: grid.triggers,
         },
         shortcuts_active: grid.shortcuts_active,
+        sound_meta: grid.sound_meta,
     };
 
     let rows: Vec<Element<'a, Message>> = sounds
@@ -100,10 +103,23 @@ fn tile_view<'a>(
         None => "\u{2014}".into(),
     };
 
+    let is_fav = ctx.sound_meta.is_favorite(&sound.id);
+    let name_str = ctx
+        .sound_meta
+        .get_ref(&sound.id)
+        .and_then(|m| m.display_name.as_deref())
+        .unwrap_or(sound.name.as_str());
+
     let category_text = text(sound.category.clone())
         .size(theme::font::LABEL)
         .color(theme.ink_dim());
-    let name_text = text(sound.name.clone())
+
+    let name_label = if is_fav {
+        format!("\u{2605} {name_str}")
+    } else {
+        name_str.to_owned()
+    };
+    let name_text = text(name_label)
         .size(theme::font::BODY)
         .color(theme.ink());
     let duration_text = text(duration_str)
@@ -223,21 +239,47 @@ pub fn context_menu_overlay<'a>(
         })
         .collect();
 
-    let menu = container(
-        column![
+    let edit_btn = sound.map(|s| {
+        button(
+            text("Edit sound…")
+                .size(theme::font::BODY)
+                .color(theme.ink()),
+        )
+        .on_press(Message::OpenSoundEditor(s.id.clone()))
+        .width(Length::Fill)
+        .style(move |_t, status| button::Style {
+            background: Some(theme::bg_color(match status {
+                button::Status::Hovered => theme.accent(),
+                _ => theme.panel(),
+            })),
+            text_color: theme.ink(),
+            ..Default::default()
+        })
+    });
+
+    let mut menu_col = Column::new()
+        .push(
             text(sound.map(|s| s.name.as_str()).unwrap_or(""))
                 .size(theme::font::BODY)
                 .color(theme.ink_dim()),
-            iced::widget::scrollable(
-                Column::with_children(slot_buttons)
-                    .spacing(2)
-                    .width(Length::Fill)
-            )
-            .height(300),
-        ]
+        )
         .spacing(theme::space::SM)
-        .padding(theme::space::MD),
-    )
+        .padding(theme::space::MD);
+
+    if let Some(btn) = edit_btn {
+        menu_col = menu_col.push(btn);
+    }
+
+    menu_col = menu_col.push(
+        iced::widget::scrollable(
+            Column::with_children(slot_buttons)
+                .spacing(2)
+                .width(Length::Fill),
+        )
+        .height(260),
+    );
+
+    let menu = container(menu_col)
     .width(MENU_W)
     .style(move |_t| container::Style {
         background: Some(theme::bg_color(theme.panel())),
