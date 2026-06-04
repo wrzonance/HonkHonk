@@ -4,7 +4,7 @@
 
 **Goal:** Define `AudioEffect` trait, `EffectChain` composable pipeline, and bypass/wet-dry infrastructure — pure plumbing with no concrete effects, no wiring to PipeWire callbacks yet.
 
-**Architecture:** New `src/audio/effects/` submodule with `mod.rs` (trait + re-exports), `chain.rs` (pipeline logic), and `commands.rs` (UI ↔ audio thread messages). Integration stub in a new `src/audio/mixer.rs` that `engine.rs` calls after mic audio is read — but since the current architecture uses PipeWire graph links (not software buffers), `mixer.rs` exposes `EffectChain` as a data structure held by the engine with a `process_if_active()` no-op stub. `EffectsError` variants added to `error.rs`. `fundsp` added to `Cargo.toml` (declared as per ADR-006).
+**Architecture:** New `src/audio/effects/` submodule with `mod.rs` (trait + re-exports), `chain.rs` (pipeline logic), and `commands.rs` (UI ↔ audio thread messages). Integration stub in a new `src/audio/mixer.rs` that `engine.rs` calls after mic audio is read — but since the current architecture uses PipeWire graph links (not software buffers), `mixer.rs` exposes `EffectChain` as a data structure held by the engine with a `process_block()` no-op stub. `EffectsError` variants added to `error.rs`. `fundsp` added to `Cargo.toml` (declared as per ADR-006).
 
 **Tech Stack:** Rust, thiserror, fundsp 0.23, existing pipewire-rs architecture.
 
@@ -12,7 +12,7 @@
 
 ## Design Decisions (document in PR body)
 
-1. **No mixer.rs software buffer processing in this PR.** The current architecture uses PipeWire graph links for mic routing (ADR-007). There is no software-level mic capture buffer. `mixer.rs` in this PR is a stub module that holds an `EffectChain` and exposes `process_if_active(input, output, rate)` — this is the hook for future PRs to plug into a `pw_stream` process callback when actual DSP is wired. This keeps `mixer.rs` as a real integration seam without claiming to do more than it does.
+1. **No mixer.rs software buffer processing in this PR.** The current architecture uses PipeWire graph links for mic routing (ADR-007). There is no software-level mic capture buffer. `mixer.rs` in this PR is a stub module that holds an `EffectChain` and exposes `process_block(input, rate)` — this is the hook for future PRs to plug into a `pw_stream` process callback when actual DSP is wired. This keeps `mixer.rs` as a real integration seam without claiming to do more than it does.
 
 2. **`fundsp` added but not used yet.** The crate is declared in `Cargo.toml` as required by the issue spec. The `EffectChain` is backed by `Vec<Box<dyn AudioEffect>>` for now (no fundsp graph composition yet — that's PR 2+).
 
@@ -33,7 +33,7 @@
 | `src/audio/effects/mod.rs` | **Create** | `AudioEffect` trait, re-exports |
 | `src/audio/effects/chain.rs` | **Create** | `EffectChain` struct + `process()`, bypass, wet/dry |
 | `src/audio/effects/commands.rs` | **Create** | `EffectsCommand`, `EffectsEvent` enums |
-| `src/audio/mixer.rs` | **Create** | Stub module holding `EffectChain`, `process_if_active()` |
+| `src/audio/mixer.rs` | **Create** | Stub module holding `EffectChain`, `process_block()` |
 | `src/audio/error.rs` | **Modify** | Add `EffectsError` variants |
 | `src/audio/mod.rs` | **Modify** | `mod effects; mod mixer; pub use` new types |
 | `src/audio/engine.rs` | **Modify** | Add `EffectsCommand`/`EffectsEvent` variants to existing enums |

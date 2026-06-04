@@ -411,18 +411,27 @@ fn run_engine(
             mainloop_quit.quit();
         }
         AudioCommand::SetEffectBypass { index, bypass } => {
-            let _ = ctx.mixer.borrow_mut().chain_mut().set_bypass(index, bypass);
+            if let Err(e) = ctx.mixer.borrow_mut().chain_mut().set_bypass(index, bypass) {
+                let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
+                    "set effect bypass (index {index}): {e}"
+                )));
+            }
         }
         AudioCommand::SetEffectParam {
             index,
             param,
             value,
         } => {
-            let _ = ctx
+            if let Err(e) = ctx
                 .mixer
                 .borrow_mut()
                 .chain_mut()
-                .set_param(index, &param, value);
+                .set_param(index, &param, value)
+            {
+                let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
+                    "set effect param (index {index}, param {param:?}): {e}"
+                )));
+            }
         }
         AudioCommand::SetEffectWetDry(wet_dry) => {
             ctx.mixer.borrow_mut().chain_mut().set_wet_dry(wet_dry);

@@ -45,11 +45,33 @@ impl Mixer {
     /// to the virtual sink's input buffer.
     ///
     /// No-op passthrough when chain is empty or bypassed. Real-time safe.
+    /// Prepare `Mixer` to handle blocks up to `required_capacity` samples.
+    ///
+    /// Call this on a cold (non-RT) path before the PipeWire process callback
+    /// starts delivering blocks of the given size. Must not be called from the
+    /// audio thread.
+    pub fn ensure_output_capacity(&mut self, required_capacity: usize) {
+        if required_capacity > self.output_capacity {
+            self.output_buf.resize(required_capacity, 0.0);
+            self.output_capacity = required_capacity;
+        }
+    }
+
+    /// Process a block of mic audio through the effect chain.
+    ///
+    /// Returns a slice into the internal output buffer. Caller copies this
+    /// to the virtual sink's input buffer.
+    ///
+    /// If the block size exceeds the pre-allocated capacity, resizes the output
+    /// buffer (allocation). To avoid allocation on the RT thread, call
+    /// [`ensure_output_capacity`] with the maximum expected block size before
+    /// the audio callback starts delivering audio.
     pub fn process_block(&mut self, input: &[f32], sample_rate: u32) -> &[f32] {
         let n = input.len();
         if n > self.output_capacity {
-            self.output_buf.resize(n, 0.0);
-            self.output_capacity = n;
+            // Allocation fallback — avoid by calling ensure_output_capacity()
+            // on a cold path before the audio callback runs.
+            self.ensure_output_capacity(n);
         }
         self.chain
             .process(input, &mut self.output_buf[..n], sample_rate);

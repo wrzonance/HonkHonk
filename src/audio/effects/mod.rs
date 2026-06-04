@@ -1,6 +1,7 @@
 pub mod chain;
 pub mod commands;
 
+use crate::audio::error::EffectsError;
 pub use chain::EffectChain;
 pub use commands::{EffectsCommand, EffectsEvent};
 
@@ -13,7 +14,10 @@ pub trait AudioEffect: Send {
 
     /// Set a named parameter. `value` is normalized to the parameter's natural range.
     /// Called from the command handler, not the process callback.
-    fn set_param(&mut self, param: &str, value: f32);
+    ///
+    /// Returns `Err(EffectsError::ParamUnknown)` if `param` is not recognised
+    /// by this effect implementation.
+    fn set_param(&mut self, param: &str, value: f32) -> Result<(), EffectsError>;
 
     /// Returns `true` if this effect is currently bypassed.
     fn bypass(&self) -> bool;
@@ -37,7 +41,9 @@ mod tests {
         fn process(&mut self, input: &[f32], output: &mut [f32], _sample_rate: u32) {
             output.copy_from_slice(input);
         }
-        fn set_param(&mut self, _param: &str, _value: f32) {}
+        fn set_param(&mut self, _param: &str, _value: f32) -> Result<(), EffectsError> {
+            Ok(())
+        }
         fn bypass(&self) -> bool {
             self.bypassed
         }

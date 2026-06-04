@@ -129,12 +129,16 @@ impl EffectChain {
     }
 
     /// Set a parameter on the effect at `index`.
+    ///
+    /// Returns `Err(EffectsError::IndexOutOfRange)` if `index` is out of bounds,
+    /// or `Err(EffectsError::ParamUnknown)` if the effect rejects the parameter.
     pub fn set_param(&mut self, index: usize, param: &str, value: f32) -> Result<(), EffectsError> {
         let len = self.effects.len();
-        self.effects
+        let effect = self
+            .effects
             .get_mut(index)
-            .ok_or(EffectsError::IndexOutOfRange { index, len })
-            .map(|e| e.set_param(param, value))
+            .ok_or(EffectsError::IndexOutOfRange { index, len })?;
+        effect.set_param(param, value)
     }
 
     /// Process a block of audio.
@@ -156,9 +160,13 @@ impl EffectChain {
         }
 
         let n = input.len();
-        // Guard: grow scratch if needed (should not happen in normal usage).
-        if self.scratch.len() < n {
-            self.scratch.resize(n, 0.0);
+        // Guard: if block is larger than pre-allocated scratch, fall back to
+        // passthrough rather than allocating on the RT thread. Callers must
+        // call push_effect() (or resize via a cold-path API) before processing
+        // larger blocks. This upholds the real-time safety contract.
+        if n > self.scratch_capacity {
+            output.copy_from_slice(input);
+            return;
         }
 
         // Copy input → scratch as the initial working buffer.
@@ -214,9 +222,14 @@ mod tests {
                 *o = i * self.gain;
             }
         }
-        fn set_param(&mut self, param: &str, value: f32) {
+        fn set_param(&mut self, param: &str, value: f32) -> Result<(), EffectsError> {
             if param == "gain" {
                 self.gain = value;
+                Ok(())
+            } else {
+                Err(EffectsError::ParamUnknown {
+                    param: param.to_owned(),
+                })
             }
         }
         fn bypass(&self) -> bool {
@@ -239,7 +252,9 @@ mod tests {
         fn process(&mut self, input: &[f32], output: &mut [f32], _sample_rate: u32) {
             output.copy_from_slice(input);
         }
-        fn set_param(&mut self, _param: &str, _value: f32) {}
+        fn set_param(&mut self, _param: &str, _value: f32) -> Result<(), EffectsError> {
+            Ok(())
+        }
         fn bypass(&self) -> bool {
             self.bypassed
         }
