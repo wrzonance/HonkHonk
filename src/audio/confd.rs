@@ -31,19 +31,36 @@ pub fn user_confd_dir() -> Result<PathBuf, AudioError> {
 /// Returns `Ok(true)` if it wrote a new file, `Ok(false)` if one was already
 /// present. Creates the directory tree as needed.
 pub fn write_user_confd_in(dir: &Path) -> Result<bool, AudioError> {
+    use std::io::Write;
+
     let path = dir.join(CONFD_FILE_NAME);
-    if path.exists() {
-        return Ok(false);
-    }
     std::fs::create_dir_all(dir).map_err(|source| AudioError::ConfdDirCreate {
         path: dir.display().to_string(),
         source,
     })?;
-    std::fs::write(&path, CONFD_CONTENTS).map_err(|source| AudioError::ConfdWrite {
-        path: path.display().to_string(),
-        source,
-    })?;
-    Ok(true)
+    // Atomic create-if-absent: `create_new(true)` fails with `AlreadyExists`
+    // rather than racing a separate `exists()` check, so two concurrent
+    // first-run launches can't both report a fresh write. `AlreadyExists` is
+    // the idempotent path → `Ok(false)`.
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(mut file) => {
+            file.write_all(CONFD_CONTENTS.as_bytes())
+                .map_err(|source| AudioError::ConfdWrite {
+                    path: path.display().to_string(),
+                    source,
+                })?;
+            Ok(true)
+        }
+        Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(source) => Err(AudioError::ConfdWrite {
+            path: path.display().to_string(),
+            source,
+        }),
+    }
 }
 
 #[cfg(test)]

@@ -4,14 +4,24 @@
 # Best-effort: must never fail the package removal.
 set -e
 
-if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
-    # Restart the *invoking user's* PipeWire if possible. dpkg runs as root,
-    # so target the user that ran the package manager via SUDO_USER when set.
-    if [ -n "${SUDO_USER:-}" ] && command -v runuser >/dev/null 2>&1; then
-        runuser -u "$SUDO_USER" -- \
-            systemctl --user restart pipewire.socket pipewire.service 2>/dev/null || true
-    else
+# Restart the target user's PipeWire so it drops the now-removed conf.d drop-in.
+# `systemctl --user` needs the user's session bus, reachable only via
+# XDG_RUNTIME_DIR=/run/user/<uid>; without it the restart is a silent no-op.
+restart_user_pipewire() {
+    user="$1"
+    uid="$(id -u "$user" 2>/dev/null || true)"
+    [ -n "$uid" ] || return 0
+    runuser -u "$user" -- env XDG_RUNTIME_DIR="/run/user/$uid" \
         systemctl --user restart pipewire.socket pipewire.service 2>/dev/null || true
+}
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    # dpkg runs as root, so target the user that invoked the package manager via
+    # SUDO_USER. Without a non-root target user there is no user bus to reach,
+    # so the restart is best-effort and simply skipped (the drop-in stops being
+    # read on the next PipeWire restart / reboot regardless).
+    if [ -n "${SUDO_USER:-}" ] && command -v runuser >/dev/null 2>&1; then
+        restart_user_pipewire "$SUDO_USER"
     fi
 fi
 
