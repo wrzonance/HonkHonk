@@ -43,7 +43,11 @@ pub enum RouterCommand {
 }
 
 /// Events emitted by the Router back to the application layer.
-#[derive(Debug, Clone)]
+///
+/// Does not implement `Clone` because `RouterError::LinkCreation` carries a
+/// `pipewire::Error` source which is not `Clone`. Events are sent once via
+/// `mpsc::Sender` and consumed by the drain thread.
+#[derive(Debug)]
 pub enum RouterEvent {
     RouteCreated { node_id: u32, identity: AppIdentity },
     RouteDestroyed { node_id: u32 },
@@ -227,12 +231,15 @@ impl Router {
         if !should_route {
             return;
         }
-        // Only attempt once we have ports to link
-        if self
-            .known_sources
-            .get(&node_id)
-            .map_or(0, |i| i.output_ports.len())
-            == 0
+        // Only attempt once both stereo ports (FL + FR) are available.
+        // Attempting with < 2 ports would create a partial mono link on first
+        // PortAdded, then the already-linked guard (below) blocks the FR link.
+        if self.sink_input_ports.len() < 2
+            || self
+                .known_sources
+                .get(&node_id)
+                .map_or(0, |i| i.output_ports.len())
+                < 2
         {
             return;
         }
@@ -297,15 +304,22 @@ impl Router {
         node_id: u32,
         core: &pipewire::core::CoreRc,
     ) -> Result<Vec<pipewire::link::Link>, RouterError> {
-        if self.sink_input_ports.is_empty() {
+        // Require both stereo ports on the sink side before creating any links.
+        if self.sink_input_ports.len() < 2 {
             return Err(RouterError::SinkPortsUnavailable);
         }
         let source_ports = match self.known_sources.get(&node_id) {
-            Some(info) if !info.output_ports.is_empty() => &info.output_ports,
+            Some(info) if info.output_ports.len() >= 2 => &info.output_ports,
             _ => return Err(RouterError::SourcePortsUnavailable { node_id }),
         };
         let mut links = Vec::new();
-        for (src_port, sink_port) in source_ports.iter().zip(self.sink_input_ports.iter()) {
+        // Zip with explicit take(2) so we never create more than 2 (FL+FR) links
+        // even if either side somehow advertises more ports than expected.
+        for (src_port, sink_port) in source_ports
+            .iter()
+            .take(2)
+            .zip(self.sink_input_ports.iter().take(2))
+        {
             let link_props = pipewire::properties::properties! {
                 "link.output.port" => src_port.to_string(),
                 "link.input.port"  => sink_port.to_string(),
@@ -316,7 +330,7 @@ impl Router {
                 .map_err(|e| RouterError::LinkCreation {
                     src_port: *src_port,
                     sink_port: *sink_port,
-                    reason: e.to_string(),
+                    source: e,
                 })?;
             links.push(link);
         }
@@ -328,7 +342,7 @@ impl Router {
     /// Test-only: route source without creating real PipeWire links.
     #[cfg(test)]
     pub fn route_source_test(&mut self, node_id: u32) {
-        if self.sink_input_ports.is_empty() {
+        if self.sink_input_ports.len() < 2 {
             let _ = self
                 .evt_tx
                 .send(RouterEvent::Error(RouterError::SinkPortsUnavailable));
@@ -349,7 +363,7 @@ impl Router {
             .known_sources
             .get(&node_id)
             .map_or(0, |i| i.output_ports.len())
-            == 0
+            < 2
         {
             let _ = self
                 .evt_tx
@@ -383,7 +397,7 @@ impl Router {
             .known_sources
             .get(&node_id)
             .map_or(0, |i| i.output_ports.len())
-            == 0
+            < 2
         {
             return;
         }

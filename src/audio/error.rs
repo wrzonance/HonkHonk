@@ -12,14 +12,15 @@ pub enum WatcherError {
 }
 
 /// Structured failure modes for the PipeWire router (issue #27).
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum RouterError {
     /// `core.create_object::<Link>()` failed for a specific port pair.
-    #[error("failed to create link from src port {src_port} to sink port {sink_port}: {reason}")]
+    #[error("failed to create link from src port {src_port} to sink port {sink_port}")]
     LinkCreation {
         src_port: u32,
         sink_port: u32,
-        reason: String,
+        #[source]
+        source: pipewire::Error,
     },
 
     /// The virtual sink's input ports are not yet known (registry hasn't seen them).
@@ -102,7 +103,7 @@ mod router_error_tests {
         let e = AudioError::RouterError(RouterError::LinkCreation {
             src_port: 1,
             sink_port: 2,
-            reason: "factory not found".into(),
+            source: pipewire::Error::CreationFailed,
         });
         let msg = e.to_string();
         assert!(msg.contains("router"), "expected 'router' in: {msg}");

@@ -358,11 +358,9 @@ pub fn setup_registry_listener(
             if let Some(id) = s.sink_node_id {
                 shared_sink_id.set(Some(id));
             }
-            // Update shared_sink_ports whenever the registry sees new sink ports,
-            // so the Router can read them reactively on SourceAdded events.
-            if !s.sink_input_ports.is_empty() {
-                *shared_sink_ports.borrow_mut() = s.sink_input_ports.clone();
-            }
+            // Update shared_sink_ports whenever the registry sees sink port changes
+            // (including empty) so the Router never holds stale port IDs.
+            *shared_sink_ports.borrow_mut() = s.sink_input_ports.clone();
             if mic_passthrough_ref.get() {
                 let mut ml = mic_links_ref.borrow_mut();
                 try_create_mic_links(&mut s, &core_ref, &mut ml);
