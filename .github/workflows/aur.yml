@@ -5,20 +5,36 @@ on:
     paths:
       - 'packaging/aur/**'
       - '.github/workflows/aur.yml'
+      - 'Cargo.toml'
   pull_request:
     paths:
       - 'packaging/aur/**'
       - '.github/workflows/aur.yml'
+      - 'Cargo.toml'
 
 permissions:
   contents: read
 
+# Cancel superseded runs. push + pull_request both fire on a PR branch; without
+# this, two full source compiles run concurrently on one runner and OOM each
+# other (exit 137). Key on the head branch (not github.ref, which differs between
+# push `refs/heads/...` and PR `refs/pull/.../merge`) so both event types for the
+# same branch share one group and only one survives.
+concurrency:
+  group: aur-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   validate:
-    name: namcap + .SRCINFO + makepkg
+    name: ${{ matrix.pkg }} — namcap + .SRCINFO + makepkg
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        # honkhonk: source build (recommended). honkhonk-bin: .deb re-extract.
+        pkg: [honkhonk, honkhonk-bin]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -30,26 +46,39 @@ jobs:
         run: |
           useradd -m builder
           echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-          chown -R builder packaging/aur/honkhonk-bin
+          chown -R builder "packaging/aur/${{ matrix.pkg }}"
 
       - name: namcap lint
-        working-directory: packaging/aur/honkhonk-bin
+        working-directory: packaging/aur/${{ matrix.pkg }}
         run: sudo -u builder namcap PKGBUILD
 
       - name: .SRCINFO freshness check
-        working-directory: packaging/aur/honkhonk-bin
+        working-directory: packaging/aur/${{ matrix.pkg }}
         run: |
           sudo -u builder makepkg --printsrcinfo > /tmp/.SRCINFO.fresh
           diff -u .SRCINFO /tmp/.SRCINFO.fresh
 
-      - name: Refresh sha256sums + build + install
-        working-directory: packaging/aur/honkhonk-bin
+      - name: Build + install
+        working-directory: packaging/aur/${{ matrix.pkg }}
+        # Disable LTO and cap codegen parallelism for the CI compile only — the
+        # release profile's `lto = true` peaks too high in memory and OOM-kills the
+        # 7 GB runner (exit 137). This validates the PKGBUILD builds; it does not
+        # ship the binary, so a non-LTO CI build is fine. `-bin` ignores these
+        # (it re-extracts a .deb, no compile).
+        #
+        # NOTE: pass the vars via `env` (NOT `sudo -E`). `sudo -E` would also keep
+        # HOME=/github/home (root's home), which `builder` can't write — cargo's
+        # registry cache then fails with EACCES. Plain `sudo -u builder` resets
+        # HOME to /home/builder; `env` injects only the two CARGO_* overrides.
         run: |
-          sudo -u builder updpkgsums
-          sudo -u builder makepkg --noconfirm --syncdeps --install
+          sudo -u builder env \
+            CARGO_PROFILE_RELEASE_LTO=false \
+            CARGO_BUILD_JOBS=2 \
+            makepkg --noconfirm --syncdeps --install
 
       - name: Installed file manifest
         run: |
-          pacman -Ql honkhonk-bin
-          pacman -Ql honkhonk-bin | grep -q '/usr/bin/honkhonk$'
-          pacman -Ql honkhonk-bin | grep -q '/usr/share/applications/honkhonk.desktop$'
+          pacman -Ql ${{ matrix.pkg }}
+          pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/bin/honkhonk$'
+          pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/applications/honkhonk.desktop$'
+          pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/icons/hicolor/256x256/apps/honkhonk.png$'

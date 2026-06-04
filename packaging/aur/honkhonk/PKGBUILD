@@ -1,0 +1,78 @@
+# Maintainer: thewrz <adam@wrze.ski>
+# GPG: B514 CBC5 B44C AACF 02EA  0D68 B461 236C F8EA 7961
+
+pkgname=honkhonk
+pkgver=0.1.0.alpha.1
+_pkgtag=v0.1.0-alpha.1
+pkgrel=1
+pkgdesc="Wayland-native Linux soundboard — Iced GUI + PipeWire audio (built from source)"
+arch=('x86_64')
+url="https://github.com/wrzonance/HonkHonk"
+license=('MIT')
+# Runtime deps — each is dynamically linked or dlopened by the binary.
+# See README.md in this directory for the full per-dependency justification.
+#
+# IMPORTANT: this package builds the RELEASED tag ($_pkgtag), not main. The
+# libxdo X11 linkage was dropped on main (Cargo.toml: tray-icon/muda
+# default-features=false), but the current tag predates that change and still
+# links libxdo.so. So `xdotool` stays here until a release >= the libxdo fix is
+# tagged; bump _pkgtag past that release and drop `xdotool` then. Verified with
+# `namcap honkhonk-*.pkg.tar.zst` against the built package.
+depends=(
+    'pipewire'                # libpipewire-0.3.so — audio engine (pipewire-sys)
+    'gtk3'                    # libgtk-3.so / libgdk-3.so — tray menu (muda gtk feature)
+    'xdotool'                 # libxdo.so — muda libxdo feature (released tag only; see above)
+    'libayatana-appindicator' # libayatana-appindicator3.so — SNI tray (dlopened)
+    'wayland'                 # libwayland-client.so — Iced/winit Wayland backend (dlopened)
+    'libxkbcommon'            # libxkbcommon.so — keyboard mapping (winit, dlopened)
+    'xdg-desktop-portal'      # D-Bus portal: file chooser + global shortcuts (ashpd)
+)
+makedepends=(
+    'cargo'   # build driver
+    'rust'    # toolchain
+    'pkgconf' # pkg-config for -sys crate build scripts
+    'clang'   # libclang.so — pipewire-sys runs bindgen at build time
+    # NOTE: pipewire headers are needed at build time but pipewire is already a
+    # runtime dep (depends=), so it is present during makepkg — listing it here
+    # too would be redundant (namcap warns). Same for gtk3/wayland/libxkbcommon:
+    # on Arch the runtime packages ship their own headers + .pc files.
+)
+provides=('honkhonk')
+conflicts=('honkhonk-bin' 'honkhonk-git')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/$_pkgtag.tar.gz")
+# GitHub regenerates tag tarballs; a pinned hash is fragile across alpha re-tags.
+# Integrity is enforced by compiling + running the test suite in check().
+sha256sums=('SKIP')
+
+# GitHub auto-tarball extracts to <repo>-<tag-without-leading-v>/
+_srcdir="HonkHonk-${_pkgtag#v}"
+
+prepare() {
+    cd "$srcdir/$_srcdir"
+    # Upstream gitignores Cargo.lock, so the tarball has no lockfile. Resolve and
+    # download all deps here (this also writes Cargo.lock), letting build() and
+    # check() run fully offline via --frozen.
+    cargo fetch --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$srcdir/$_srcdir"
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release
+}
+
+check() {
+    cd "$srcdir/$_srcdir"
+    export CARGO_TARGET_DIR=target
+    cargo test --frozen --release
+}
+
+package() {
+    cd "$srcdir/$_srcdir"
+    install -Dm755 "target/release/honkhonk" "$pkgdir/usr/bin/honkhonk"
+    install -Dm644 "assets/honkhonk.desktop" \
+        "$pkgdir/usr/share/applications/honkhonk.desktop"
+    install -Dm644 "assets/icons/hicolor/256x256/apps/honkhonk.png" \
+        "$pkgdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

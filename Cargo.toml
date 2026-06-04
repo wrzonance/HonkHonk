@@ -9,8 +9,16 @@ repository = "https://github.com/thewrz/HonkHonk"
 
 [dependencies]
 iced = { version = "0.14", features = ["tokio", "tiny-skia"] }
-tray-icon = "0.24"
-muda = "0.19"
+# Wayland-only: disable default features on BOTH tray-icon and its (also-direct)
+# muda dep to drop the `libxdo` X11 keystroke path. muda only uses libxdo for the
+# predefined Copy/Cut/Paste/SelectAll items, which HonkHonk does not use (our tray
+# menu is custom MenuItems + separator). Both must opt out — Cargo feature
+# unification means muda's default features (which include `libxdo`) win if either
+# dependency edge requests them. Keep `gtk` for the SNI tray (libgtk-3 +
+# libayatana-appindicator). This removes the libxdo.so / libX11 / xdotool linkage
+# entirely. See issue #98.
+tray-icon = { version = "0.24", default-features = false, features = ["gtk"] }
+muda = { version = "0.19", default-features = false, features = ["gtk"] }
 gtk = "0.18"
 symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
 thiserror = "2"
