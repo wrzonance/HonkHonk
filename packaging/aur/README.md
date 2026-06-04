@@ -86,12 +86,14 @@ When auto-publish lands:
 
 ## Package strategy
 
-`honkhonk` (source) is the **primary** package: an Arch-native build with no
-foreign-soname workarounds. `honkhonk-bin` was shipped first as the lowest-risk
-channel (it reuses the `.deb` already attached to every tagged release), but a
-Debian-targeted `.deb` is the wrong source of truth for an Arch package — it
-linked `libxdo.so.3` against an Arch `libxdo.so.4` (issue #98). `honkhonk-bin` is
-**kept as a convenience secondary**, not removed: it still installs cleanly now
-that the `libxdo` linkage is dropped at compile time (see
-[`honkhonk/README.md`](honkhonk/README.md)). A `honkhonk-git` VCS variant follows
+`honkhonk` (source) is the **primary** package: an Arch-native build compiled on
+the user's machine, so it links the Arch `libxdo.so` directly (no foreign-soname
+hack). `honkhonk-bin` was shipped first as the lowest-risk channel (it reuses the
+`.deb` already attached to every tagged release), but a Debian-targeted `.deb` is
+the wrong source of truth for an Arch package — it links `libxdo.so.3` against an
+Arch `libxdo.so.4` (issue #98). `honkhonk-bin` is **kept as a convenience
+secondary**, not removed. The real fix is on `main`: the `libxdo` Cargo feature is
+disabled (see [`honkhonk/README.md`](honkhonk/README.md)), so once a release
+carrying that change is tagged, both the source and `-bin` packages stop needing
+`xdotool`/`libxdo` entirely. A `honkhonk-git` VCS variant follows
 in its own PR.
