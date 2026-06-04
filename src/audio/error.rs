@@ -51,4 +51,21 @@ pub enum AudioError {
 
     #[error("stream watcher initialization failed")]
     StreamWatcherInit(#[source] WatcherError),
+
+    #[error("failed to resolve XDG config directory for PipeWire conf.d")]
+    ConfdNoConfigDir,
+
+    #[error("failed to create PipeWire conf.d directory at {path}")]
+    ConfdDirCreate {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to write PipeWire conf.d file at {path}")]
+    ConfdWrite {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
