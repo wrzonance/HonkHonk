@@ -17,9 +17,11 @@ permissions:
 
 # Cancel superseded runs. push + pull_request both fire on a PR branch; without
 # this, two full source compiles run concurrently on one runner and OOM each
-# other (exit 137). One run per ref is enough.
+# other (exit 137). Key on the head branch (not github.ref, which differs between
+# push `refs/heads/...` and PR `refs/pull/.../merge`) so both event types for the
+# same branch share one group and only one survives.
 concurrency:
-  group: aur-${{ github.workflow }}-${{ github.ref }}
+  group: aur-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
