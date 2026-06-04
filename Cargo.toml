@@ -60,7 +60,13 @@ assets = [
     ["assets/honkhonk.desktop", "usr/share/applications/", "644"],
     # icon
     ["assets/icons/hicolor/256x256/apps/honkhonk.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    # persistent virtual-source PipeWire drop-in (issue #49)
+    ["packaging/pipewire/50-honkhonk.conf", "usr/share/pipewire/pipewire.conf.d/", "644"],
 ]
+# postrm restarts the user's PipeWire on uninstall so the now-removed drop-in
+# stops being loaded (issue #49). The drop-in lives under /usr/share (vendor
+# config), so it is intentionally NOT a dpkg conffile — see ADR-004.
+maintainer-scripts = "packaging/deb/"
 
 [profile.release]
 lto = true
