@@ -299,13 +299,31 @@ fn sink_names(state: &RegistryState) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Configuration bundle for `setup_registry_listener`.
+///
+/// Bundles the arguments that exceed the `too-many-arguments-threshold = 5`
+/// clippy lint threshold so the function signature stays within limits.
+pub struct RegistryConfig {
+    pub shared_sink_id: Rc<Cell<Option<u32>>>,
+    pub default_source_name: Option<String>,
+    pub mic_passthrough: Rc<Cell<bool>>,
+    pub evt_tx: mpsc::Sender<AudioEvent>,
+    /// Updated by the registry whenever the virtual sink's input ports are seen,
+    /// so the Router can read them reactively on `SourceAdded` events.
+    pub shared_sink_ports: Rc<RefCell<Vec<u32>>>,
+}
+
 pub fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
-    shared_sink_id: Rc<Cell<Option<u32>>>,
-    default_source_name: Option<String>,
-    mic_passthrough: Rc<Cell<bool>>,
-    evt_tx: mpsc::Sender<AudioEvent>,
+    cfg: RegistryConfig,
 ) -> Result<RegistryGuard, AudioError> {
+    let RegistryConfig {
+        shared_sink_id,
+        default_source_name,
+        mic_passthrough,
+        evt_tx,
+        shared_sink_ports,
+    } = cfg;
     let state = Rc::new(RefCell::new(RegistryState {
         preferred_source_name: default_source_name,
         sink_node_id: None,
@@ -339,6 +357,11 @@ pub fn setup_registry_listener(
             let sinks_changed = handle_registry_global(global, &mut s);
             if let Some(id) = s.sink_node_id {
                 shared_sink_id.set(Some(id));
+            }
+            // Update shared_sink_ports whenever the registry sees new sink ports,
+            // so the Router can read them reactively on SourceAdded events.
+            if !s.sink_input_ports.is_empty() {
+                *shared_sink_ports.borrow_mut() = s.sink_input_ports.clone();
             }
             if mic_passthrough_ref.get() {
                 let mut ml = mic_links_ref.borrow_mut();
