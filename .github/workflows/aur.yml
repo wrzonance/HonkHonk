@@ -81,3 +81,4 @@ jobs:
           pacman -Ql ${{ matrix.pkg }}
           pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/bin/honkhonk$'
           pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/applications/honkhonk.desktop$'
+          pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/icons/hicolor/256x256/apps/honkhonk.png$'
