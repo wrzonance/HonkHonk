@@ -1,8 +1,8 @@
 mod confd;
 mod decoder;
+pub mod effects;
 mod engine;
 mod error;
-pub mod effects;
 pub mod mixer;
 pub mod playback;
 mod registry;

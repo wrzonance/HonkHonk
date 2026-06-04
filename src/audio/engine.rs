@@ -29,7 +29,10 @@ pub enum AudioCommand {
     SetMonitorDevice(Option<String>),
     Shutdown,
     /// Set bypass state for the effect at `index` in the mixer chain.
-    SetEffectBypass { index: usize, bypass: bool },
+    SetEffectBypass {
+        index: usize,
+        bypass: bool,
+    },
     /// Set a parameter on the effect at `index`.
     SetEffectParam {
         index: usize,
@@ -425,10 +428,7 @@ fn run_engine(
             ctx.mixer.borrow_mut().chain_mut().set_wet_dry(wet_dry);
         }
         AudioCommand::SetEffectChainBypass(bypass) => {
-            ctx.mixer
-                .borrow_mut()
-                .chain_mut()
-                .set_chain_bypass(bypass);
+            ctx.mixer.borrow_mut().chain_mut().set_chain_bypass(bypass);
         }
     });
 

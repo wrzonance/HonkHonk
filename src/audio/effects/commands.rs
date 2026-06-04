@@ -62,9 +62,6 @@ mod tests {
             index: 1,
             param: "gain".into(),
         };
-        assert!(matches!(
-            evt,
-            EffectsEvent::ParamRejected { index: 1, .. }
-        ));
+        assert!(matches!(evt, EffectsEvent::ParamRejected { index: 1, .. }));
     }
 }
