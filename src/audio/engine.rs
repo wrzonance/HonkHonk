@@ -28,6 +28,18 @@ pub enum AudioCommand {
     SetMicPassthroughLevel(f32),
     SetMonitorDevice(Option<String>),
     Shutdown,
+    /// Set bypass state for the effect at `index` in the mixer chain.
+    SetEffectBypass { index: usize, bypass: bool },
+    /// Set a parameter on the effect at `index`.
+    SetEffectParam {
+        index: usize,
+        param: String,
+        value: f32,
+    },
+    /// Set the chain-level wet/dry mix.
+    SetEffectWetDry(f32),
+    /// Set chain-level bypass.
+    SetEffectChainBypass(bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +61,8 @@ pub enum AudioEvent {
     SourceFirstRun {
         confd_written: bool,
     },
+    /// The effect chain's total latency changed (in samples).
+    EffectsLatencyChanged(u32),
 }
 
 pub struct AudioHandle {
@@ -129,6 +143,7 @@ struct EngineCtx {
     evt_tx: mpsc::Sender<AudioEvent>,
     engine_volume: Rc<Cell<f32>>,
     monitor_target: Rc<RefCell<Option<String>>>,
+    mixer: Rc<RefCell<super::mixer::Mixer>>,
 }
 
 fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::Node, AudioError> {
@@ -338,6 +353,7 @@ fn run_engine(
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
+    let mixer = Rc::new(RefCell::new(super::mixer::Mixer::new(4096)));
 
     let ctx = EngineCtx {
         registry_sink_id,
@@ -346,6 +362,7 @@ fn run_engine(
         evt_tx: evt_tx.clone(),
         engine_volume,
         monitor_target,
+        mixer,
     };
 
     let active_timer = active;
@@ -389,6 +406,29 @@ fn run_engine(
         AudioCommand::Shutdown => {
             let _ = ctx.active.borrow_mut().take();
             mainloop_quit.quit();
+        }
+        AudioCommand::SetEffectBypass { index, bypass } => {
+            let _ = ctx.mixer.borrow_mut().chain_mut().set_bypass(index, bypass);
+        }
+        AudioCommand::SetEffectParam {
+            index,
+            param,
+            value,
+        } => {
+            let _ = ctx
+                .mixer
+                .borrow_mut()
+                .chain_mut()
+                .set_param(index, &param, value);
+        }
+        AudioCommand::SetEffectWetDry(wet_dry) => {
+            ctx.mixer.borrow_mut().chain_mut().set_wet_dry(wet_dry);
+        }
+        AudioCommand::SetEffectChainBypass(bypass) => {
+            ctx.mixer
+                .borrow_mut()
+                .chain_mut()
+                .set_chain_bypass(bypass);
         }
     });
 
@@ -493,6 +533,24 @@ mod tests {
             "alsa_output.pci-test".into(),
             "Built-in Audio".into(),
         )]);
+    }
+
+    #[test]
+    fn audio_command_set_effect_bypass_is_constructible() {
+        let _ = AudioCommand::SetEffectBypass {
+            index: 0,
+            bypass: true,
+        };
+    }
+
+    #[test]
+    fn audio_command_set_effect_wet_dry_is_constructible() {
+        let _ = AudioCommand::SetEffectWetDry(0.5);
+    }
+
+    #[test]
+    fn audio_event_effects_latency_changed_is_constructible() {
+        let _ = AudioEvent::EffectsLatencyChanged(512);
     }
 }
 
