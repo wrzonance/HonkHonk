@@ -15,6 +15,13 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs. push + pull_request both fire on a PR branch; without
+# this, two full source compiles run concurrently on one runner and OOM each
+# other (exit 137). One run per ref is enough.
+concurrency:
+  group: aur-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: ${{ matrix.pkg }} — namcap + .SRCINFO + makepkg
@@ -51,7 +58,16 @@ jobs:
 
       - name: Build + install
         working-directory: packaging/aur/${{ matrix.pkg }}
-        run: sudo -u builder makepkg --noconfirm --syncdeps --install
+        # Disable LTO and cap codegen parallelism for the CI compile only — the
+        # release profile's `lto = true` peaks too high in memory and OOM-kills the
+        # 7 GB runner (exit 137). This validates the PKGBUILD builds; it does not
+        # ship the binary, so a non-LTO CI build is fine. `-bin` ignores these
+        # (it re-extracts a .deb, no compile). `-E` preserves the env under sudo.
+        run: |
+          sudo -E -u builder env \
+            CARGO_PROFILE_RELEASE_LTO=false \
+            CARGO_BUILD_JOBS=2 \
+            makepkg --noconfirm --syncdeps --install
 
       - name: Installed file manifest
         run: |
