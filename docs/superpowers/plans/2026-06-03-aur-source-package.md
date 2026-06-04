@@ -12,7 +12,7 @@
 
 ## Background facts (verified in repo, do not re-investigate)
 
-- `Cargo.lock` is **gitignored** (see `.gitignore`). The GitHub auto-tarball will NOT contain a lockfile. Therefore the PKGBUILD must NOT use `--locked`/`--frozen`. Use `cargo fetch` (no `--locked`) in `prepare()` then `cargo build --offline --release` in `build()` and `cargo test --offline --release` in `check()`. This keeps compile/test network-isolated without needing a committed lockfile.
+- `Cargo.lock` is **gitignored** (see `.gitignore`). The GitHub auto-tarball will NOT contain a lockfile. The PKGBUILD therefore runs `cargo fetch` (no `--locked`) in `prepare()` — this generates `Cargo.lock` in the extracted source tree from `Cargo.toml` and populates the cache — then `cargo build --frozen --release` in `build()` and `cargo test --frozen --release` in `check()`. Once `prepare()` has produced the lockfile and cache, `--frozen` is satisfied and forces fully offline, network-isolated build/test without needing a committed lockfile. (See the `--frozen` NOTE under Task 2.)
 - `tray-icon = "0.24"` default features = `["libxdo", "gtk"]`. `tray-icon/libxdo` → `muda/libxdo` → `dep:libxdo` crate → links `libxdo.so` (provided by Arch `xdotool`). This is the ONLY thing pulling libxdo.
 - `muda`'s `libxdo` is used **only** to make predefined Copy/Cut/Paste/SelectAll menu items synthesise X11 keystrokes (`muda/src/platform_impl/gtk/mod.rs:1187-1189`). Our tray (`src/tray/icon.rs`) uses only `MenuItem` + `PredefinedMenuItem::separator()`. Separator does NOT need libxdo. So dropping `libxdo` loses zero functionality.
 - Setting `tray-icon = { version = "0.24", default-features = false, features = ["gtk"] }` drops libxdo at compile time. `gtk` feature is retained (provides `muda/gtk` + `libappindicator` for the SNI tray on Linux). Wayland-only per CLAUDE.md, so X11 keystroke synth was dead weight.
@@ -236,7 +236,7 @@ git commit -m "docs(packaging): honkhonk AUR README + dep justification"
 
 - [ ] **Step 1: Rewrite the validate job as a matrix over both packages**
 
-Generalise the existing job to a `strategy.matrix.pkg: [honkhonk-bin, honkhonk]`, set `working-directory` and `chown` to `packaging/aur/${{ matrix.pkg }}`, keep namcap + .SRCINFO freshness + `makepkg --noconfirm --syncdeps --install`. For the source build the install step compiles the whole crate from the GitHub tarball (slow but correct). Keep the `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1` pin. The `updpkgsums` step only applies to `-bin` (it SKIPs sha for the tarball too, but `updpkgsums` is harmless on a SKIP source — keep it so both matrix legs share steps). The final manifest assertion (`pacman -Ql ${{ matrix.pkg }}`) stays, checking `/usr/bin/honkhonk` + the `.desktop`.
+Generalise the existing job to a `strategy.matrix.pkg: [honkhonk-bin, honkhonk]`, set `working-directory` and `chown` to `packaging/aur/${{ matrix.pkg }}`, keep namcap + .SRCINFO freshness + `makepkg --noconfirm --syncdeps --install`. For the source build the install step compiles the whole crate from the GitHub tarball (slow but correct). Keep the `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1` pin. Drop the `updpkgsums` step entirely — both legs use `SKIP` sha256sums, so refreshing sums is unnecessary and would require network at lint time (see the NOTE below for the full rationale). The final manifest assertion (`pacman -Ql ${{ matrix.pkg }}`) stays, checking `/usr/bin/honkhonk` + the `.desktop`.
 
 Full file:
 ```yaml
