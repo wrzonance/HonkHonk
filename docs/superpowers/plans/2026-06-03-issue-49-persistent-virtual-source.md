@@ -18,7 +18,7 @@
 - `src/audio/mod.rs` — **MODIFY**. Re-export new module items if needed.
 - `src/app.rs` — **MODIFY**. Handle the new `AudioEvent` first-run variant (log + set a one-shot notice flag; minimal — no new panel).
 - `packaging/pipewire/50-honkhonk.conf` — **NEW**. The canonical conf.d drop-in shipped by all packages.
-- `Cargo.toml` — **MODIFY**. `[package.metadata.deb]` add the conf.d asset + `maintainer-scripts` dir for postrm; add `conf-files` so dpkg treats it correctly.
+- `Cargo.toml` — **MODIFY**. `[package.metadata.deb]` add the conf.d asset (installed under `/usr/share/pipewire/pipewire.conf.d/`) + `maintainer-scripts` dir for postrm. The drop-in is a vendor file under `/usr/share`, so it is intentionally NOT marked a dpkg conffile — see the deb-policy note below and ADR-004.
 - `packaging/deb/postrm` — **NEW**. Post-remove scriptlet restarting PipeWire.
 - `packaging/aur/honkhonk-bin/PKGBUILD` + `.SRCINFO` — **MODIFY**. Install conf.d from the extracted .deb (or vendored copy).
 - `packaging/flatpak/io.github.thewrz.HonkHonk.yml` — **MODIFY/DECISION**. Flatpak is sandboxed; document why conf.d is NOT installed there (no host PipeWire conf access) — first-run fallback covers it.
@@ -283,22 +283,20 @@ git commit -m "feat(audio): add should_create_source first-run decision fn"
 **Files:**
 - Modify: `src/audio/engine.rs`
 
-We synchronously probe the registry once at startup to learn whether
-`honkhonk-mic` already exists before deciding to create it. We reuse the
-existing pattern of shelling to `pw-dump`/`pw-cli`? No — prefer pure PipeWire.
-We do a short bounded registry roundtrip on the engine's own core BEFORE
-attaching the long-lived listener. This is PipeWire-dependent, so the probe
-itself is gated behind `pipewire-test` for integration, but the *plumbing*
-(passing the bool to `should_create_source`) is covered by Task 2.
+We synchronously probe for an existing `honkhonk-mic` node once at startup,
+before deciding whether to create it. The plumbing (passing the resulting bool
+to `should_create_source`) is covered by the Task 2 unit tests.
 
-DESIGN DECISION (documented in ADR-004): we detect existence via the existing
-`pw-metadata`-style subprocess approach already used by
-`query_default_source_name`, but for nodes we use `pw-cli list-objects` parsing
-because metadata does not list arbitrary nodes. To avoid a brittle parser and
-an extra dependency, we run `pw-cli ls Node` once and grep for the node name.
-If the subprocess is unavailable (e.g. CI without PipeWire), the probe returns
-`false` (assume absent) so the engine falls back to programmatic creation,
-which itself fails gracefully if PipeWire is absent.
+DESIGN DECISION (documented in ADR-004): the probe shells out to `pw-dump`
+(matching the existing subprocess pattern used by `query_default_source_name`)
+and parses its JSON output with a pure, unit-tested helper
+(`source_present_in_dump`) that scans for a node named `honkhonk-mic`. We chose
+a subprocess over a live registry roundtrip so the decision logic stays pure
+and fully testable without a PipeWire connection — the JSON-parsing helper is
+covered by unit tests, and only the thin `pw-dump` invocation is
+PipeWire-dependent. If `pw-dump` is unavailable (e.g. CI without PipeWire), the
+probe returns `false` (assume absent) so the engine falls back to programmatic
+creation, which itself fails gracefully if PipeWire is absent.
 
 - [ ] **Step 1: Write failing tests for the parser in `src/audio/engine.rs` tests**
 
