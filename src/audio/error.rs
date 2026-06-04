@@ -69,3 +69,40 @@ pub enum AudioError {
         source: std::io::Error,
     },
 }
+
+#[derive(Error, Debug)]
+pub enum EffectsError {
+    #[error("effect chain exceeds maximum length of {max} (got {got})")]
+    ChainTooLong { max: usize, got: usize },
+
+    #[error("unknown parameter {param:?}")]
+    ParamUnknown { param: String },
+
+    #[error("effect index {index} out of range (chain length {len})")]
+    IndexOutOfRange { index: usize, len: usize },
+}
+
+#[cfg(test)]
+mod effects_error_tests {
+    use super::*;
+
+    #[test]
+    fn effects_error_chain_too_long_is_constructible() {
+        let e = EffectsError::ChainTooLong { max: 16, got: 17 };
+        assert!(e.to_string().contains("16"));
+    }
+
+    #[test]
+    fn effects_error_param_unknown_is_constructible() {
+        let e = EffectsError::ParamUnknown {
+            param: "gain".into(),
+        };
+        assert!(e.to_string().contains("gain"));
+    }
+
+    #[test]
+    fn effects_error_index_out_of_range_is_constructible() {
+        let e = EffectsError::IndexOutOfRange { index: 3, len: 2 };
+        assert!(e.to_string().contains("3"));
+    }
+}
