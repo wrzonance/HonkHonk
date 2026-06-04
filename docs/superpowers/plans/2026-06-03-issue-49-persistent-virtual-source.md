@@ -289,12 +289,15 @@ to `should_create_source`) is covered by the Task 2 unit tests.
 
 DESIGN DECISION (documented in ADR-004): the probe shells out to `pw-dump`
 (matching the existing subprocess pattern used by `query_default_source_name`)
-and parses its JSON output with a pure, unit-tested helper
-(`source_present_in_dump`) that scans for a node named `honkhonk-mic`. We chose
-a subprocess over a live registry roundtrip so the decision logic stays pure
-and fully testable without a PipeWire connection — the JSON-parsing helper is
-covered by unit tests, and only the thin `pw-dump` invocation is
-PipeWire-dependent. If `pw-dump` is unavailable (e.g. CI without PipeWire), the
+and feeds its output to a pure, unit-tested helper (`source_present_in_dump`)
+that does a line-based scan for a `node.name` line naming `honkhonk-mic`. The
+scan is format-tolerant: it matches the quoted name token in both the `pw-dump`
+JSON form (`"node.name": "honkhonk-mic",`) and the `pw-cli` text form
+(`node.name = "honkhonk-mic"`), so a substring like `honkhonk-mic-monitor` does
+not false-positive. We chose a subprocess over a live registry roundtrip so the
+decision logic stays pure and fully testable without a PipeWire connection — the
+scanning helper is covered by unit tests, and only the thin `pw-dump` invocation
+is PipeWire-dependent. If `pw-dump` is unavailable (e.g. CI without PipeWire), the
 probe returns `false` (assume absent) so the engine falls back to programmatic
 creation, which itself fails gracefully if PipeWire is absent.
 
