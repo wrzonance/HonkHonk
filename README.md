@@ -57,10 +57,21 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.
 ### Arch Linux (AUR)
 
 ```bash
-yay -S honkhonk-bin    # or: paru -S honkhonk-bin
+yay -S honkhonk        # source build (recommended) — or: paru -S honkhonk
 ```
 
-Pre-built binary from GitHub Releases. Source build (`honkhonk`) and VCS (`honkhonk-git`) variants are planned. See [`packaging/aur/README.md`](packaging/aur/README.md) for maintainer notes.
+`honkhonk` is the recommended package: an Arch-native build compiled from the
+tagged source release, with no foreign-soname workarounds.
+
+Alternatives:
+
+```bash
+yay -S honkhonk-bin    # pre-built binary re-extracted from the GitHub .deb (Debian base)
+yay -S honkhonk-git    # bleeding-edge, tracks main (planned)
+```
+
+See [`packaging/aur/README.md`](packaging/aur/README.md) for maintainer notes and
+the per-dependency justification.
 
 ## Building
 

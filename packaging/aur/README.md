@@ -1,18 +1,34 @@
-# AUR packaging — `honkhonk-bin`
+# AUR packaging
 
-This directory holds the AUR PKGBUILD for the **binary** variant. Source (`honkhonk`) and VCS (`honkhonk-git`) variants are planned in follow-up PRs.
+This directory holds the AUR PKGBUILDs for HonkHonk. Each variant has its own
+subdirectory and per-variant README:
+
+- [`honkhonk/`](honkhonk/) — **source build (recommended).** Arch-native, compiled
+  from the tagged source tarball. No foreign-soname workarounds. See
+  [`honkhonk/README.md`](honkhonk/README.md) for the per-dependency justification.
+- [`honkhonk-bin/`](honkhonk-bin/) — binary variant: re-extracts the upstream
+  `.deb` from GitHub Releases. Kept as a convenience secondary (built on a Debian
+  base; see the source README for why source is preferred).
+- `honkhonk-git` — VCS variant tracking `main` (planned, separate PR).
 
 ## What CI validates
 
-`.github/workflows/aur.yml` runs on every push/PR touching `packaging/aur/**`:
+`.github/workflows/aur.yml` runs a **matrix over both `honkhonk` and
+`honkhonk-bin`** on every push/PR touching `packaging/aur/**`,
+`.github/workflows/aur.yml`, or `Cargo.toml`. For each package, in
+`archlinux:base-devel`:
 
 1. `namcap PKGBUILD` — catches missing fields, deprecated patterns, style issues.
 2. `.SRCINFO` freshness — diffs the committed file against a fresh `makepkg --printsrcinfo`. Fails if you edited the PKGBUILD without regenerating.
-3. `updpkgsums` — refreshes `sha256sums` from the live release URL. Fails fast on 404 / hash mismatch.
-4. `makepkg --noconfirm --syncdeps --install` — full build + install in `archlinux:base-devel`.
-5. `pacman -Ql honkhonk-bin` — asserts `/usr/bin/honkhonk` and `/usr/share/applications/honkhonk.desktop` landed.
+3. `makepkg --noconfirm --syncdeps --install` — full build + install (source compile for `honkhonk`, `.deb` re-extract for `honkhonk-bin`).
+4. `pacman -Ql <pkg>` — asserts `/usr/bin/honkhonk` and `/usr/share/applications/honkhonk.desktop` landed.
 
-## Per-release bump runbook
+The source variant's per-release runbook lives in
+[`honkhonk/README.md`](honkhonk/README.md). The `-bin` runbook is below. The
+shared notes (AUR account setup, reserved CI SSH key, future auto-publish) apply
+to both.
+
+## Per-release bump runbook (`honkhonk-bin`)
 
 Run on an Arch / Manjaro / EndeavourOS host with `base-devel` and `pacman-contrib` installed.
 
@@ -68,6 +84,14 @@ When auto-publish lands:
 - Workflow trigger: `release: { types: [published] }`
 - Steps: bump pkgver, run `updpkgsums`, regen `.SRCINFO`, commit to the AUR clone, push via SSH using `AUR_SSH_KEY`.
 
-## Why `-bin` first?
+## Package strategy
 
-Smallest, lowest-risk channel. Zero changes to release workflow — reuses the existing `.deb` artifact already attached to every tagged release. Source and VCS variants follow in their own PRs.
+`honkhonk` (source) is the **primary** package: an Arch-native build with no
+foreign-soname workarounds. `honkhonk-bin` was shipped first as the lowest-risk
+channel (it reuses the `.deb` already attached to every tagged release), but a
+Debian-targeted `.deb` is the wrong source of truth for an Arch package — it
+linked `libxdo.so.3` against an Arch `libxdo.so.4` (issue #98). `honkhonk-bin` is
+**kept as a convenience secondary**, not removed: it still installs cleanly now
+that the `libxdo` linkage is dropped at compile time (see
+[`honkhonk/README.md`](honkhonk/README.md)). A `honkhonk-git` VCS variant follows
+in its own PR.
