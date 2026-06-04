@@ -11,18 +11,27 @@ url="https://github.com/wrzonance/HonkHonk"
 license=('MIT')
 # Runtime deps — each is dynamically linked or dlopened by the binary.
 # See README.md in this directory for the full per-dependency justification.
+#
+# IMPORTANT: this package builds the RELEASED tag ($_pkgtag), not main. The
+# libxdo X11 linkage was dropped on main (Cargo.toml: tray-icon/muda
+# default-features=false), but the current tag predates that change and still
+# links libxdo.so. So `xdotool` stays here until a release >= the libxdo fix is
+# tagged; bump _pkgtag past that release and drop `xdotool` then. Verified with
+# `namcap honkhonk-*.pkg.tar.zst` against the built package.
 depends=(
     'pipewire'                # libpipewire-0.3.so — audio engine (pipewire-sys)
-    'gtk3'                    # libgtk-3.so — tray menu (muda/tray-icon `gtk` feature)
-    'libayatana-appindicator' # libayatana-appindicator3.so — SNI tray (libappindicator)
-    'wayland'                 # libwayland-client.so — Iced/winit Wayland backend
-    'libxkbcommon'            # libxkbcommon.so — keyboard mapping (winit)
+    'gtk3'                    # libgtk-3.so / libgdk-3.so — tray menu (muda gtk feature)
+    'xdotool'                 # libxdo.so — muda libxdo feature (released tag only; see above)
+    'libayatana-appindicator' # libayatana-appindicator3.so — SNI tray (dlopened)
+    'wayland'                 # libwayland-client.so — Iced/winit Wayland backend (dlopened)
+    'libxkbcommon'            # libxkbcommon.so — keyboard mapping (winit, dlopened)
     'xdg-desktop-portal'      # D-Bus portal: file chooser + global shortcuts (ashpd)
 )
 makedepends=(
     'cargo'   # build driver
     'rust'    # toolchain
     'pkgconf' # pkg-config for -sys crate build scripts
+    'clang'   # libclang.so — pipewire-sys runs bindgen at build time
     # NOTE: pipewire headers are needed at build time but pipewire is already a
     # runtime dep (depends=), so it is present during makepkg — listing it here
     # too would be redundant (namcap warns). Same for gtk3/wayland/libxkbcommon:
