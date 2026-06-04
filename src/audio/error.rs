@@ -119,7 +119,10 @@ mod router_error_tests {
     fn router_error_source_ports_unavailable_is_constructible() {
         let e = RouterError::SourcePortsUnavailable { node_id: 42 };
         let msg = e.to_string();
-        assert!(msg.contains("42") || msg.contains("source"), "expected node info in: {msg}");
+        assert!(
+            msg.contains("42") || msg.contains("source"),
+            "expected node info in: {msg}"
+        );
     }
 }
 

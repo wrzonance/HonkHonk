@@ -13,5 +13,5 @@ pub use decoder::{decode, DecodedAudio};
 pub use effects::{AudioEffect, EffectChain, EffectsCommand, EffectsEvent};
 pub use engine::{spawn, AudioCommand, AudioEvent, AudioHandle};
 pub use error::{AudioError, EffectsError, RouterError, WatcherError};
-pub use router::{AppIdentity, Router, RouterCommand, RouterEvent, RouteIntent};
+pub use router::{AppIdentity, RouteIntent, Router, RouterCommand, RouterEvent};
 pub use streams::{Direction, StreamEvent, StreamWatcher};

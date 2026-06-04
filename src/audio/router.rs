@@ -157,7 +157,13 @@ impl Router {
     }
 
     /// Handle a `StreamEvent::PortAdded` for a tracked source node.
-    pub fn on_port_added(&mut self, port_id: u32, node_id: u32, _channel: String, direction: Direction) {
+    pub fn on_port_added(
+        &mut self,
+        port_id: u32,
+        node_id: u32,
+        _channel: String,
+        direction: Direction,
+    ) {
         if direction != Direction::Output {
             return;
         }
@@ -175,7 +181,9 @@ impl Router {
             .remove(&node_id)
             .map(|info| info.identity);
         if let Some(identity) = identity {
-            let _ = self.evt_tx.send(RouterEvent::SourceDisconnected { identity });
+            let _ = self
+                .evt_tx
+                .send(RouterEvent::SourceDisconnected { identity });
         }
     }
 
@@ -207,11 +215,7 @@ impl Router {
     /// Check if a newly-added source matches any enabled intent and auto-link.
     /// Called after `on_source_added` + port accumulation is complete (i.e.
     /// on each `PortAdded` event for the node — succeeds once enough ports exist).
-    pub fn try_auto_reconnect(
-        &mut self,
-        node_id: u32,
-        core: &pipewire::core::CoreRc,
-    ) {
+    pub fn try_auto_reconnect(&mut self, node_id: u32, core: &pipewire::core::CoreRc) {
         let identity = match self.known_sources.get(&node_id).map(|i| i.identity.clone()) {
             Some(id) => id,
             None => return,
@@ -224,7 +228,12 @@ impl Router {
             return;
         }
         // Only attempt once we have ports to link
-        if self.known_sources.get(&node_id).map_or(0, |i| i.output_ports.len()) == 0 {
+        if self
+            .known_sources
+            .get(&node_id)
+            .map_or(0, |i| i.output_ports.len())
+            == 0
+        {
             return;
         }
         // Skip if already linked
@@ -234,10 +243,9 @@ impl Router {
         match self.create_stereo_links(node_id, core) {
             Ok(links) => {
                 self.active_links.insert(node_id, links);
-                let _ = self.evt_tx.send(RouterEvent::AutoReconnected {
-                    identity,
-                    node_id,
-                });
+                let _ = self
+                    .evt_tx
+                    .send(RouterEvent::AutoReconnected { identity, node_id });
             }
             Err(e) => {
                 let _ = self.evt_tx.send(RouterEvent::Error(e));
@@ -246,17 +254,15 @@ impl Router {
     }
 
     /// Route a source node by ID. Adds/updates intent, creates stereo links.
-    pub fn route_source(
-        &mut self,
-        node_id: u32,
-        core: &pipewire::core::CoreRc,
-    ) {
+    pub fn route_source(&mut self, node_id: u32, core: &pipewire::core::CoreRc) {
         let identity = match self.known_sources.get(&node_id).map(|i| i.identity.clone()) {
             Some(id) => id,
             None => {
-                let _ = self.evt_tx.send(RouterEvent::Error(
-                    RouterError::SourcePortsUnavailable { node_id },
-                ));
+                let _ = self
+                    .evt_tx
+                    .send(RouterEvent::Error(RouterError::SourcePortsUnavailable {
+                        node_id,
+                    }));
                 return;
             }
         };
@@ -264,7 +270,9 @@ impl Router {
         match self.create_stereo_links(node_id, core) {
             Ok(links) => {
                 self.active_links.insert(node_id, links);
-                let _ = self.evt_tx.send(RouterEvent::RouteCreated { node_id, identity });
+                let _ = self
+                    .evt_tx
+                    .send(RouterEvent::RouteCreated { node_id, identity });
             }
             Err(e) => {
                 let _ = self.evt_tx.send(RouterEvent::Error(e));
@@ -274,11 +282,7 @@ impl Router {
 
     /// Create or update an intent for the given identity.
     fn upsert_intent(&mut self, identity: AppIdentity, enabled: bool) {
-        if let Some(existing) = self
-            .intents
-            .iter_mut()
-            .find(|i| i.identity == identity)
-        {
+        if let Some(existing) = self.intents.iter_mut().find(|i| i.identity == identity) {
             existing.enabled = enabled;
         } else {
             self.intents.push(RouteIntent { identity, enabled });
@@ -325,27 +329,40 @@ impl Router {
     #[cfg(test)]
     pub fn route_source_test(&mut self, node_id: u32) {
         if self.sink_input_ports.is_empty() {
-            let _ = self.evt_tx.send(RouterEvent::Error(RouterError::SinkPortsUnavailable));
+            let _ = self
+                .evt_tx
+                .send(RouterEvent::Error(RouterError::SinkPortsUnavailable));
             return;
         }
         let identity = match self.known_sources.get(&node_id).map(|i| i.identity.clone()) {
             Some(id) => id,
             None => {
-                let _ = self.evt_tx.send(RouterEvent::Error(
-                    RouterError::SourcePortsUnavailable { node_id },
-                ));
+                let _ = self
+                    .evt_tx
+                    .send(RouterEvent::Error(RouterError::SourcePortsUnavailable {
+                        node_id,
+                    }));
                 return;
             }
         };
-        if self.known_sources.get(&node_id).map_or(0, |i| i.output_ports.len()) == 0 {
-            let _ = self.evt_tx.send(RouterEvent::Error(
-                RouterError::SourcePortsUnavailable { node_id },
-            ));
+        if self
+            .known_sources
+            .get(&node_id)
+            .map_or(0, |i| i.output_ports.len())
+            == 0
+        {
+            let _ = self
+                .evt_tx
+                .send(RouterEvent::Error(RouterError::SourcePortsUnavailable {
+                    node_id,
+                }));
             return;
         }
         self.upsert_intent(identity.clone(), true);
         self.active_links.insert(node_id, vec![]);
-        let _ = self.evt_tx.send(RouterEvent::RouteCreated { node_id, identity });
+        let _ = self
+            .evt_tx
+            .send(RouterEvent::RouteCreated { node_id, identity });
     }
 
     /// Test-only: try auto-reconnect without creating real PipeWire links.
@@ -362,14 +379,21 @@ impl Router {
         if !should_route {
             return;
         }
-        if self.known_sources.get(&node_id).map_or(0, |i| i.output_ports.len()) == 0 {
+        if self
+            .known_sources
+            .get(&node_id)
+            .map_or(0, |i| i.output_ports.len())
+            == 0
+        {
             return;
         }
         if self.active_links.contains_key(&node_id) {
             return;
         }
         self.active_links.insert(node_id, vec![]);
-        let _ = self.evt_tx.send(RouterEvent::AutoReconnected { identity, node_id });
+        let _ = self
+            .evt_tx
+            .send(RouterEvent::AutoReconnected { identity, node_id });
     }
 }
 
@@ -465,11 +489,8 @@ mod tests {
 
     #[test]
     fn from_stream_round_trips_fields() {
-        let id = AppIdentity::from_stream(
-            Some("Firefox".into()),
-            Some("firefox".into()),
-            Some(4242),
-        );
+        let id =
+            AppIdentity::from_stream(Some("Firefox".into()), Some("firefox".into()), Some(4242));
         assert_eq!(id.app_name.as_deref(), Some("Firefox"));
         assert_eq!(id.process_binary.as_deref(), Some("firefox"));
         assert_eq!(id.process_id, Some(4242));
@@ -485,9 +506,15 @@ mod tests {
     #[test]
     fn router_event_variants_constructible() {
         let id = AppIdentity::from_stream(None, Some("test".into()), None);
-        let _ = RouterEvent::RouteCreated { node_id: 1, identity: id.clone() };
+        let _ = RouterEvent::RouteCreated {
+            node_id: 1,
+            identity: id.clone(),
+        };
         let _ = RouterEvent::RouteDestroyed { node_id: 1 };
-        let _ = RouterEvent::AutoReconnected { identity: id.clone(), node_id: 1 };
+        let _ = RouterEvent::AutoReconnected {
+            identity: id.clone(),
+            node_id: 1,
+        };
         let _ = RouterEvent::SourceDisconnected { identity: id };
         let _ = RouterEvent::Error(RouterError::SinkPortsUnavailable);
     }
@@ -513,7 +540,12 @@ mod tests {
     #[test]
     fn source_added_event_stores_identity_and_ports() {
         let (mut router, _rx) = make_router();
-        router.on_source_added(42, Some("Spotify".into()), Some("spotify".into()), Some(1234));
+        router.on_source_added(
+            42,
+            Some("Spotify".into()),
+            Some("spotify".into()),
+            Some(1234),
+        );
         assert!(router.known_sources.contains_key(&42));
         let info = &router.known_sources[&42];
         assert_eq!(info.identity.app_name.as_deref(), Some("Spotify"));
@@ -540,7 +572,10 @@ mod tests {
     fn source_removed_cleans_active_links_but_preserves_intent() {
         let (mut router, rx) = make_router();
         let id = AppIdentity::from_stream(Some("Spotify".into()), None, None);
-        router.intents.push(RouteIntent { identity: id, enabled: true });
+        router.intents.push(RouteIntent {
+            identity: id,
+            enabled: true,
+        });
         router.active_links.insert(42, vec![]);
         router.on_source_added(42, Some("Spotify".into()), None, None);
 
@@ -551,7 +586,9 @@ mod tests {
         assert!(!router.known_sources.contains_key(&42));
 
         let events: Vec<RouterEvent> = rx.try_iter().collect();
-        let disconnected = events.iter().any(|e| matches!(e, RouterEvent::SourceDisconnected { .. }));
+        let disconnected = events
+            .iter()
+            .any(|e| matches!(e, RouterEvent::SourceDisconnected { .. }));
         assert!(disconnected, "expected SourceDisconnected in {events:?}");
     }
 
@@ -586,7 +623,10 @@ mod tests {
     fn unroute_source_removes_intent_and_active_link() {
         let (mut router, rx) = make_router();
         let id = AppIdentity::from_stream(Some("Spotify".into()), None, None);
-        router.intents.push(RouteIntent { identity: id.clone(), enabled: true });
+        router.intents.push(RouteIntent {
+            identity: id.clone(),
+            enabled: true,
+        });
         router.active_links.insert(42, vec![]);
         router.on_source_added(42, Some("Spotify".into()), None, None);
 
@@ -596,7 +636,9 @@ mod tests {
         assert!(!router.intents[0].enabled);
 
         let events: Vec<RouterEvent> = rx.try_iter().collect();
-        let destroyed = events.iter().any(|e| matches!(e, RouterEvent::RouteDestroyed { node_id: 42 }));
+        let destroyed = events
+            .iter()
+            .any(|e| matches!(e, RouterEvent::RouteDestroyed { node_id: 42 }));
         assert!(destroyed, "expected RouteDestroyed(42) in {events:?}");
     }
 
@@ -614,7 +656,9 @@ mod tests {
         assert!(router.intents[0].enabled);
 
         let events: Vec<RouterEvent> = rx.try_iter().collect();
-        let created = events.iter().any(|e| matches!(e, RouterEvent::RouteCreated { node_id: 42, .. }));
+        let created = events
+            .iter()
+            .any(|e| matches!(e, RouterEvent::RouteCreated { node_id: 42, .. }));
         assert!(created, "expected RouteCreated(42) in {events:?}");
     }
 
@@ -634,7 +678,9 @@ mod tests {
         assert!(router.active_links.contains_key(&99));
 
         let events: Vec<RouterEvent> = rx.try_iter().collect();
-        let reconnected = events.iter().any(|e| matches!(e, RouterEvent::AutoReconnected { node_id: 99, .. }));
+        let reconnected = events
+            .iter()
+            .any(|e| matches!(e, RouterEvent::AutoReconnected { node_id: 99, .. }));
         assert!(reconnected, "expected AutoReconnected(99) in {events:?}");
     }
 
@@ -653,7 +699,9 @@ mod tests {
 
         assert!(!router.active_links.contains_key(&99));
         let events: Vec<RouterEvent> = rx.try_iter().collect();
-        let reconnected = events.iter().any(|e| matches!(e, RouterEvent::AutoReconnected { .. }));
+        let reconnected = events
+            .iter()
+            .any(|e| matches!(e, RouterEvent::AutoReconnected { .. }));
         assert!(!reconnected, "unexpected AutoReconnected in {events:?}");
     }
 
@@ -669,7 +717,10 @@ mod tests {
         let has_error = events
             .iter()
             .any(|e| matches!(e, RouterEvent::Error(RouterError::SinkPortsUnavailable)));
-        assert!(has_error, "expected SinkPortsUnavailable error in {events:?}");
+        assert!(
+            has_error,
+            "expected SinkPortsUnavailable error in {events:?}"
+        );
     }
 
     #[test]
@@ -687,7 +738,10 @@ mod tests {
                 RouterEvent::Error(RouterError::SourcePortsUnavailable { node_id: 42 })
             )
         });
-        assert!(has_error, "expected SourcePortsUnavailable(42) in {events:?}");
+        assert!(
+            has_error,
+            "expected SourcePortsUnavailable(42) in {events:?}"
+        );
     }
 
     /// Integration test: requires a live PipeWire session.

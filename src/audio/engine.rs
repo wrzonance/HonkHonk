@@ -389,7 +389,13 @@ fn run_engine(
             use streams::StreamEvent;
             while let Ok(event) = stream_rx.try_recv() {
                 match event {
-                    StreamEvent::SourceAdded { id, app_name, app_binary, app_pid, .. } => {
+                    StreamEvent::SourceAdded {
+                        id,
+                        app_name,
+                        app_binary,
+                        app_pid,
+                        ..
+                    } => {
                         let ports = sink_ports_for_stream.borrow().clone();
                         let mut r = router_for_stream.borrow_mut();
                         r.update_sink_ports(ports);
@@ -398,7 +404,12 @@ fn run_engine(
                     StreamEvent::SourceRemoved { id } => {
                         router_for_stream.borrow_mut().on_source_removed(id);
                     }
-                    StreamEvent::PortAdded { id, node_id, channel, direction } => {
+                    StreamEvent::PortAdded {
+                        id,
+                        node_id,
+                        channel,
+                        direction,
+                    } => {
                         router_for_stream
                             .borrow_mut()
                             .on_port_added(id, node_id, channel, direction);
