@@ -132,6 +132,13 @@ fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::
         .map_err(|e| AudioError::VirtualSinkCreation(e.to_string()))
 }
 
+/// First-run decision: create the virtual source programmatically only when
+/// no `honkhonk-mic` node already exists (i.e. no packaged/user conf.d has
+/// declared it). When it already exists we reuse it and never recreate.
+fn should_create_source(source_already_exists: bool) -> bool {
+    !source_already_exists
+}
+
 fn create_virtual_source(
     core: &pipewire::core::CoreRc,
 ) -> Result<pipewire::node::Node, AudioError> {
@@ -335,6 +342,16 @@ mod tests {
     #[test]
     fn audio_command_set_monitor_device_some_is_constructible() {
         let _ = AudioCommand::SetMonitorDevice(Some("alsa_output.pci-test".into()));
+    }
+
+    #[test]
+    fn should_create_source_false_when_node_already_present() {
+        assert!(!should_create_source(true));
+    }
+
+    #[test]
+    fn should_create_source_true_when_node_absent() {
+        assert!(should_create_source(false));
     }
 
     #[test]
