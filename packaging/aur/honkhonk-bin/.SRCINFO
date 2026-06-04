@@ -16,6 +16,8 @@ pkgbase = honkhonk-bin
 	conflicts = honkhonk
 	conflicts = honkhonk-git
 	source = honkhonk-bin-0.1.0.alpha.1.deb::https://github.com/wrzonance/HonkHonk/releases/download/v0.1.0-alpha.1/honkhonk_0.1.0.alpha.1-1_amd64.deb
+	source = 50-honkhonk.conf
 	sha256sums = SKIP
+	sha256sums = 4c3ce7ceffb122eb845c228026c340fbc689acd7139531975f4b06a0e74e6dcc
 
 pkgname = honkhonk-bin

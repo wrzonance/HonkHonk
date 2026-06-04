@@ -1,3 +1,4 @@
+mod confd;
 mod decoder;
 mod engine;
 mod error;

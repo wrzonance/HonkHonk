@@ -20,8 +20,19 @@ depends=(
 )
 provides=('honkhonk')
 conflicts=('honkhonk' 'honkhonk-git')
-source=("$pkgname-$pkgver.deb::$url/releases/download/$_pkgtag/honkhonk_${pkgver}-1_amd64.deb")
-sha256sums=('SKIP')
+# The .deb is the released binary (SKIP — content varies per release). The
+# conf.d drop-in is vendored locally next to this PKGBUILD so the AUR package
+# always ships the current persistent-source config (issue #49) regardless of
+# which .deb is attached to the release — an older .deb may not contain it yet.
+# A test asserts this copy stays byte-identical to packaging/pipewire/50-honkhonk.conf.
+source=(
+    "$pkgname-$pkgver.deb::$url/releases/download/$_pkgtag/honkhonk_${pkgver}-1_amd64.deb"
+    "50-honkhonk.conf"
+)
+sha256sums=(
+    'SKIP'
+    '4c3ce7ceffb122eb845c228026c340fbc689acd7139531975f4b06a0e74e6dcc'
+)
 
 prepare() {
     bsdtar -xf "$pkgname-$pkgver.deb" -C "$srcdir"
@@ -34,4 +45,9 @@ package() {
         "$pkgdir/usr/share/applications/honkhonk.desktop"
     install -Dm644 "$srcdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png" \
         "$pkgdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png"
+    # Persistent virtual-source PipeWire drop-in (issue #49). Installed from the
+    # locally-vendored copy so "HonkHonk Mic" persists across reboots even when
+    # the released .deb predates this drop-in.
+    install -Dm644 "$srcdir/50-honkhonk.conf" \
+        "$pkgdir/usr/share/pipewire/pipewire.conf.d/50-honkhonk.conf"
 }

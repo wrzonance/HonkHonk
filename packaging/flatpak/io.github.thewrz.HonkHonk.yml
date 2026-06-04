@@ -65,6 +65,11 @@ modules:
       # Install AppStream metainfo
       - install -Dm644 packaging/flatpak/io.github.thewrz.HonkHonk.metainfo.xml
           /app/share/metainfo/io.github.thewrz.HonkHonk.metainfo.xml
+      # NOTE (issue #49): the persistent PipeWire conf.d drop-in is NOT installed
+      # in the Flatpak. The sandbox cannot write host PipeWire config, and the
+      # app talks to PipeWire via the pulseaudio socket. The app's first-run
+      # fallback creates a lingering source + per-user conf.d instead. See
+      # docs/adr/004-persistent-source-conf-d.md.
     sources:
       - type: dir
         path: ../..

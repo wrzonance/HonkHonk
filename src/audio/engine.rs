@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::Arc;
 
+use super::confd;
 use super::error::AudioError;
 use super::playback::{self, PlaybackState};
 use super::registry::setup_registry_listener;
@@ -32,11 +33,22 @@ pub enum AudioCommand {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
     Ready,
-    PlaybackStarted { sound_id: String },
-    PlaybackFinished { sound_id: String },
+    PlaybackStarted {
+        sound_id: String,
+    },
+    PlaybackFinished {
+        sound_id: String,
+    },
     Progress(f32),
     Error(String),
     OutputDevicesChanged(Vec<(String, String)>),
+    /// Emitted once on a first run that created the source programmatically and
+    /// wrote the per-user conf.d. The UI shows a one-time notice telling the
+    /// user the "HonkHonk Mic" device now persists and to select it in
+    /// Discord/OBS. Carries whether a new conf.d file was actually written.
+    SourceFirstRun {
+        confd_written: bool,
+    },
 }
 
 pub struct AudioHandle {
@@ -132,6 +144,37 @@ fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::
         .map_err(|e| AudioError::VirtualSinkCreation(e.to_string()))
 }
 
+/// First-run decision: create the virtual source programmatically only when
+/// no `honkhonk-mic` node already exists (i.e. no packaged/user conf.d has
+/// declared it). When it already exists we reuse it and never recreate.
+fn should_create_source(source_already_exists: bool) -> bool {
+    !source_already_exists
+}
+
+/// Pure scan: does a `pw-dump` (JSON) or `pw-cli` text blob mention a node
+/// whose `node.name` is our virtual source? Matches the quoted name token so a
+/// substring like `honkhonk-mic-foo` does not false-positive. Tolerant of both
+/// `pw-cli` form (`node.name = "honkhonk-mic"`) and `pw-dump` JSON form
+/// (`"node.name": "honkhonk-mic",`).
+fn source_present_in_dump(dump: &str) -> bool {
+    let needle = format!("\"{SOURCE_NODE_NAME}\"");
+    dump.lines().any(|line| {
+        let l = line.trim().trim_start_matches('"');
+        l.starts_with("node.name") && l.contains(&needle)
+    })
+}
+
+/// Probe PipeWire (via `pw-dump`) for an existing `honkhonk-mic` node.
+/// Returns `false` if the tool is missing or fails — the caller then falls
+/// back to programmatic creation, which itself fails gracefully without PW.
+fn source_already_exists() -> bool {
+    std::process::Command::new("pw-dump")
+        .output()
+        .ok()
+        .map(|o| source_present_in_dump(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or(false)
+}
+
 fn create_virtual_source(
     core: &pipewire::core::CoreRc,
 ) -> Result<pipewire::node::Node, AudioError> {
@@ -141,10 +184,49 @@ fn create_virtual_source(
         "node.description" => SOURCE_DESCRIPTION,
         "media.class" => "Audio/Source/Virtual",
         "audio.position" => "[FL,FR]",
-        "object.linger" => "false",
+        // Lingering: the programmatically-created source survives app exit
+        // (until reboot) as a first-run bridge until a packaged/user conf.d
+        // takes effect. See ADR-004. The internal mixing sink stays linger=false.
+        "object.linger" => "true",
     };
     core.create_object("adapter", &source_props)
         .map_err(|e| AudioError::VirtualSourceCreation(e.to_string()))
+}
+
+/// Write the per-user conf.d bridge, reporting failures as non-fatal events.
+/// Returns whether a new file was written.
+fn write_first_run_confd(evt_tx: &mpsc::Sender<AudioEvent>) -> bool {
+    match confd::user_confd_dir() {
+        Ok(dir) => confd::write_user_confd_in(&dir).unwrap_or_else(|e| {
+            let _ = evt_tx.send(AudioEvent::Error(format!("conf.d write: {e}")));
+            false
+        }),
+        Err(e) => {
+            let _ = evt_tx.send(AudioEvent::Error(format!("conf.d path: {e}")));
+            false
+        }
+    }
+}
+
+/// Ensure the persistent virtual source exists (issue #49).
+///
+/// If a `honkhonk-mic` node already exists (packaged/user conf.d case) we reuse
+/// it and create nothing — returns `None`. Otherwise (dev/unpackaged first run)
+/// we create it programmatically (lingering), write the per-user conf.d bridge,
+/// and emit `SourceFirstRun`. The returned `Node`, when `Some`, is held to
+/// end-of-scope and is NEVER explicitly destroyed: a lingering node survives
+/// app exit, and the conf.d bridge re-creates it next session regardless.
+fn ensure_virtual_source(
+    core: &pipewire::core::CoreRc,
+    evt_tx: &mpsc::Sender<AudioEvent>,
+) -> Result<Option<pipewire::node::Node>, AudioError> {
+    if !should_create_source(source_already_exists()) {
+        return Ok(None);
+    }
+    let node = create_virtual_source(core)?;
+    let confd_written = write_first_run_confd(evt_tx);
+    let _ = evt_tx.send(AudioEvent::SourceFirstRun { confd_written });
+    Ok(Some(node))
 }
 
 fn setup_completion_timer(
@@ -235,7 +317,11 @@ fn run_engine(
         .map_err(|e| AudioError::PipeWireInit(format!("core connect: {e}")))?;
 
     let _sink = create_virtual_sink(&core)?;
-    let _source = create_virtual_source(&core)?;
+
+    // Persistent virtual source (issue #49): reuse a conf.d-declared device if
+    // present; otherwise create it programmatically (lingering) and write the
+    // per-user conf.d as the persistence bridge for dev/unpackaged runs.
+    let _source = ensure_virtual_source(&core, &evt_tx)?;
 
     let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
     let registry_guard = setup_registry_listener(
@@ -335,6 +421,70 @@ mod tests {
     #[test]
     fn audio_command_set_monitor_device_some_is_constructible() {
         let _ = AudioCommand::SetMonitorDevice(Some("alsa_output.pci-test".into()));
+    }
+
+    #[test]
+    fn should_create_source_false_when_node_already_present() {
+        assert!(!should_create_source(true));
+    }
+
+    #[test]
+    fn parse_source_present_detects_honkhonk_mic() {
+        let dump = r#"
+        id 42, type PipeWire:Interface:Node/3
+            node.name = "honkhonk-mic"
+            media.class = "Audio/Source/Virtual"
+        "#;
+        assert!(source_present_in_dump(dump));
+    }
+
+    #[test]
+    fn parse_source_present_detects_honkhonk_mic_pw_dump_json() {
+        let dump = r#"
+        {
+          "props": {
+            "node.name": "honkhonk-mic",
+            "media.class": "Audio/Source/Virtual"
+          }
+        }
+        "#;
+        assert!(source_present_in_dump(dump));
+    }
+
+    #[test]
+    fn parse_source_present_false_when_absent() {
+        let dump = r#"
+        id 7, type PipeWire:Interface:Node/3
+            node.name = "alsa_input.pci-0000"
+        "#;
+        assert!(!source_present_in_dump(dump));
+    }
+
+    #[test]
+    fn parse_source_present_false_on_empty() {
+        assert!(!source_present_in_dump(""));
+    }
+
+    #[test]
+    fn parse_source_present_false_on_substring_node_name() {
+        // A different node whose name merely contains our name must not match.
+        let dump = r#"node.name = "honkhonk-mic-monitor""#;
+        assert!(!source_present_in_dump(dump));
+    }
+
+    #[test]
+    fn should_create_source_true_when_node_absent() {
+        assert!(should_create_source(false));
+    }
+
+    #[test]
+    fn audio_event_source_first_run_is_constructible() {
+        let _ = AudioEvent::SourceFirstRun {
+            confd_written: true,
+        };
+        let _ = AudioEvent::SourceFirstRun {
+            confd_written: false,
+        };
     }
 
     #[test]

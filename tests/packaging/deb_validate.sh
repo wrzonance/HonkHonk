@@ -82,6 +82,34 @@ grep -q 'assets.*honkhonk.png' "$CARGO" \
     && check "Cargo.toml deb installs icon" "ok" \
     || check "Cargo.toml deb installs icon" "asset entry missing"
 
+# ── conf.d drop-in (issue #49) ───────────────────────────────────────
+CONFD="packaging/pipewire/50-honkhonk.conf"
+[ -f "$CONFD" ] \
+    && check "conf.d drop-in exists" "ok" \
+    || check "conf.d drop-in exists" "missing: $CONFD"
+
+if [ -f "$CONFD" ]; then
+    grep -q 'node.name .*"honkhonk-mic"' "$CONFD" \
+        && check "conf.d declares honkhonk-mic" "ok" \
+        || check "conf.d declares honkhonk-mic" "node.name missing"
+    grep -q 'object.linger .* true' "$CONFD" \
+        && check "conf.d sets object.linger true" "ok" \
+        || check "conf.d sets object.linger true" "missing"
+fi
+
+grep -q 'pipewire.conf.d' "$CARGO" \
+    && check "Cargo.toml deb installs conf.d" "ok" \
+    || check "Cargo.toml deb installs conf.d" "asset entry missing"
+
+grep -q 'maintainer-scripts' "$CARGO" \
+    && check "Cargo.toml deb has maintainer-scripts" "ok" \
+    || check "Cargo.toml deb has maintainer-scripts" "field missing"
+
+POSTRM="packaging/deb/postrm"
+[ -x "$POSTRM" ] \
+    && check "deb postrm exists and is executable" "ok" \
+    || check "deb postrm exists and is executable" "missing or not +x: $POSTRM"
+
 # ── Summary ──────────────────────────────────────────────────────────
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

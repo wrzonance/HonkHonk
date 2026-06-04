@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # AppImage entry point for HonkHonk.
 # PipeWire and xdg-desktop-portal are HOST dependencies — not bundled.
+#
+# NOTE (issue #49): AppImage is not a system package and installs no system
+# PipeWire conf.d. The persistent virtual source is provided by the app's
+# first-run fallback (lingering node + per-user conf.d). See
+# docs/adr/004-persistent-source-conf-d.md.
 set -euo pipefail
 
 SELF="$(readlink -f "$0")"

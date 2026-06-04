@@ -82,3 +82,17 @@ jobs:
           pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/bin/honkhonk$'
           pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/applications/honkhonk.desktop$'
           pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/icons/hicolor/256x256/apps/honkhonk.png$'
+
+      - name: Persistent-source conf.d packaged (honkhonk-bin only)
+        if: matrix.pkg == 'honkhonk-bin'
+        # The source `honkhonk` package builds the released tag, which predates
+        # the #49 conf.d drop-in, so only `-bin` vendors and ships it today.
+        # Once `_pkgtag` bumps past a release containing #49, extend this to the
+        # `honkhonk` leg too.
+        run: |
+          pacman -Ql honkhonk-bin | grep -q '/usr/share/pipewire/pipewire.conf.d/50-honkhonk.conf$'
+
+      - name: Vendored conf.d matches canonical drop-in
+        if: matrix.pkg == 'honkhonk-bin'
+        run: |
+          cmp packaging/aur/honkhonk-bin/50-honkhonk.conf packaging/pipewire/50-honkhonk.conf
