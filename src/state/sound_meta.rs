@@ -131,11 +131,10 @@ impl SoundMetaStore {
                 source: e,
             })?;
         }
-        let json =
-            serde_json::to_string_pretty(&self.0).map_err(|e| ConfigError::Serialize {
-                path: path.display().to_string(),
-                source: e,
-            })?;
+        let json = serde_json::to_string_pretty(&self.0).map_err(|e| ConfigError::Serialize {
+            path: path.display().to_string(),
+            source: e,
+        })?;
         std::fs::write(path, json).map_err(|e| ConfigError::Io {
             path: path.display().to_string(),
             source: e,
@@ -209,10 +208,7 @@ mod tests {
     fn set_display_name_stores_override() {
         let mut store = SoundMetaStore::default();
         store.set_display_name("id1", Some("My Honk".to_owned()));
-        assert_eq!(
-            store.get("id1").display_name.as_deref(),
-            Some("My Honk")
-        );
+        assert_eq!(store.get("id1").display_name.as_deref(), Some("My Honk"));
     }
 
     #[test]

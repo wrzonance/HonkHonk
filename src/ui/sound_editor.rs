@@ -171,7 +171,9 @@ fn view_name_row<'a>(draft_name: &'a str, t: Theme) -> Element<'a, Message> {
 }
 
 fn view_volume_row<'a>(draft_volume: f32, sound_id: String, t: Theme) -> Element<'a, Message> {
-    let label = text("Per-sound volume").size(theme::font::LABEL).color(t.ink());
+    let label = text("Per-sound volume")
+        .size(theme::font::LABEL)
+        .color(t.ink());
     let hint = text("Multiplied with master volume. 100% = no change. Up to 200%.")
         .size(theme::font::LABEL)
         .color(t.ink_dim());

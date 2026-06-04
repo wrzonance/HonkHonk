@@ -119,9 +119,7 @@ fn tile_view<'a>(
     } else {
         name_str.to_owned()
     };
-    let name_text = text(name_label)
-        .size(theme::font::BODY)
-        .color(theme.ink());
+    let name_text = text(name_label).size(theme::font::BODY).color(theme.ink());
     let duration_text = text(duration_str)
         .size(theme::font::LABEL)
         .color(theme.ink_faint());
@@ -280,12 +278,12 @@ pub fn context_menu_overlay<'a>(
     );
 
     let menu = container(menu_col)
-    .width(MENU_W)
-    .style(move |_t| container::Style {
-        background: Some(theme::bg_color(theme.panel())),
-        border: theme::tile_border(theme.hairline(), 1.0),
-        ..Default::default()
-    });
+        .width(MENU_W)
+        .style(move |_t| container::Style {
+            background: Some(theme::bg_color(theme.panel())),
+            border: theme::tile_border(theme.hairline(), 1.0),
+            ..Default::default()
+        });
 
     // Clamp so menu stays inside window bounds.
     let (win_w, win_h) = window_size;

@@ -944,7 +944,10 @@ impl HonkHonk {
 
         let all_chip = self.category_chip("All", self.active_category.is_none(), None, t);
 
-        let has_favorites = self.sounds.iter().any(|s| self.sound_meta.is_favorite(&s.id));
+        let has_favorites = self
+            .sounds
+            .iter()
+            .any(|s| self.sound_meta.is_favorite(&s.id));
         let fav_active = self.active_category.as_deref() == Some(FAVORITES_TAB);
 
         let chips: Vec<Element<'_, Message>> = std::iter::once(all_chip)
@@ -1951,7 +1954,10 @@ mod tests {
         assert_eq!(meta.display_name.as_deref(), Some("Renamed"));
         let eps = 1e-5_f32;
         assert!((meta.volume - 1.25).abs() < eps);
-        assert!(app.editor_sound_id().is_none(), "editor must close after save");
+        assert!(
+            app.editor_sound_id().is_none(),
+            "editor must close after save"
+        );
     }
 
     #[test]
