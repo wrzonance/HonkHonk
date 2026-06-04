@@ -139,6 +139,30 @@ fn should_create_source(source_already_exists: bool) -> bool {
     !source_already_exists
 }
 
+/// Pure scan: does a `pw-dump` (JSON) or `pw-cli` text blob mention a node
+/// whose `node.name` is our virtual source? Matches the quoted name token so a
+/// substring like `honkhonk-mic-foo` does not false-positive. Tolerant of both
+/// `pw-cli` form (`node.name = "honkhonk-mic"`) and `pw-dump` JSON form
+/// (`"node.name": "honkhonk-mic",`).
+fn source_present_in_dump(dump: &str) -> bool {
+    let needle = format!("\"{SOURCE_NODE_NAME}\"");
+    dump.lines().any(|line| {
+        let l = line.trim().trim_start_matches('"');
+        l.starts_with("node.name") && l.contains(&needle)
+    })
+}
+
+/// Probe PipeWire (via `pw-dump`) for an existing `honkhonk-mic` node.
+/// Returns `false` if the tool is missing or fails — the caller then falls
+/// back to programmatic creation, which itself fails gracefully without PW.
+fn source_already_exists() -> bool {
+    std::process::Command::new("pw-dump")
+        .output()
+        .ok()
+        .map(|o| source_present_in_dump(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or(false)
+}
+
 fn create_virtual_source(
     core: &pipewire::core::CoreRc,
 ) -> Result<pipewire::node::Node, AudioError> {
@@ -347,6 +371,50 @@ mod tests {
     #[test]
     fn should_create_source_false_when_node_already_present() {
         assert!(!should_create_source(true));
+    }
+
+    #[test]
+    fn parse_source_present_detects_honkhonk_mic() {
+        let dump = r#"
+        id 42, type PipeWire:Interface:Node/3
+            node.name = "honkhonk-mic"
+            media.class = "Audio/Source/Virtual"
+        "#;
+        assert!(source_present_in_dump(dump));
+    }
+
+    #[test]
+    fn parse_source_present_detects_honkhonk_mic_pw_dump_json() {
+        let dump = r#"
+        {
+          "props": {
+            "node.name": "honkhonk-mic",
+            "media.class": "Audio/Source/Virtual"
+          }
+        }
+        "#;
+        assert!(source_present_in_dump(dump));
+    }
+
+    #[test]
+    fn parse_source_present_false_when_absent() {
+        let dump = r#"
+        id 7, type PipeWire:Interface:Node/3
+            node.name = "alsa_input.pci-0000"
+        "#;
+        assert!(!source_present_in_dump(dump));
+    }
+
+    #[test]
+    fn parse_source_present_false_on_empty() {
+        assert!(!source_present_in_dump(""));
+    }
+
+    #[test]
+    fn parse_source_present_false_on_substring_node_name() {
+        // A different node whose name merely contains our name must not match.
+        let dump = r#"node.name = "honkhonk-mic-monitor""#;
+        assert!(!source_present_in_dump(dump));
     }
 
     #[test]
