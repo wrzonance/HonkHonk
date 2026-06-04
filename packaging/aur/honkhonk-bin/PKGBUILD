@@ -34,4 +34,8 @@ package() {
         "$pkgdir/usr/share/applications/honkhonk.desktop"
     install -Dm644 "$srcdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png" \
         "$pkgdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png"
+    # Persistent virtual-source PipeWire drop-in (issue #49). Shipped inside the
+    # upstream .deb; install it so "HonkHonk Mic" persists across reboots.
+    install -Dm644 "$srcdir/usr/share/pipewire/pipewire.conf.d/50-honkhonk.conf" \
+        "$pkgdir/usr/share/pipewire/pipewire.conf.d/50-honkhonk.conf"
 }
