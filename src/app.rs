@@ -537,6 +537,11 @@ impl HonkHonk {
                     // Context menu takes priority — close it, leave search state intact.
                     self.context_menu = None;
                     self.context_menu_pos = None;
+                } else if self.editor_sound_id.is_some() {
+                    // Editor overlay takes next priority — discard draft and close.
+                    self.editor_sound_id = None;
+                    self.editor_draft_name = String::new();
+                    self.editor_draft_volume = 1.0;
                 } else if self.search_had_focus {
                     // First Esc: treat as blur — Iced already handled unfocus.
                     self.search_had_focus = false;
@@ -821,6 +826,9 @@ impl HonkHonk {
                 let meta = self.sound_meta.get(&sound_id);
                 let name_override = meta.display_name.clone().unwrap_or_default();
                 let vol = meta.volume;
+                // Clear the context menu so the editor overlay surfaces immediately.
+                self.context_menu = None;
+                self.context_menu_pos = None;
                 self.editor_sound_id = Some(sound_id);
                 self.editor_draft_name = name_override;
                 self.editor_draft_volume = vol;
@@ -1911,6 +1919,31 @@ mod tests {
         // draft volume defaults to 1.0 when no meta saved
         let eps = f32::EPSILON;
         assert!((app.editor_draft_volume - 1.0).abs() < eps);
+    }
+
+    #[test]
+    fn open_sound_editor_clears_context_menu() {
+        // Regression: opening the editor must dismiss the context menu so the
+        // editor overlay surfaces immediately (CodeRabbit review thread).
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenContextMenu("some-id".into()));
+        assert!(app.context_menu().is_some());
+        let _ = app.update(Message::OpenSoundEditor("some-id".into()));
+        assert!(app.context_menu().is_none());
+        assert_eq!(app.editor_sound_id(), Some("some-id"));
+    }
+
+    #[test]
+    fn escape_dismisses_editor_before_search_focus() {
+        // Regression: Esc should close the editor overlay, not consume search focus.
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SearchChanged("honk".into()));
+        let _ = app.update(Message::OpenSoundEditor("abc".into()));
+        assert!(app.editor_sound_id().is_some());
+        let _ = app.update(Message::EscapePressed);
+        assert!(app.editor_sound_id().is_none());
+        // search_had_focus must NOT be consumed — editor took priority
+        assert!(app.search_had_focus);
     }
 
     #[test]
