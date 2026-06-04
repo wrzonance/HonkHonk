@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::Arc;
 
+use super::confd;
 use super::error::AudioError;
 use super::playback::{self, PlaybackState};
 use super::registry::setup_registry_listener;
@@ -32,11 +33,22 @@ pub enum AudioCommand {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
     Ready,
-    PlaybackStarted { sound_id: String },
-    PlaybackFinished { sound_id: String },
+    PlaybackStarted {
+        sound_id: String,
+    },
+    PlaybackFinished {
+        sound_id: String,
+    },
     Progress(f32),
     Error(String),
     OutputDevicesChanged(Vec<(String, String)>),
+    /// Emitted once on a first run that created the source programmatically and
+    /// wrote the per-user conf.d. The UI shows a one-time notice telling the
+    /// user the "HonkHonk Mic" device now persists and to select it in
+    /// Discord/OBS. Carries whether a new conf.d file was actually written.
+    SourceFirstRun {
+        confd_written: bool,
+    },
 }
 
 pub struct AudioHandle {
@@ -172,10 +184,49 @@ fn create_virtual_source(
         "node.description" => SOURCE_DESCRIPTION,
         "media.class" => "Audio/Source/Virtual",
         "audio.position" => "[FL,FR]",
-        "object.linger" => "false",
+        // Lingering: the programmatically-created source survives app exit
+        // (until reboot) as a first-run bridge until a packaged/user conf.d
+        // takes effect. See ADR-004. The internal mixing sink stays linger=false.
+        "object.linger" => "true",
     };
     core.create_object("adapter", &source_props)
         .map_err(|e| AudioError::VirtualSourceCreation(e.to_string()))
+}
+
+/// Write the per-user conf.d bridge, reporting failures as non-fatal events.
+/// Returns whether a new file was written.
+fn write_first_run_confd(evt_tx: &mpsc::Sender<AudioEvent>) -> bool {
+    match confd::user_confd_dir() {
+        Ok(dir) => confd::write_user_confd_in(&dir).unwrap_or_else(|e| {
+            let _ = evt_tx.send(AudioEvent::Error(format!("conf.d write: {e}")));
+            false
+        }),
+        Err(e) => {
+            let _ = evt_tx.send(AudioEvent::Error(format!("conf.d path: {e}")));
+            false
+        }
+    }
+}
+
+/// Ensure the persistent virtual source exists (issue #49).
+///
+/// If a `honkhonk-mic` node already exists (packaged/user conf.d case) we reuse
+/// it and create nothing — returns `None`. Otherwise (dev/unpackaged first run)
+/// we create it programmatically (lingering), write the per-user conf.d bridge,
+/// and emit `SourceFirstRun`. The returned `Node`, when `Some`, is held to
+/// end-of-scope and is NEVER explicitly destroyed: a lingering node survives
+/// app exit, and the conf.d bridge re-creates it next session regardless.
+fn ensure_virtual_source(
+    core: &pipewire::core::CoreRc,
+    evt_tx: &mpsc::Sender<AudioEvent>,
+) -> Result<Option<pipewire::node::Node>, AudioError> {
+    if !should_create_source(source_already_exists()) {
+        return Ok(None);
+    }
+    let node = create_virtual_source(core)?;
+    let confd_written = write_first_run_confd(evt_tx);
+    let _ = evt_tx.send(AudioEvent::SourceFirstRun { confd_written });
+    Ok(Some(node))
 }
 
 fn setup_completion_timer(
@@ -266,7 +317,11 @@ fn run_engine(
         .map_err(|e| AudioError::PipeWireInit(format!("core connect: {e}")))?;
 
     let _sink = create_virtual_sink(&core)?;
-    let _source = create_virtual_source(&core)?;
+
+    // Persistent virtual source (issue #49): reuse a conf.d-declared device if
+    // present; otherwise create it programmatically (lingering) and write the
+    // per-user conf.d as the persistence bridge for dev/unpackaged runs.
+    let _source = ensure_virtual_source(&core, &evt_tx)?;
 
     let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
     let registry_guard = setup_registry_listener(
@@ -420,6 +475,16 @@ mod tests {
     #[test]
     fn should_create_source_true_when_node_absent() {
         assert!(should_create_source(false));
+    }
+
+    #[test]
+    fn audio_event_source_first_run_is_constructible() {
+        let _ = AudioEvent::SourceFirstRun {
+            confd_written: true,
+        };
+        let _ = AudioEvent::SourceFirstRun {
+            confd_written: false,
+        };
     }
 
     #[test]

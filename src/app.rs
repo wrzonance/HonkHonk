@@ -131,6 +131,9 @@ pub struct HonkHonk {
     pub(crate) settings_section: SettingsSection,
     pub monitor_devices: Vec<(String, String)>,
     shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService,
+    /// One-time notice surfaced on first run when the persistent virtual mic was
+    /// created programmatically (issue #49). `None` until `SourceFirstRun` fires.
+    source_notice: Option<String>,
 }
 
 fn shortcuts_stream_sub(
@@ -224,6 +227,21 @@ async fn pick_directory() -> anyhow::Result<Option<std::path::PathBuf>> {
         .map_err(|_| anyhow::anyhow!("URI is not a file:// path: {uri}"))
 }
 
+/// First-run notice text for the persistent virtual mic (issue #49). When the
+/// per-user conf.d was written the device persists across restarts; otherwise
+/// it only lasts the session (until reboot) via the lingering node.
+fn source_first_run_notice(confd_written: bool) -> String {
+    if confd_written {
+        "Created HonkHonk Mic virtual device. It will persist after restart. \
+Select 'HonkHonk Mic' as your input in Discord/OBS."
+            .to_string()
+    } else {
+        "HonkHonk Mic created for this session. \
+Select 'HonkHonk Mic' as your input in Discord/OBS."
+            .to_string()
+    }
+}
+
 impl HonkHonk {
     pub fn new(
         mut tray: TrayHandle,
@@ -267,6 +285,7 @@ impl HonkHonk {
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
+            source_notice: None,
         }
     }
 
@@ -301,6 +320,7 @@ impl HonkHonk {
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
+            source_notice: None,
         }
     }
 
@@ -354,6 +374,13 @@ impl HonkHonk {
 
     pub fn shortcuts_warning_dismissed(&self) -> bool {
         self.shortcuts_warning_dismissed
+    }
+
+    /// First-run persistent-mic notice text, if one was surfaced this session
+    /// (issue #49). Returns `None` until a `SourceFirstRun` event fires. A UI
+    /// banner can render this; rendering is intentionally out of scope here.
+    pub fn source_notice(&self) -> Option<&str> {
+        self.source_notice.as_deref()
     }
 
     pub fn filtered_sounds(&self) -> Vec<&SoundEntry> {
@@ -424,6 +451,11 @@ impl HonkHonk {
                     }
                     AudioEvent::Error(e) => {
                         eprintln!("honkhonk: audio error: {e}");
+                    }
+                    AudioEvent::SourceFirstRun { confd_written } => {
+                        let notice = source_first_run_notice(confd_written);
+                        eprintln!("honkhonk: {notice}");
+                        self.source_notice = Some(notice);
                     }
                     AudioEvent::OutputDevicesChanged(devices) => {
                         if let Some(ref target) = self.config.monitor_device.clone() {
@@ -1068,6 +1100,28 @@ mod tests {
         }));
         let _ = app.update(Message::StopAll);
         assert!(app.playing().is_none());
+    }
+
+    #[test]
+    fn source_first_run_written_sets_persistent_notice() {
+        let mut app = HonkHonk::new_for_test();
+        assert!(app.source_notice().is_none());
+        let _ = app.update(Message::AudioEvent(AudioEvent::SourceFirstRun {
+            confd_written: true,
+        }));
+        let notice = app.source_notice().expect("notice set");
+        assert!(notice.contains("persist"));
+        assert!(notice.contains("HonkHonk Mic"));
+    }
+
+    #[test]
+    fn source_first_run_not_written_sets_session_notice() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::AudioEvent(AudioEvent::SourceFirstRun {
+            confd_written: false,
+        }));
+        let notice = app.source_notice().expect("notice set");
+        assert!(notice.contains("this session"));
     }
 
     #[test]
