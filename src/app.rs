@@ -847,7 +847,10 @@ impl HonkHonk {
                 // "All" so the list doesn't show empty under an invisible filter.
                 if !is_favorite
                     && self.active_category.as_deref() == Some(FAVORITES_TAB)
-                    && !self.sounds.iter().any(|s| self.sound_meta.is_favorite(&s.id))
+                    && !self
+                        .sounds
+                        .iter()
+                        .any(|s| self.sound_meta.is_favorite(&s.id))
                 {
                     self.active_category = None;
                 }
