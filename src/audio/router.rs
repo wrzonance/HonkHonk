@@ -408,11 +408,12 @@ impl Router {
         if !should_route {
             return;
         }
-        if self
-            .known_sources
-            .get(&node_id)
-            .map_or(0, |i| i.output_ports.len())
-            < 2
+        if self.sink_input_ports.len() < 2
+            || self
+                .known_sources
+                .get(&node_id)
+                .map_or(0, |i| i.output_ports.len())
+                < 2
         {
             return;
         }
