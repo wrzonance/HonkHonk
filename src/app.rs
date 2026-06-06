@@ -146,6 +146,9 @@ pub struct HonkHonk {
     source_notice: Option<String>,
     /// Per-sound metadata: favorites, per-sound volume, display names.
     pub(crate) sound_meta: SoundMetaStore,
+    /// When `false`, `sound_meta.save()` is skipped (used in tests to avoid
+    /// writing to the developer's real XDG config dir during `cargo test`).
+    persist_sound_meta: bool,
     /// Sound ID currently open in the per-sound editor overlay.
     editor_sound_id: Option<String>,
     /// Draft display name held while the editor is open.
@@ -305,6 +308,7 @@ impl HonkHonk {
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
             source_notice: None,
             sound_meta: SoundMetaStore::load(),
+            persist_sound_meta: true,
             editor_sound_id: None,
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
@@ -344,6 +348,7 @@ impl HonkHonk {
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
             source_notice: None,
             sound_meta: SoundMetaStore::default(),
+            persist_sound_meta: false,
             editor_sound_id: None,
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
@@ -426,7 +431,19 @@ impl HonkHonk {
                 Some(cat) => s.category == cat,
                 None => true,
             })
-            .filter(|s| query.is_empty() || s.name.to_lowercase().contains(&query))
+            .filter(|s| {
+                if query.is_empty() {
+                    return true;
+                }
+                // Also match against the display-name override so sounds
+                // renamed by the user remain discoverable by their visible label.
+                let display_name_matches = self
+                    .sound_meta
+                    .get_ref(&s.id)
+                    .and_then(|m| m.display_name.as_deref())
+                    .is_some_and(|name| name.to_lowercase().contains(&query));
+                s.name.to_lowercase().contains(&query) || display_name_matches
+            })
             .collect()
     }
 
@@ -819,9 +836,20 @@ impl HonkHonk {
                 Task::none()
             }
             Message::ToggleFavorite(sound_id) => {
-                self.sound_meta.toggle_favorite(&sound_id);
-                if let Err(e) = self.sound_meta.save() {
-                    eprintln!("honkhonk: sound meta save error: {e}");
+                let is_favorite = self.sound_meta.toggle_favorite(&sound_id);
+                if self.persist_sound_meta {
+                    if let Err(e) = self.sound_meta.save() {
+                        eprintln!("honkhonk: sound meta save error: {e}");
+                    }
+                }
+                // If the user just unstarred the last favorite while on the
+                // Favorites tab, the chip disappears from the header. Reset to
+                // "All" so the list doesn't show empty under an invisible filter.
+                if !is_favorite
+                    && self.active_category.as_deref() == Some(FAVORITES_TAB)
+                    && !self.sounds.iter().any(|s| self.sound_meta.is_favorite(&s.id))
+                {
+                    self.active_category = None;
                 }
                 Task::none()
             }
@@ -863,8 +891,10 @@ impl HonkHonk {
                     display_name,
                 };
                 self.sound_meta.set(sound_id, meta);
-                if let Err(e) = self.sound_meta.save() {
-                    eprintln!("honkhonk: sound meta save error: {e}");
+                if self.persist_sound_meta {
+                    if let Err(e) = self.sound_meta.save() {
+                        eprintln!("honkhonk: sound meta save error: {e}");
+                    }
                 }
                 self.editor_sound_id = None;
                 self.editor_draft_name = String::new();
@@ -2068,5 +2098,59 @@ mod tests {
         // Select All tab
         let _ = app.update(Message::SelectCategory(None));
         assert_eq!(app.filtered_sounds().len(), 2);
+    }
+
+    #[test]
+    fn unstarring_last_favorite_while_on_favorites_tab_resets_to_all() {
+        // Regression: removing the last favorite while on the Favorites tab
+        // would leave active_category pointing to the now-invisible chip,
+        // showing an empty list with no way to navigate back.
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "only".into(),
+            name: "Only Fav".into(),
+            path: "/only.mp3".into(),
+            format: crate::state::AudioFormat::Mp3,
+            duration_ms: None,
+            category: "General".into(),
+        }];
+        let _ = app.update(Message::ToggleFavorite("only".into()));
+        let _ = app.update(Message::SelectCategory(Some(FAVORITES_TAB.to_owned())));
+        assert_eq!(app.active_category(), Some(FAVORITES_TAB));
+        // Unstar the only favorite — must fall back to "All"
+        let _ = app.update(Message::ToggleFavorite("only".into()));
+        assert!(
+            app.active_category().is_none(),
+            "active_category must reset to All when last favorite is removed"
+        );
+    }
+
+    #[test]
+    fn search_matches_display_name_override() {
+        // Regression: sounds renamed via the editor were invisible to search
+        // because filtered_sounds() only matched SoundEntry.name, not the
+        // display_name stored in SoundMetaStore.
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "id1".into(),
+            name: "goose_honk_v2.wav".into(),
+            path: "/id1.wav".into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: None,
+            category: "Animals".into(),
+        }];
+        // Rename the sound via the editor workflow
+        app.sound_meta
+            .set_display_name("id1", Some("Angry Goose".to_owned()));
+        // Searching for the display name override must find the sound
+        let _ = app.update(Message::SearchChanged("angry".into()));
+        assert_eq!(
+            app.filtered_sounds().len(),
+            1,
+            "renamed sound must be discoverable by its display name"
+        );
+        // Searching for the original filename still works too
+        let _ = app.update(Message::SearchChanged("goose_honk".into()));
+        assert_eq!(app.filtered_sounds().len(), 1);
     }
 }
