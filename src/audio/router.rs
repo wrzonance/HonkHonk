@@ -77,6 +77,13 @@ pub struct Router {
     pub(super) sink_input_ports: Vec<u32>,
     /// Per-node identity + port info accumulated from `StreamEvent`s.
     pub(super) known_sources: HashMap<u32, SourceInfo>,
+    /// Output ports seen before their owning source's `SourceAdded` arrived.
+    ///
+    /// PipeWire registry replay delivers an already-playing app's ports before
+    /// the async node-`info` callback that produces `SourceAdded`, so ports can
+    /// arrive while the node is still untracked. Buffered here keyed by node ID
+    /// and drained into `known_sources` by `on_source_added`.
+    pub(super) pending_ports: HashMap<u32, Vec<u32>>,
     /// Channel to send RouterEvents back to the app layer.
     evt_tx: mpsc::Sender<RouterEvent>,
 }
@@ -132,6 +139,7 @@ impl Router {
             active_links: HashMap::new(),
             sink_input_ports: Vec::new(),
             known_sources: HashMap::new(),
+            pending_ports: HashMap::new(),
             evt_tx,
         }
     }
@@ -151,11 +159,14 @@ impl Router {
         process_id: Option<u32>,
     ) {
         let identity = AppIdentity::from_stream(app_name, process_binary, process_id);
+        // Reconcile any ports that arrived before this SourceAdded (registry
+        // replay ordering for an already-playing app).
+        let output_ports = self.pending_ports.remove(&node_id).unwrap_or_default();
         self.known_sources.insert(
             node_id,
             SourceInfo {
                 identity,
-                output_ports: Vec::new(),
+                output_ports,
             },
         );
     }
@@ -173,6 +184,9 @@ impl Router {
         }
         if let Some(info) = self.known_sources.get_mut(&node_id) {
             info.output_ports.push(port_id);
+        } else {
+            // Source not tracked yet — buffer until its SourceAdded arrives.
+            self.pending_ports.entry(node_id).or_default().push(port_id);
         }
     }
 
@@ -180,6 +194,7 @@ impl Router {
     /// in PipeWire), preserves intent for future reconnect, emits `SourceDisconnected`.
     pub fn on_source_removed(&mut self, node_id: u32) {
         self.active_links.remove(&node_id); // drop = PW link destruction
+        self.pending_ports.remove(&node_id); // discard un-reconciled buffered ports
         let identity = self
             .known_sources
             .remove(&node_id)
@@ -576,10 +591,69 @@ mod tests {
     }
 
     #[test]
-    fn port_added_for_untracked_source_is_ignored() {
+    fn port_added_for_untracked_source_is_buffered_not_in_known_sources() {
         let (mut router, _rx) = make_router();
         router.on_port_added(100, 999, "FL".into(), Direction::Output);
+        // Does not fabricate a known_sources entry (which would have an empty
+        // identity)...
         assert!(router.known_sources.is_empty());
+        // ...but is retained for reconciliation when SourceAdded arrives.
+        assert_eq!(router.pending_ports[&999], vec![100]);
+    }
+
+    #[test]
+    fn ports_before_source_are_buffered_and_reconciled() {
+        // Regression (PR #103 verification): PipeWire registry replay delivers a
+        // pre-existing app's output ports BEFORE the async SourceAdded event, so
+        // ports arrive while the node is still untracked. They must be buffered
+        // and reconciled when the source arrives — not dropped — otherwise an
+        // already-playing app (e.g. Firefox playing on launch) can never route.
+        let (mut router, _rx) = make_router();
+        router.on_port_added(131, 109, "FL".into(), Direction::Output);
+        router.on_port_added(134, 109, "FR".into(), Direction::Output);
+        router.on_source_added(
+            109,
+            Some("Firefox".into()),
+            Some("firefox".into()),
+            Some(12529),
+        );
+        let info = &router.known_sources[&109];
+        assert_eq!(info.output_ports, vec![131, 134]);
+    }
+
+    #[test]
+    fn already_playing_source_routes_after_ports_then_source() {
+        // End-to-end of the same regression: with ports delivered before the
+        // source (the replay ordering for an already-playing app), a subsequent
+        // RouteSource command must succeed, not error SourcePortsUnavailable.
+        let (mut router, rx) = make_router();
+        router.update_sink_ports(vec![10, 11]);
+        router.on_port_added(131, 109, "FL".into(), Direction::Output);
+        router.on_port_added(134, 109, "FR".into(), Direction::Output);
+        router.on_source_added(
+            109,
+            Some("Firefox".into()),
+            Some("firefox".into()),
+            Some(12529),
+        );
+
+        router.route_source_test(109);
+
+        match rx.try_recv().expect("expected a RouterEvent") {
+            RouterEvent::RouteCreated { node_id, .. } => assert_eq!(node_id, 109),
+            other => panic!("expected RouteCreated, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn source_removed_discards_buffered_ports() {
+        // Buffered ports for a node that is removed before its source resolves
+        // must not leak into a later, unrelated source on the same node id.
+        let (mut router, _rx) = make_router();
+        router.on_port_added(131, 109, "FL".into(), Direction::Output);
+        router.on_source_removed(109);
+        router.on_source_added(109, Some("Firefox".into()), None, None);
+        assert!(router.known_sources[&109].output_ports.is_empty());
     }
 
     #[test]
