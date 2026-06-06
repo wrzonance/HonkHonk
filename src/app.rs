@@ -512,6 +512,9 @@ impl HonkHonk {
                         }
                         self.monitor_devices = devices;
                     }
+                    AudioEvent::EffectsLatencyChanged(_latency) => {
+                        // Reserved for Phase 4B: update UI latency indicator.
+                    }
                 }
                 Task::none()
             }

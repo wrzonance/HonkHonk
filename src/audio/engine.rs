@@ -6,7 +6,8 @@ use std::sync::Arc;
 use super::confd;
 use super::error::AudioError;
 use super::playback::{self, PlaybackState};
-use super::registry::setup_registry_listener;
+use super::registry::{setup_registry_listener, RegistryConfig};
+use super::router::{Router, RouterEvent};
 use super::streams;
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
@@ -27,7 +28,23 @@ pub enum AudioCommand {
     SetMicPassthrough(bool),
     SetMicPassthroughLevel(f32),
     SetMonitorDevice(Option<String>),
+    Router(super::router::RouterCommand),
     Shutdown,
+    /// Set bypass state for the effect at `index` in the mixer chain.
+    SetEffectBypass {
+        index: usize,
+        bypass: bool,
+    },
+    /// Set a parameter on the effect at `index`.
+    SetEffectParam {
+        index: usize,
+        param: String,
+        value: f32,
+    },
+    /// Set the chain-level wet/dry mix.
+    SetEffectWetDry(f32),
+    /// Set chain-level bypass.
+    SetEffectChainBypass(bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +66,8 @@ pub enum AudioEvent {
     SourceFirstRun {
         confd_written: bool,
     },
+    /// The effect chain's total latency changed (in samples).
+    EffectsLatencyChanged(u32),
 }
 
 pub struct AudioHandle {
@@ -129,6 +148,8 @@ struct EngineCtx {
     evt_tx: mpsc::Sender<AudioEvent>,
     engine_volume: Rc<Cell<f32>>,
     monitor_target: Rc<RefCell<Option<String>>>,
+    mixer: Rc<RefCell<super::mixer::Mixer>>,
+    router: Rc<RefCell<Router>>,
 }
 
 fn create_virtual_sink(core: &pipewire::core::CoreRc) -> Result<pipewire::node::Node, AudioError> {
@@ -277,24 +298,17 @@ fn setup_completion_timer(
 
 /// Bootstrap the external-stream observer (issue #26).
 ///
-/// Starts the `streams::start` watcher bound to the engine's PipeWire core,
-/// then spawns a daemon thread to drain emitted events. The returned
-/// `StreamWatcher` MUST be held to end-of-scope; dropping it detaches the
-/// registry listener.
+/// Starts the `streams::start` watcher bound to the engine's PipeWire core.
+/// Returns both the watcher (MUST be held to end-of-scope — dropping detaches
+/// the registry listener) and the receiver for stream events, which the caller
+/// attaches to the PipeWire main loop so the Router receives events on the
+/// engine thread.
 fn spawn_stream_watcher(
     core: &pipewire::core::CoreRc,
-) -> Result<streams::StreamWatcher, AudioError> {
+) -> Result<(streams::StreamWatcher, mpsc::Receiver<streams::StreamEvent>), AudioError> {
     let self_pid = std::process::id();
     let (stream_watcher, stream_rx) = streams::start(core, self_pid)?;
-    std::thread::Builder::new()
-        .name("honkhonk-stream-drain".into())
-        .spawn(move || {
-            while let Ok(event) = stream_rx.recv() {
-                eprintln!("honkhonk stream: {event:?}");
-            }
-        })
-        .map_err(AudioError::ThreadSpawn)?;
-    Ok(stream_watcher)
+    Ok((stream_watcher, stream_rx))
 }
 
 fn run_engine(
@@ -323,21 +337,109 @@ fn run_engine(
     // per-user conf.d as the persistence bridge for dev/unpackaged runs.
     let _source = ensure_virtual_source(&core, &evt_tx)?;
 
+    // Shared sink input ports: updated by the registry listener (global() callback)
+    // and read by the stream listener on every SourceAdded so the Router always
+    // has the latest port list when it attempts to create links.
+    let shared_sink_ports: Rc<RefCell<Vec<u32>>> = Rc::new(RefCell::new(Vec::new()));
+
     let registry_sink_id: Rc<Cell<Option<u32>>> = Rc::new(Cell::new(None));
     let registry_guard = setup_registry_listener(
         &core,
-        registry_sink_id.clone(),
-        default_source,
-        mic_passthrough,
-        evt_tx.clone(),
+        RegistryConfig {
+            shared_sink_id: registry_sink_id.clone(),
+            default_source_name: default_source,
+            mic_passthrough,
+            evt_tx: evt_tx.clone(),
+            shared_sink_ports: shared_sink_ports.clone(),
+        },
     )?;
 
-    // External-stream observer (issue #26). Held to end-of-scope so its
-    // Drop detaches the registry listener at shutdown.
-    let _stream_watcher = spawn_stream_watcher(&core)?;
+    // External-stream observer (issue #26 / #27). The receiver is attached to
+    // the PipeWire main loop so StreamEvents are dispatched on the engine thread
+    // directly to the Router (no cross-thread handoff needed).
+    let (_stream_watcher, stream_rx) = spawn_stream_watcher(&core)?;
+
+    // Router (issue #27): persistent link router keyed by AppIdentity.
+    // RouterEvents are drained on a daemon thread; future issues (#28) will
+    // forward selected events to the UI via the AudioEvent channel.
+    let (router_evt_tx, router_evt_rx) = mpsc::channel::<RouterEvent>();
+    let router: Rc<RefCell<Router>> = Rc::new(RefCell::new(Router::new(router_evt_tx)));
+    {
+        std::thread::Builder::new()
+            .name("honkhonk-router-drain".into())
+            .spawn(move || {
+                for event in router_evt_rx {
+                    eprintln!("honkhonk router: {event:?}");
+                }
+            })
+            .map_err(AudioError::ThreadSpawn)?;
+    }
+
+    // Drain StreamEvents from the stream watcher into the Router.
+    // `stream_rx` is an `mpsc::Receiver` (not a PW channel receiver), so it
+    // cannot be attached to the PW main loop directly. We poll it on a PW timer
+    // that fires every 50 ms — low enough latency for routing, high enough
+    // interval to avoid busy-spinning.
+    let router_for_stream = router.clone();
+    let core_for_stream = core.clone();
+    let sink_ports_for_stream = shared_sink_ports.clone();
+    let _stream_drain_timer = {
+        let pw_loop_ref = mainloop.loop_();
+        let timer = pw_loop_ref.add_timer(move |_| {
+            use streams::StreamEvent;
+            while let Ok(event) = stream_rx.try_recv() {
+                match event {
+                    StreamEvent::SourceAdded {
+                        id,
+                        app_name,
+                        app_binary,
+                        app_pid,
+                        ..
+                    } => {
+                        let ports = sink_ports_for_stream.borrow().clone();
+                        let mut r = router_for_stream.borrow_mut();
+                        r.update_sink_ports(ports);
+                        r.on_source_added(id, app_name, app_binary, app_pid);
+                    }
+                    StreamEvent::SourceRemoved { id } => {
+                        router_for_stream.borrow_mut().on_source_removed(id);
+                    }
+                    StreamEvent::PortAdded {
+                        id,
+                        node_id,
+                        channel,
+                        direction,
+                    } => {
+                        router_for_stream
+                            .borrow_mut()
+                            .on_port_added(id, node_id, channel, direction);
+                        // Attempt auto-reconnect on each port addition. Succeeds once
+                        // enough ports exist (typically after FR port arrives).
+                        router_for_stream
+                            .borrow_mut()
+                            .try_auto_reconnect(node_id, &core_for_stream);
+                    }
+                    StreamEvent::SourceUpdated { .. } | StreamEvent::PortRemoved { .. } => {}
+                }
+            }
+        });
+        if let Err(e) = timer
+            .update_timer(
+                Some(std::time::Duration::from_millis(50)),
+                Some(std::time::Duration::from_millis(50)),
+            )
+            .into_result()
+        {
+            return Err(AudioError::PipeWireInit(format!(
+                "arm stream-drain timer: {e}"
+            )));
+        }
+        timer
+    };
 
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
+    let mixer = Rc::new(RefCell::new(super::mixer::Mixer::new(4096)));
 
     let ctx = EngineCtx {
         registry_sink_id,
@@ -346,6 +448,8 @@ fn run_engine(
         evt_tx: evt_tx.clone(),
         engine_volume,
         monitor_target,
+        mixer,
+        router: router.clone(),
     };
 
     let active_timer = active;
@@ -386,9 +490,53 @@ fn run_engine(
             *ctx.monitor_target.borrow_mut() = target;
             rebuild_monitor_stream(&ctx);
         }
+        AudioCommand::Router(cmd) => {
+            use super::router::RouterCommand;
+            let mut r = ctx.router.borrow_mut();
+            match cmd {
+                RouterCommand::RouteSource { source_node_id } => {
+                    r.route_source(source_node_id, &ctx.core);
+                }
+                RouterCommand::UnrouteSource { source_node_id } => {
+                    r.handle_command_unroute_source(source_node_id);
+                }
+                RouterCommand::UnrouteAll => {
+                    r.handle_command_unroute_all();
+                }
+            }
+        }
         AudioCommand::Shutdown => {
             let _ = ctx.active.borrow_mut().take();
             mainloop_quit.quit();
+        }
+        AudioCommand::SetEffectBypass { index, bypass } => {
+            if let Err(e) = ctx.mixer.borrow_mut().chain_mut().set_bypass(index, bypass) {
+                let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
+                    "set effect bypass (index {index}): {e}"
+                )));
+            }
+        }
+        AudioCommand::SetEffectParam {
+            index,
+            param,
+            value,
+        } => {
+            if let Err(e) = ctx
+                .mixer
+                .borrow_mut()
+                .chain_mut()
+                .set_param(index, &param, value)
+            {
+                let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
+                    "set effect param (index {index}, param {param:?}): {e}"
+                )));
+            }
+        }
+        AudioCommand::SetEffectWetDry(wet_dry) => {
+            ctx.mixer.borrow_mut().chain_mut().set_wet_dry(wet_dry);
+        }
+        AudioCommand::SetEffectChainBypass(bypass) => {
+            ctx.mixer.borrow_mut().chain_mut().set_chain_bypass(bypass);
         }
     });
 
@@ -493,6 +641,32 @@ mod tests {
             "alsa_output.pci-test".into(),
             "Built-in Audio".into(),
         )]);
+    }
+
+    #[test]
+    fn audio_command_set_effect_bypass_is_constructible() {
+        let _ = AudioCommand::SetEffectBypass {
+            index: 0,
+            bypass: true,
+        };
+    }
+
+    #[test]
+    fn audio_command_set_effect_wet_dry_is_constructible() {
+        let _ = AudioCommand::SetEffectWetDry(0.5);
+    }
+
+    #[test]
+    fn audio_event_effects_latency_changed_is_constructible() {
+        let _ = AudioEvent::EffectsLatencyChanged(512);
+    }
+
+    #[test]
+    fn audio_command_router_variant_is_constructible() {
+        use crate::audio::router::RouterCommand;
+        let _ = AudioCommand::Router(RouterCommand::UnrouteAll);
+        let _ = AudioCommand::Router(RouterCommand::RouteSource { source_node_id: 1 });
+        let _ = AudioCommand::Router(RouterCommand::UnrouteSource { source_node_id: 1 });
     }
 }
 
