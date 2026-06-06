@@ -39,12 +39,6 @@ impl Mixer {
         &mut self.chain
     }
 
-    /// Process a block of mic audio through the effect chain.
-    ///
-    /// Returns a slice into the internal output buffer. Caller copies this
-    /// to the virtual sink's input buffer.
-    ///
-    /// No-op passthrough when chain is empty or bypassed. Real-time safe.
     /// Prepare `Mixer` to handle blocks up to `required_capacity` samples.
     ///
     /// Call this on a cold (non-RT) path before the PipeWire process callback
