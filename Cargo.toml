@@ -33,6 +33,10 @@ url = "2"  # RFC-8089 file URI parsing for pick_directory() ashpd file chooser r
 lofty = "0.24"
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
 anyhow = "1.0.102"
+# Phase 4B voice effects DSP framework (ADR-006). Added in issue #30 (PR 1 of 6)
+# even though no fundsp graph composition is used yet — establishes the dependency
+# and allows future effect PRs to use fundsp nodes without a Cargo.toml change.
+fundsp = "0.23"
 
 [features]
 default = []
