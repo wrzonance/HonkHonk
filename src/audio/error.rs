@@ -11,6 +11,27 @@ pub enum WatcherError {
     RegistryAcquire(#[source] pipewire::Error),
 }
 
+/// Structured failure modes for the PipeWire router (issue #27).
+#[derive(Error, Debug)]
+pub enum RouterError {
+    /// `core.create_object::<Link>()` failed for a specific port pair.
+    #[error("failed to create link from src port {src_port} to sink port {sink_port}")]
+    LinkCreation {
+        src_port: u32,
+        sink_port: u32,
+        #[source]
+        source: pipewire::Error,
+    },
+
+    /// The virtual sink's input ports are not yet known (registry hasn't seen them).
+    #[error("virtual sink input ports not yet available")]
+    SinkPortsUnavailable,
+
+    /// The source node's output ports are not yet known.
+    #[error("source node {node_id} output ports not yet available")]
+    SourcePortsUnavailable { node_id: u32 },
+}
+
 #[derive(Error, Debug)]
 pub enum AudioError {
     #[error("failed to open audio file")]
@@ -68,6 +89,42 @@ pub enum AudioError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("router error")]
+    RouterError(#[source] RouterError),
+}
+
+#[cfg(test)]
+mod router_error_tests {
+    use super::*;
+
+    #[test]
+    fn router_error_link_creation_is_audio_error() {
+        let e = AudioError::RouterError(RouterError::LinkCreation {
+            src_port: 1,
+            sink_port: 2,
+            source: pipewire::Error::CreationFailed,
+        });
+        let msg = e.to_string();
+        assert!(msg.contains("router"), "expected 'router' in: {msg}");
+    }
+
+    #[test]
+    fn router_error_sink_ports_unavailable_is_constructible() {
+        let e = RouterError::SinkPortsUnavailable;
+        let msg = e.to_string();
+        assert!(msg.contains("sink"), "expected 'sink' in: {msg}");
+    }
+
+    #[test]
+    fn router_error_source_ports_unavailable_is_constructible() {
+        let e = RouterError::SourcePortsUnavailable { node_id: 42 };
+        let msg = e.to_string();
+        assert!(
+            msg.contains("42") || msg.contains("source"),
+            "expected node info in: {msg}"
+        );
+    }
 }
 
 #[derive(Error, Debug)]
