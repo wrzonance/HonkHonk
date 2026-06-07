@@ -7,11 +7,14 @@ use iced::{Element, Length, Point, Subscription, Task, Theme};
 use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
 use crate::shortcuts::ShortcutsStatus;
 use crate::state::config::Density;
-use crate::state::{AppConfig, SlotMap, SoundEntry};
+use crate::state::{AppConfig, SlotMap, SoundEntry, SoundMeta, SoundMetaStore};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
+
+/// Virtual category name used for the Favorites filtered tab.
+pub const FAVORITES_TAB: &str = "\u{2605} Favorites";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
@@ -90,6 +93,13 @@ pub enum Message {
     OpenShortcutConfig,
     /// Whether `configure_shortcuts()` (portal v2) is available on this DE/backend.
     ShortcutsConfigureAvailable(bool),
+    // Per-sound metadata
+    ToggleFavorite(String),
+    OpenSoundEditor(String),
+    CloseSoundEditor,
+    SoundEditorNameChanged(String),
+    SoundEditorVolumeChanged(String, f32),
+    SaveSoundMeta(String),
 }
 
 impl Message {
@@ -134,6 +144,17 @@ pub struct HonkHonk {
     /// One-time notice surfaced on first run when the persistent virtual mic was
     /// created programmatically (issue #49). `None` until `SourceFirstRun` fires.
     source_notice: Option<String>,
+    /// Per-sound metadata: favorites, per-sound volume, display names.
+    pub(crate) sound_meta: SoundMetaStore,
+    /// When `false`, `sound_meta.save()` is skipped (used in tests to avoid
+    /// writing to the developer's real XDG config dir during `cargo test`).
+    persist_sound_meta: bool,
+    /// Sound ID currently open in the per-sound editor overlay.
+    editor_sound_id: Option<String>,
+    /// Draft display name held while the editor is open.
+    editor_draft_name: String,
+    /// Draft per-sound volume held while the editor is open.
+    editor_draft_volume: f32,
 }
 
 fn shortcuts_stream_sub(
@@ -286,6 +307,11 @@ impl HonkHonk {
             monitor_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
             source_notice: None,
+            sound_meta: SoundMetaStore::load(),
+            persist_sound_meta: true,
+            editor_sound_id: None,
+            editor_draft_name: String::new(),
+            editor_draft_volume: 1.0,
         }
     }
 
@@ -321,6 +347,11 @@ impl HonkHonk {
             monitor_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
             source_notice: None,
+            sound_meta: SoundMetaStore::default(),
+            persist_sound_meta: false,
+            editor_sound_id: None,
+            editor_draft_name: String::new(),
+            editor_draft_volume: 1.0,
         }
     }
 
@@ -383,15 +414,36 @@ impl HonkHonk {
         self.source_notice.as_deref()
     }
 
+    pub fn sound_meta(&self) -> &SoundMetaStore {
+        &self.sound_meta
+    }
+
+    pub fn editor_sound_id(&self) -> Option<&str> {
+        self.editor_sound_id.as_deref()
+    }
+
     pub fn filtered_sounds(&self) -> Vec<&SoundEntry> {
         let query = self.search_query.to_lowercase();
         self.sounds
             .iter()
-            .filter(|s| match &self.active_category {
-                Some(cat) => s.category == *cat,
+            .filter(|s| match self.active_category.as_deref() {
+                Some(cat) if cat == FAVORITES_TAB => self.sound_meta.is_favorite(&s.id),
+                Some(cat) => s.category == cat,
                 None => true,
             })
-            .filter(|s| query.is_empty() || s.name.to_lowercase().contains(&query))
+            .filter(|s| {
+                if query.is_empty() {
+                    return true;
+                }
+                // Also match against the display-name override so sounds
+                // renamed by the user remain discoverable by their visible label.
+                let display_name_matches = self
+                    .sound_meta
+                    .get_ref(&s.id)
+                    .and_then(|m| m.display_name.as_deref())
+                    .is_some_and(|name| name.to_lowercase().contains(&query));
+                s.name.to_lowercase().contains(&query) || display_name_matches
+            })
             .collect()
     }
 
@@ -505,6 +557,11 @@ impl HonkHonk {
                     // Context menu takes priority — close it, leave search state intact.
                     self.context_menu = None;
                     self.context_menu_pos = None;
+                } else if self.editor_sound_id.is_some() {
+                    // Editor overlay takes next priority — discard draft and close.
+                    self.editor_sound_id = None;
+                    self.editor_draft_name = String::new();
+                    self.editor_draft_volume = 1.0;
                 } else if self.search_had_focus {
                     // First Esc: treat as blur — Iced already handled unfocus.
                     self.search_had_focus = false;
@@ -778,6 +835,75 @@ impl HonkHonk {
                 self.shortcut_config.open();
                 Task::none()
             }
+            Message::ToggleFavorite(sound_id) => {
+                let is_favorite = self.sound_meta.toggle_favorite(&sound_id);
+                if self.persist_sound_meta {
+                    if let Err(e) = self.sound_meta.save() {
+                        eprintln!("honkhonk: sound meta save error: {e}");
+                    }
+                }
+                // If the user just unstarred the last favorite while on the
+                // Favorites tab, the chip disappears from the header. Reset to
+                // "All" so the list doesn't show empty under an invisible filter.
+                if !is_favorite
+                    && self.active_category.as_deref() == Some(FAVORITES_TAB)
+                    && !self
+                        .sounds
+                        .iter()
+                        .any(|s| self.sound_meta.is_favorite(&s.id))
+                {
+                    self.active_category = None;
+                }
+                Task::none()
+            }
+            Message::OpenSoundEditor(sound_id) => {
+                let meta = self.sound_meta.get(&sound_id);
+                let name_override = meta.display_name.clone().unwrap_or_default();
+                let vol = meta.volume;
+                // Clear the context menu so the editor overlay surfaces immediately.
+                self.context_menu = None;
+                self.context_menu_pos = None;
+                self.editor_sound_id = Some(sound_id);
+                self.editor_draft_name = name_override;
+                self.editor_draft_volume = vol;
+                Task::none()
+            }
+            Message::CloseSoundEditor => {
+                self.editor_sound_id = None;
+                self.editor_draft_name = String::new();
+                self.editor_draft_volume = 1.0;
+                Task::none()
+            }
+            Message::SoundEditorNameChanged(name) => {
+                self.editor_draft_name = name;
+                Task::none()
+            }
+            Message::SoundEditorVolumeChanged(_sound_id, v) => {
+                self.editor_draft_volume = v.clamp(0.0, 2.0);
+                Task::none()
+            }
+            Message::SaveSoundMeta(sound_id) => {
+                let display_name = if self.editor_draft_name.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.editor_draft_name.trim().to_owned())
+                };
+                let meta = SoundMeta {
+                    favorite: self.sound_meta.get(&sound_id).favorite,
+                    volume: self.editor_draft_volume,
+                    display_name,
+                };
+                self.sound_meta.set(sound_id, meta);
+                if self.persist_sound_meta {
+                    if let Err(e) = self.sound_meta.save() {
+                        eprintln!("honkhonk: sound meta save error: {e}");
+                    }
+                }
+                self.editor_sound_id = None;
+                self.editor_draft_name = String::new();
+                self.editor_draft_volume = 1.0;
+                Task::none()
+            }
         }
     }
 
@@ -793,9 +919,17 @@ impl HonkHonk {
             if stop_before {
                 audio.send(AudioCommand::Stop);
             }
+            // Apply per-sound volume multiplier to the samples at decode time.
+            // This avoids changing master volume and allows per-sound loudness control.
+            let per_vol = self.sound_meta.volume_for(&sound.id);
+            let samples = if (per_vol - 1.0).abs() < f32::EPSILON {
+                Arc::new(decoded.samples)
+            } else {
+                Arc::new(decoded.samples.into_iter().map(|s| s * per_vol).collect())
+            };
             audio.send(AudioCommand::Play {
                 sound_id: sound.id.clone(),
-                samples: Arc::new(decoded.samples),
+                samples,
                 sample_rate: decoded.sample_rate,
                 channels: decoded.channels,
             });
@@ -854,7 +988,16 @@ impl HonkHonk {
 
         let all_chip = self.category_chip("All", self.active_category.is_none(), None, t);
 
+        let has_favorites = self
+            .sounds
+            .iter()
+            .any(|s| self.sound_meta.is_favorite(&s.id));
+        let fav_active = self.active_category.as_deref() == Some(FAVORITES_TAB);
+
         let chips: Vec<Element<'_, Message>> = std::iter::once(all_chip)
+            .chain(has_favorites.then(|| {
+                self.category_chip(FAVORITES_TAB, fav_active, Some(FAVORITES_TAB.to_owned()), t)
+            }))
             .chain(categories.into_iter().map(|cat| {
                 let is_active = self.active_category.as_deref() == Some(cat);
                 self.category_chip(cat, is_active, Some(cat.to_owned()), t)
@@ -992,6 +1135,7 @@ impl HonkHonk {
                 triggers: &self.slot_triggers,
                 shortcuts_active: matches!(self.shortcuts_status, ShortcutsStatus::Active),
                 columns: self.config.density.columns(),
+                sound_meta: &self.sound_meta,
             },
         );
 
@@ -1036,6 +1180,22 @@ impl HonkHonk {
                 self.window_size,
             );
             iced::widget::stack![base, overlay].into()
+        } else if let Some(ref sound_id) = self.editor_sound_id {
+            // Per-sound editor overlay
+            if let Some(sound) = self.sounds.iter().find(|s| s.id == *sound_id) {
+                let editor_overlay = crate::ui::sound_editor::view_editor_overlay(
+                    crate::ui::sound_editor::EditorCtx {
+                        sound,
+                        meta: self.sound_meta.get(sound_id),
+                        draft_name: &self.editor_draft_name,
+                        draft_volume: self.editor_draft_volume,
+                    },
+                    t,
+                );
+                iced::widget::stack![base, editor_overlay].into()
+            } else {
+                base.into()
+            }
         } else {
             base.into()
         }
@@ -1765,5 +1925,235 @@ mod tests {
         assert!(!app.search_had_focus);
         let _ = app.update(Message::SearchChanged("test".into()));
         assert!(app.search_had_focus);
+    }
+
+    // Per-sound metadata tests
+
+    #[test]
+    fn toggle_favorite_sets_and_clears_favorite() {
+        let mut app = HonkHonk::new_for_test();
+        assert!(!app.sound_meta.is_favorite("id1"));
+        let _ = app.update(Message::ToggleFavorite("id1".into()));
+        assert!(app.sound_meta.is_favorite("id1"));
+        let _ = app.update(Message::ToggleFavorite("id1".into()));
+        assert!(!app.sound_meta.is_favorite("id1"));
+    }
+
+    #[test]
+    fn open_sound_editor_stores_sound_id_and_draft_state() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "abc".into(),
+            name: "Honk".into(),
+            path: "/a.mp3".into(),
+            format: crate::state::AudioFormat::Mp3,
+            duration_ms: None,
+            category: "General".into(),
+        }];
+        let _ = app.update(Message::OpenSoundEditor("abc".into()));
+        assert_eq!(app.editor_sound_id(), Some("abc"));
+        // draft volume defaults to 1.0 when no meta saved
+        let eps = f32::EPSILON;
+        assert!((app.editor_draft_volume - 1.0).abs() < eps);
+    }
+
+    #[test]
+    fn open_sound_editor_clears_context_menu() {
+        // Regression: opening the editor must dismiss the context menu so the
+        // editor overlay surfaces immediately (CodeRabbit review thread).
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenContextMenu("some-id".into()));
+        assert!(app.context_menu().is_some());
+        let _ = app.update(Message::OpenSoundEditor("some-id".into()));
+        assert!(app.context_menu().is_none());
+        assert_eq!(app.editor_sound_id(), Some("some-id"));
+    }
+
+    #[test]
+    fn escape_dismisses_editor_before_search_focus() {
+        // Regression: Esc should close the editor overlay, not consume search focus.
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SearchChanged("honk".into()));
+        let _ = app.update(Message::OpenSoundEditor("abc".into()));
+        assert!(app.editor_sound_id().is_some());
+        let _ = app.update(Message::EscapePressed);
+        assert!(app.editor_sound_id().is_none());
+        // search_had_focus must NOT be consumed — editor took priority
+        assert!(app.search_had_focus);
+    }
+
+    #[test]
+    fn close_sound_editor_clears_editor_state() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::OpenSoundEditor("abc".into()));
+        let _ = app.update(Message::CloseSoundEditor);
+        assert!(app.editor_sound_id().is_none());
+    }
+
+    #[test]
+    fn sound_editor_name_changed_updates_draft() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SoundEditorNameChanged("New Name".into()));
+        assert_eq!(app.editor_draft_name, "New Name");
+    }
+
+    #[test]
+    fn sound_editor_volume_changed_updates_draft() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SoundEditorVolumeChanged("id".into(), 1.5));
+        let eps = 1e-5_f32;
+        assert!((app.editor_draft_volume - 1.5).abs() < eps);
+    }
+
+    #[test]
+    fn sound_editor_volume_changed_clamps_above_two() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SoundEditorVolumeChanged("id".into(), 5.0));
+        let eps = f32::EPSILON;
+        assert!((app.editor_draft_volume - 2.0).abs() < eps);
+    }
+
+    #[test]
+    fn save_sound_meta_persists_volume_and_name() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SoundEditorNameChanged("Renamed".into()));
+        let _ = app.update(Message::SoundEditorVolumeChanged("id1".into(), 1.25));
+        let _ = app.update(Message::SaveSoundMeta("id1".into()));
+        let meta = app.sound_meta.get("id1");
+        assert_eq!(meta.display_name.as_deref(), Some("Renamed"));
+        let eps = 1e-5_f32;
+        assert!((meta.volume - 1.25).abs() < eps);
+        assert!(
+            app.editor_sound_id().is_none(),
+            "editor must close after save"
+        );
+    }
+
+    #[test]
+    fn save_sound_meta_blank_name_stores_none() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SoundEditorNameChanged("  ".into()));
+        let _ = app.update(Message::SaveSoundMeta("id1".into()));
+        assert!(app.sound_meta.get("id1").display_name.is_none());
+    }
+
+    #[test]
+    fn save_sound_meta_preserves_existing_favorite_flag() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ToggleFavorite("id1".into()));
+        assert!(app.sound_meta.is_favorite("id1"));
+        let _ = app.update(Message::SoundEditorVolumeChanged("id1".into(), 1.5));
+        let _ = app.update(Message::SaveSoundMeta("id1".into()));
+        // favorite must still be true after saving from editor
+        assert!(app.sound_meta.is_favorite("id1"));
+    }
+
+    #[test]
+    fn filtered_sounds_favorites_tab_shows_only_starred_sounds() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![
+            SoundEntry {
+                id: "fav".into(),
+                name: "Favourite".into(),
+                path: "/fav.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: None,
+                category: "General".into(),
+            },
+            SoundEntry {
+                id: "nonfav".into(),
+                name: "Regular".into(),
+                path: "/nonfav.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: None,
+                category: "General".into(),
+            },
+        ];
+        let _ = app.update(Message::ToggleFavorite("fav".into()));
+        let _ = app.update(Message::SelectCategory(Some(FAVORITES_TAB.to_owned())));
+        let filtered = app.filtered_sounds();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "fav");
+    }
+
+    #[test]
+    fn filtered_sounds_all_tab_includes_all_when_no_favorites_selected() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![
+            SoundEntry {
+                id: "a".into(),
+                name: "A".into(),
+                path: "/a.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: None,
+                category: "X".into(),
+            },
+            SoundEntry {
+                id: "b".into(),
+                name: "B".into(),
+                path: "/b.mp3".into(),
+                format: crate::state::AudioFormat::Mp3,
+                duration_ms: None,
+                category: "Y".into(),
+            },
+        ];
+        let _ = app.update(Message::ToggleFavorite("a".into()));
+        // Select All tab
+        let _ = app.update(Message::SelectCategory(None));
+        assert_eq!(app.filtered_sounds().len(), 2);
+    }
+
+    #[test]
+    fn unstarring_last_favorite_while_on_favorites_tab_resets_to_all() {
+        // Regression: removing the last favorite while on the Favorites tab
+        // would leave active_category pointing to the now-invisible chip,
+        // showing an empty list with no way to navigate back.
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "only".into(),
+            name: "Only Fav".into(),
+            path: "/only.mp3".into(),
+            format: crate::state::AudioFormat::Mp3,
+            duration_ms: None,
+            category: "General".into(),
+        }];
+        let _ = app.update(Message::ToggleFavorite("only".into()));
+        let _ = app.update(Message::SelectCategory(Some(FAVORITES_TAB.to_owned())));
+        assert_eq!(app.active_category(), Some(FAVORITES_TAB));
+        // Unstar the only favorite — must fall back to "All"
+        let _ = app.update(Message::ToggleFavorite("only".into()));
+        assert!(
+            app.active_category().is_none(),
+            "active_category must reset to All when last favorite is removed"
+        );
+    }
+
+    #[test]
+    fn search_matches_display_name_override() {
+        // Regression: sounds renamed via the editor were invisible to search
+        // because filtered_sounds() only matched SoundEntry.name, not the
+        // display_name stored in SoundMetaStore.
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "id1".into(),
+            name: "goose_honk_v2.wav".into(),
+            path: "/id1.wav".into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: None,
+            category: "Animals".into(),
+        }];
+        // Rename the sound via the editor workflow
+        app.sound_meta
+            .set_display_name("id1", Some("Angry Goose".to_owned()));
+        // Searching for the display name override must find the sound
+        let _ = app.update(Message::SearchChanged("angry".into()));
+        assert_eq!(
+            app.filtered_sounds().len(),
+            1,
+            "renamed sound must be discoverable by its display name"
+        );
+        // Searching for the original filename still works too
+        let _ = app.update(Message::SearchChanged("goose_honk".into()));
+        assert_eq!(app.filtered_sounds().len(), 1);
     }
 }
