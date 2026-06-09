@@ -37,6 +37,11 @@ anyhow = "1.0.102"
 # even though no fundsp graph composition is used yet — establishes the dependency
 # and allows future effect PRs to use fundsp nodes without a Cargo.toml change.
 fundsp = "0.23"
+# justification: phase-vocoder pitch shifting for the PitchShiftEffect (issue #31,
+# PR 2 of 6). Pure-Rust, no_std crate (microfft + micromath) — no system -dev deps,
+# so no CI workflow changes. fundsp has no ready-made phase-vocoder pitch shifter;
+# rolling our own STFT/IFFT pipeline is out of scope for a single effect PR.
+pitch_shift = "2.1.0"
 
 [features]
 default = []
