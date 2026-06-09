@@ -1,17 +1,23 @@
 pub mod chain;
+pub mod chorus;
 pub mod commands;
 pub mod filter;
+pub mod flanger;
 pub mod modulation;
 pub mod pitch;
 pub mod preset;
+pub mod reverb;
 
 use crate::audio::error::EffectsError;
 pub use chain::EffectChain;
+pub use chorus::Chorus;
 pub use commands::{EffectsCommand, EffectsEvent};
 pub use filter::BandpassFilterEffect;
+pub use flanger::Flanger;
 pub use modulation::RingModEffect;
 pub use pitch::PitchShiftEffect;
 pub use preset::PitchPreset;
+pub use reverb::Reverb;
 
 /// A real-time audio processing unit. All methods that run inside the PipeWire
 /// process callback MUST be real-time safe: no allocation, no locks, no syscalls.
@@ -86,5 +92,39 @@ mod tests {
     fn audio_effect_latency_samples_default_zero() {
         let effect = PassThrough { bypassed: false };
         assert_eq!(effect.latency_samples(), 0);
+    }
+
+    /// Composability (issue #34): reverb, chorus and flanger must stack in an
+    /// `EffectChain` and produce a finite, processed signal.
+    #[test]
+    fn time_effects_compose_in_chain() {
+        let block = 1024usize;
+        let mut chain = EffectChain::new(block);
+        chain
+            .push_effect(Box::new(Chorus::thick_voice()), block)
+            .expect("push chorus");
+        chain
+            .push_effect(Box::new(Flanger::jet()), block)
+            .expect("push flanger");
+        chain
+            .push_effect(Box::new(Reverb::cathedral()), block)
+            .expect("push reverb");
+
+        let input: Vec<f32> = (0..block)
+            .map(|n| (std::f32::consts::TAU * 220.0 * n as f32 / 48_000.0).sin())
+            .collect();
+        let mut output = vec![0.0_f32; block];
+        chain.process(&input, &mut output, 48_000);
+
+        assert!(
+            output.iter().all(|s| s.is_finite()),
+            "stacked time-based effects must stay finite"
+        );
+        let diff = input
+            .iter()
+            .zip(output.iter())
+            .map(|(i, o)| (i - o).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(diff > 1e-3, "stacked effects should alter the signal");
     }
 }
