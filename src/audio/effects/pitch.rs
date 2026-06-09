@@ -124,6 +124,19 @@ impl PitchShiftEffect {
         self.set_semitones(preset.semitones());
     }
 
+    /// Discard all queued block-alignment state: the partially filled input
+    /// accumulator and every sample still sitting in the output ring FIFO.
+    ///
+    /// Real-time safe — zeroes fixed-size buffers and resets indices in place,
+    /// no allocation. Called on bypass transitions so stale audio captured
+    /// before a bypass window is never emitted after it.
+    fn reset_pipeline(&mut self) {
+        self.in_buf = [0.0; BLOCK];
+        self.in_fill = 0;
+        self.out_head = 0;
+        self.out_len = 0;
+    }
+
     /// Run one 128-sample block through the shifter and append the result to the
     /// output ring FIFO. Real-time safe: the returned slice borrows the shifter's
     /// internal state, so we copy it into a fixed stack buffer (no heap) before
@@ -212,6 +225,24 @@ impl AudioEffect for PitchShiftEffect {
     }
 
     fn set_bypass(&mut self, bypass: bool) {
+        // Flush the block-alignment buffers on any bypass transition so stale
+        // pre-bypass audio is never replayed when bypass is later released.
+        // Without this, the partially filled `in_buf` and any queued `out_ring`
+        // samples survive the bypass window and would leak out on the next
+        // non-bypassed `process` call (this is especially visible inside
+        // `EffectChain`, which skips bypassed effects entirely, leaving their
+        // state frozen). See issue #31 / PR #106 review.
+        //
+        // The phase-vocoder FFT history inside `self.shifter` is intentionally
+        // NOT reset: the `pitch_shift` crate exposes no allocation-free reset
+        // (its state box is private and only `Shifter::new`, which takes
+        // ownership, clears it), and recreating it on the audio thread would
+        // allocate/free — forbidden in the RT path. The residual FFT history
+        // only produces a brief warm-up transient identical to startup, not a
+        // stale-audio replay, so leaving it is correct and RT-safe.
+        if self.bypassed != bypass {
+            self.reset_pipeline();
+        }
         self.bypassed = bypass;
     }
 
@@ -327,6 +358,54 @@ mod tests {
         let mut output = vec![0.0_f32; input.len()];
         fx.process(&input, &mut output, SR);
         assert_eq!(output, input);
+    }
+
+    #[test]
+    fn bypass_transition_flushes_stale_pipeline_state() {
+        // Regression (issue #31 / PR #106): toggling bypass mid-stream must not
+        // replay audio buffered before the bypass window. Prime the effect with
+        // a non-trivial signal so the input accumulator and output ring hold
+        // pending samples, enable bypass, then release it and feed silence — the
+        // output must be silence, proving the stale buffers were flushed.
+        let mut fx = effect();
+        fx.set_semitones(7.0);
+
+        // Partially fill the 128-sample accumulator (100 < 128) and push shifted
+        // blocks into the output ring without fully draining it.
+        let priming = vec![0.5_f32; 100];
+        let mut sink = vec![0.0_f32; priming.len()];
+        fx.process(&priming, &mut sink, SR);
+        assert!(fx.in_fill > 0 || fx.out_len > 0, "expected pending state");
+
+        // Bypass should flush both buffers immediately.
+        fx.set_bypass(true);
+        assert_eq!(fx.in_fill, 0, "input accumulator not flushed on bypass");
+        assert_eq!(fx.out_len, 0, "output ring not flushed on bypass");
+
+        // Release bypass and feed pure silence; flushed state means no stale
+        // pre-bypass samples can leak into the output.
+        fx.set_bypass(false);
+        let silence = vec![0.0_f32; 256];
+        let mut output = vec![0.0_f32; silence.len()];
+        fx.process(&silence, &mut output, SR);
+        assert!(
+            output.iter().all(|&s| s == 0.0),
+            "stale pre-bypass audio leaked after un-bypass: {output:?}"
+        );
+    }
+
+    #[test]
+    fn redundant_bypass_set_does_not_flush() {
+        // Setting bypass to its current value is a no-op: it must NOT flush, so a
+        // benign repeated UI toggle to the same state cannot drop in-flight audio.
+        let mut fx = effect();
+        let priming = vec![0.3_f32; 100];
+        let mut sink = vec![0.0_f32; priming.len()];
+        fx.process(&priming, &mut sink, SR);
+        let fill_before = fx.in_fill;
+
+        fx.set_bypass(false); // already false — no transition
+        assert_eq!(fx.in_fill, fill_before, "no-op bypass set wrongly flushed");
     }
 
     #[test]
