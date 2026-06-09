@@ -1,9 +1,13 @@
 pub mod chain;
 pub mod commands;
+pub mod filter;
+pub mod modulation;
 
 use crate::audio::error::EffectsError;
 pub use chain::EffectChain;
 pub use commands::{EffectsCommand, EffectsEvent};
+pub use filter::BandpassFilterEffect;
+pub use modulation::RingModEffect;
 
 /// A real-time audio processing unit. All methods that run inside the PipeWire
 /// process callback MUST be real-time safe: no allocation, no locks, no syscalls.
