@@ -187,9 +187,11 @@ mod tests {
     #[test]
     fn reverb_spreads_impulse_energy_over_time() {
         // A reverb of a single-sample impulse should smear energy well past the
-        // impulse into a decorrelated tail. The FDN has a pre-delay of several
-        // hundred samples (shortest delay-line tap of a 10-30 m room), so we use
-        // a generously long buffer and measure energy in its back half.
+        // impulse into a decorrelated tail. The FDN's wet tail only begins after
+        // its shortest internal delay-line tap (10-30 m room => several hundred
+        // samples of earliest wet-tail onset). This is internal FDN timing, not a
+        // host-compensable pipeline latency (`latency_samples()` returns 0), so we
+        // use a generously long buffer and measure energy in its back half.
         let len = 8192;
         let mut fx = Reverb::new(0.6, 0.7);
         let input = impulse(len);
