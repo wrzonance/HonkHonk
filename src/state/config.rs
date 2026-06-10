@@ -81,6 +81,10 @@ pub struct AppConfig {
     pub renderer: Renderer,
     #[serde(default)]
     pub monitor_device: Option<String>,
+    /// Selected microphone (input) device `node.name`; `None` = Auto (follow the
+    /// system default, excluding HonkHonk's own virtual source).
+    #[serde(default)]
+    pub input_device: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -104,6 +108,7 @@ impl Default for AppConfig {
             mic_passthrough_level: default_level(),
             renderer: Renderer::Wgpu,
             monitor_device: None,
+            input_device: None,
         }
     }
 }
@@ -259,6 +264,7 @@ mod tests {
             mic_passthrough_level: 0.75,
             renderer: Renderer::Wgpu,
             monitor_device: None,
+            input_device: None,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -283,6 +289,7 @@ mod tests {
             mic_passthrough_level: 0.5,
             renderer: Renderer::Wgpu,
             monitor_device: None,
+            input_device: None,
         };
 
         config.save_to(&path).unwrap();
@@ -412,6 +419,39 @@ mod tests {
         assert_eq!(
             back.monitor_device.as_deref(),
             Some("alsa_output.pci-0000_00_1f.3.analog-stereo")
+        );
+    }
+
+    #[test]
+    fn missing_input_device_field_deserializes_to_none() {
+        // Simulates loading a config written before the input_device field existed.
+        let json = r#"{"sound_directories":[],"volume":0.85,"window_width":900,"window_height":600,"theme":"Dark","density":"regular","mic_passthrough":true,"mic_passthrough_level":1.0,"renderer":"wgpu","monitor_device":null}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.input_device.is_none());
+    }
+
+    #[test]
+    fn input_device_none_round_trips_json() {
+        let config = AppConfig {
+            input_device: None,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(back.input_device.is_none());
+    }
+
+    #[test]
+    fn input_device_some_round_trips_json() {
+        let config = AppConfig {
+            input_device: Some("alsa_input.usb-OBSBOT_Meet_2-00.analog-stereo".into()),
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.input_device.as_deref(),
+            Some("alsa_input.usb-OBSBOT_Meet_2-00.analog-stereo")
         );
     }
 }

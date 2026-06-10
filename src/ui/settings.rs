@@ -23,6 +23,24 @@ impl std::fmt::Display for MonitorDeviceOption {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InputDeviceOption {
+    Auto,
+    Device {
+        node_name: String,
+        display_name: String,
+    },
+}
+
+impl std::fmt::Display for InputDeviceOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Auto => write!(f, "Auto (system default)"),
+            Self::Device { display_name, .. } => write!(f, "{display_name}"),
+        }
+    }
+}
 use crate::settings::{
     ControlType, SettingCategory, SettingDef, SettingId, SettingValue, SETTINGS_REGISTRY,
 };
@@ -467,6 +485,61 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
             .unwrap_or(MonitorDeviceOption::Default),
     });
 
+    let input_options: Vec<InputDeviceOption> = std::iter::once(InputDeviceOption::Auto)
+        .chain(state.input_devices.iter().map(|(node_name, display_name)| {
+            InputDeviceOption::Device {
+                node_name: node_name.clone(),
+                display_name: display_name.clone(),
+            }
+        }))
+        .collect();
+
+    let selected_input = Some(match &state.config.input_device {
+        None => InputDeviceOption::Auto,
+        Some(name) => state
+            .input_devices
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(n, d)| InputDeviceOption::Device {
+                node_name: n.clone(),
+                display_name: d.clone(),
+            })
+            .unwrap_or(InputDeviceOption::Auto),
+    });
+
+    let input_row = container(
+        row![
+            column![
+                text("Microphone input")
+                    .size(theme::font::BODY)
+                    .color(t.ink())
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    }),
+                text("Which real mic to mix into the virtual mic.")
+                    .size(theme::font::LABEL)
+                    .color(t.ink_dim()),
+            ]
+            .spacing(theme::space::XS)
+            .width(Length::Fixed(260.0)),
+            pick_list(input_options, selected_input, |opt: InputDeviceOption| {
+                match opt {
+                    InputDeviceOption::Auto => Message::InputDeviceChanged(None),
+                    InputDeviceOption::Device { node_name, .. } => {
+                        Message::InputDeviceChanged(Some(node_name))
+                    }
+                }
+            })
+            .width(Length::Fixed(280.0)),
+        ]
+        .spacing(theme::space::XL)
+        .align_y(Alignment::Center)
+        .width(Length::Fill),
+    )
+    .width(Length::Fill)
+    .padding([18.0, 0.0]);
+
     let device_row = container(
         row![
             column![
@@ -507,7 +580,7 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
     section_layout(
         "Audio",
         "Where HonkHonk listens and speaks.",
-        column![status_badge, registry_rows, device_row]
+        column![status_badge, registry_rows, input_row, device_row]
             .spacing(theme::space::LG)
             .into(),
         t,
