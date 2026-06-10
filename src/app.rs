@@ -86,6 +86,7 @@ pub enum Message {
     MicPassthroughChanged(bool),
     MicPassthroughLevelChanged(f32),
     MonitorDeviceChanged(Option<String>),
+    InputDeviceChanged(Option<String>),
     /// Carries the command sender from the portal stream.
     /// Two `ShortcutHandle` messages are never meaningfully equal — treated as always-unequal.
     ShortcutHandle(crate::shortcuts::PortalCmdSender),
@@ -140,6 +141,7 @@ pub struct HonkHonk {
     selected_slot: Option<u8>,
     pub(crate) settings_section: SettingsSection,
     pub monitor_devices: Vec<(String, String)>,
+    pub input_devices: Vec<(String, String)>,
     shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService,
     /// One-time notice surfaced on first run when the persistent virtual mic was
     /// created programmatically (issue #49). `None` until `SourceFirstRun` fires.
@@ -305,6 +307,7 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
+            input_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
             source_notice: None,
             sound_meta: SoundMetaStore::load(),
@@ -345,6 +348,7 @@ impl HonkHonk {
             selected_slot: None,
             settings_section: SettingsSection::default(),
             monitor_devices: Vec::new(),
+            input_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
             source_notice: None,
             sound_meta: SoundMetaStore::default(),
@@ -528,6 +532,26 @@ impl HonkHonk {
                             }
                         }
                         self.monitor_devices = devices;
+                    }
+                    AudioEvent::InputDevicesChanged(devices) => {
+                        if let Some(ref target) = self.config.input_device.clone() {
+                            let was_visible = self.input_devices.iter().any(|(n, _)| n == target);
+                            let still_visible = devices.iter().any(|(n, _)| n == target);
+                            if was_visible && !still_visible {
+                                let config = AppConfig {
+                                    input_device: None,
+                                    ..self.config.clone()
+                                };
+                                if let Err(e) = config.save() {
+                                    eprintln!("honkhonk: failed to save config: {e}");
+                                }
+                                self.config = config;
+                                if let Some(ref audio) = self.audio {
+                                    audio.send(AudioCommand::SetInputDevice(None));
+                                }
+                            }
+                        }
+                        self.input_devices = devices;
                     }
                     AudioEvent::EffectsLatencyChanged(_latency) => {
                         // Reserved for Phase 4B: update UI latency indicator.
@@ -820,6 +844,23 @@ impl HonkHonk {
                 self.config = config;
                 if let Some(ref audio) = self.audio {
                     audio.send(AudioCommand::SetMonitorDevice(target));
+                }
+                Task::none()
+            }
+            Message::InputDeviceChanged(target) => {
+                if self.config.input_device == target {
+                    return Task::none();
+                }
+                let config = AppConfig {
+                    input_device: target.clone(),
+                    ..self.config.clone()
+                };
+                if let Err(e) = config.save() {
+                    eprintln!("honkhonk: failed to save config: {e}");
+                }
+                self.config = config;
+                if let Some(ref audio) = self.audio {
+                    audio.send(AudioCommand::SetInputDevice(target));
                 }
                 Task::none()
             }
@@ -1834,6 +1875,89 @@ mod tests {
         assert!(
             app.config.monitor_device.is_none(),
             "must clear config when device was visible and then removed"
+        );
+    }
+
+    #[test]
+    fn input_device_changed_to_none_clears_config() {
+        let mut app = HonkHonk::new_for_test();
+        app.config = AppConfig {
+            input_device: Some("alsa_input.pci-test".into()),
+            ..AppConfig::default()
+        };
+        let _ = app.update(Message::InputDeviceChanged(None));
+        assert!(app.config.input_device.is_none());
+    }
+
+    #[test]
+    fn input_device_changed_to_some_sets_config() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::InputDeviceChanged(Some(
+            "alsa_input.usb-mic".into(),
+        )));
+        assert_eq!(
+            app.config.input_device.as_deref(),
+            Some("alsa_input.usb-mic")
+        );
+    }
+
+    #[test]
+    fn input_device_changed_same_value_is_idempotent() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::InputDeviceChanged(None));
+        let _ = app.update(Message::InputDeviceChanged(None));
+        assert!(app.config.input_device.is_none());
+    }
+
+    #[test]
+    fn audio_event_input_devices_changed_updates_input_devices() {
+        let mut app = HonkHonk::new_for_test();
+        let devices = vec![("alsa_input.usb-mic".into(), "USB Microphone".into())];
+        let _ = app.update(Message::AudioEvent(AudioEvent::InputDevicesChanged(
+            devices.clone(),
+        )));
+        assert_eq!(app.input_devices, devices);
+    }
+
+    #[test]
+    fn input_devices_changed_does_not_clear_device_before_it_is_first_seen() {
+        // Startup race: saved mic not yet enumerated — must NOT clear config.
+        let mut app = HonkHonk::new_for_test();
+        app.config = AppConfig {
+            input_device: Some("alsa_input.usb-mic".into()),
+            ..AppConfig::default()
+        };
+        let _ = app.update(Message::AudioEvent(AudioEvent::InputDevicesChanged(vec![
+            ("alsa_input.onboard".into(), "Onboard Mic".into()),
+        ])));
+        assert_eq!(
+            app.config.input_device.as_deref(),
+            Some("alsa_input.usb-mic"),
+            "must not clear saved mic before it has been enumerated"
+        );
+    }
+
+    #[test]
+    fn input_devices_changed_clears_device_after_it_disappears() {
+        // Runtime removal: mic was known, then unplugged — clear config.
+        let mut app = HonkHonk::new_for_test();
+        app.config = AppConfig {
+            input_device: Some("alsa_input.usb-mic".into()),
+            ..AppConfig::default()
+        };
+        let _ = app.update(Message::AudioEvent(AudioEvent::InputDevicesChanged(vec![
+            ("alsa_input.usb-mic".into(), "USB Microphone".into()),
+        ])));
+        assert_eq!(
+            app.config.input_device.as_deref(),
+            Some("alsa_input.usb-mic")
+        );
+        let _ = app.update(Message::AudioEvent(AudioEvent::InputDevicesChanged(vec![
+            ("alsa_input.onboard".into(), "Onboard Mic".into()),
+        ])));
+        assert!(
+            app.config.input_device.is_none(),
+            "must clear config when mic was visible and then removed"
         );
     }
 

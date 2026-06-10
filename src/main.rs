@@ -62,14 +62,17 @@ fn main() -> iced::Result {
         }
     };
 
-    let audio_handle =
-        match honkhonk::audio::spawn(config.mic_passthrough, config.monitor_device.clone()) {
-            Ok(handle) => handle,
-            Err(e) => {
-                eprintln!("fatal: failed to start audio engine: {e}");
-                std::process::exit(1);
-            }
-        };
+    let audio_handle = match honkhonk::audio::spawn(
+        config.mic_passthrough,
+        config.monitor_device.clone(),
+        config.input_device.clone(),
+    ) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("fatal: failed to start audio engine: {e}");
+            std::process::exit(1);
+        }
+    };
 
     let tray_handle = std::sync::Mutex::new(Some(tray_handle));
     let audio_handle = std::sync::Mutex::new(Some(audio_handle));
