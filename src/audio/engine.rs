@@ -500,7 +500,12 @@ fn run_engine(
             rebuild_monitor_stream(&ctx);
         }
         AudioCommand::SetInputDevice(target) => {
-            registry_guard.set_input_device(target);
+            // Resolve runtime "Auto" the same way as startup: an explicit device
+            // wins, otherwise follow the system default source (sanitized in the
+            // registry). Keeps the picker's Auto consistent across startup and
+            // live switches.
+            let resolved = target.or_else(query_default_source_name);
+            registry_guard.set_input_device(resolved);
         }
         AudioCommand::Router(cmd) => {
             use super::router::RouterCommand;
