@@ -28,6 +28,9 @@ pub enum AudioCommand {
     SetMicPassthrough(bool),
     SetMicPassthroughLevel(f32),
     SetMonitorDevice(Option<String>),
+    /// Select the microphone (input) source to pass through. `None` = Auto
+    /// (system default, excluding HonkHonk's own virtual source).
+    SetInputDevice(Option<String>),
     Router(super::router::RouterCommand),
     Shutdown,
     /// Set bypass state for the effect at `index` in the mixer chain.
@@ -59,6 +62,9 @@ pub enum AudioEvent {
     Progress(f32),
     Error(String),
     OutputDevicesChanged(Vec<(String, String)>),
+    /// The set of real microphone (input) sources changed; carries
+    /// (node_name, display_name) for each, to populate the input-device picker.
+    InputDevicesChanged(Vec<(String, String)>),
     /// Emitted once on a first run that created the source programmatically and
     /// wrote the per-user conf.d. The UI shows a one-time notice telling the
     /// user the "HonkHonk Mic" device now persists and to select it in
@@ -96,6 +102,7 @@ impl AudioHandle {
 pub fn spawn(
     initial_passthrough: bool,
     initial_monitor_device: Option<String>,
+    initial_input_device: Option<String>,
 ) -> Result<AudioHandle, AudioError> {
     let (cmd_tx, cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
@@ -103,11 +110,13 @@ pub fn spawn(
     std::thread::Builder::new()
         .name("honkhonk-pw".into())
         .spawn(move || {
-            let default_source = query_default_source_name();
+            // An explicitly chosen input device wins; otherwise fall back to the
+            // system default source (the registry sanitizes out our own mic).
+            let preferred_source = initial_input_device.or_else(query_default_source_name);
             if let Err(e) = run_engine(
                 cmd_rx,
                 evt_tx.clone(),
-                default_source,
+                preferred_source,
                 initial_passthrough,
                 initial_monitor_device,
             ) {
@@ -314,7 +323,7 @@ fn spawn_stream_watcher(
 fn run_engine(
     cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
-    default_source: Option<String>,
+    preferred_source: Option<String>,
     initial_passthrough: bool,
     initial_monitor_device: Option<String>,
 ) -> Result<(), AudioError> {
@@ -347,7 +356,7 @@ fn run_engine(
         &core,
         RegistryConfig {
             shared_sink_id: registry_sink_id.clone(),
-            default_source_name: default_source,
+            default_source_name: preferred_source,
             mic_passthrough,
             evt_tx: evt_tx.clone(),
             shared_sink_ports: shared_sink_ports.clone(),
@@ -490,6 +499,14 @@ fn run_engine(
             *ctx.monitor_target.borrow_mut() = target;
             rebuild_monitor_stream(&ctx);
         }
+        AudioCommand::SetInputDevice(target) => {
+            // Resolve runtime "Auto" the same way as startup: an explicit device
+            // wins, otherwise follow the system default source (sanitized in the
+            // registry). Keeps the picker's Auto consistent across startup and
+            // live switches.
+            let resolved = target.or_else(query_default_source_name);
+            registry_guard.set_input_device(resolved);
+        }
         AudioCommand::Router(cmd) => {
             use super::router::RouterCommand;
             let mut r = ctx.router.borrow_mut();
@@ -569,6 +586,16 @@ mod tests {
     #[test]
     fn audio_command_set_monitor_device_some_is_constructible() {
         let _ = AudioCommand::SetMonitorDevice(Some("alsa_output.pci-test".into()));
+    }
+
+    #[test]
+    fn audio_command_set_input_device_none_is_constructible() {
+        let _ = AudioCommand::SetInputDevice(None);
+    }
+
+    #[test]
+    fn audio_command_set_input_device_some_is_constructible() {
+        let _ = AudioCommand::SetInputDevice(Some("alsa_input.pci-test".into()));
     }
 
     #[test]
