@@ -104,6 +104,34 @@ fn try_create_monitor_links(
     }
 }
 
+/// Decide whether a discovered real `Audio/Source` node should become the
+/// selected microphone for passthrough.
+///
+/// An exact match against the user's `preferred` source always wins; otherwise
+/// the first real source seen (`!mic_selected`) is taken as a fallback. The
+/// virtual source is filtered out by the caller (`name != SOURCE_NODE_NAME`) and
+/// `preferred` is expected to be sanitized via [`sanitize_preferred_source`], so
+/// HonkHonk's own mic can never be chosen here.
+fn select_mic_node(preferred: Option<&str>, node_name: &str, mic_selected: bool) -> bool {
+    match preferred {
+        Some(pref) if pref == node_name => true,
+        Some(_) => false,
+        None => !mic_selected,
+    }
+}
+
+/// Strip HonkHonk's own virtual source from the preferred-mic name.
+///
+/// When `honkhonk-mic` is PipeWire's `default.audio.source` (the bootstrap
+/// self-reference: our persistent virtual mic becomes the system default),
+/// `query_default_source_name` returns our own node name. Used as the preferred
+/// source it would match no real device, so [`select_mic_node`] would never pick
+/// a mic and passthrough would be permanently silent. Treat that value as "no
+/// preference" so the first real source is chosen instead.
+fn sanitize_preferred_source(name: Option<String>) -> Option<String> {
+    name.filter(|n| n != SOURCE_NODE_NAME)
+}
+
 fn handle_registry_global(
     global: &pipewire::registry::GlobalObject<&pipewire::spa::utils::dict::DictRef>,
     state: &mut RegistryState,
@@ -123,15 +151,12 @@ fn handle_registry_global(
             } else if name == SOURCE_NODE_NAME {
                 state.vsource_node_id = Some(global.id);
             } else if class == "Audio/Source" && name != SOURCE_NODE_NAME {
-                match &state.preferred_source_name {
-                    Some(pref) if pref == name => {
-                        state.mic_node_id = Some(global.id);
-                    }
-                    Some(_) => {}
-                    None if state.mic_node_id.is_none() => {
-                        state.mic_node_id = Some(global.id);
-                    }
-                    None => {}
+                if select_mic_node(
+                    state.preferred_source_name.as_deref(),
+                    name,
+                    state.mic_node_id.is_some(),
+                ) {
+                    state.mic_node_id = Some(global.id);
                 }
             } else if class == "Audio/Sink" && name != SINK_NODE_NAME && name != SOURCE_NODE_NAME {
                 let description = props.get("node.description").unwrap_or(name);
@@ -289,6 +314,64 @@ mod tests {
             .collect();
         assert!(pairs.is_empty());
     }
+
+    #[test]
+    fn sanitize_preferred_source_drops_virtual_mic() {
+        // The bootstrap self-reference: PipeWire's default.audio.source is our
+        // own virtual mic. It must not survive as a preferred source.
+        assert_eq!(
+            sanitize_preferred_source(Some(SOURCE_NODE_NAME.to_string())),
+            None
+        );
+    }
+
+    #[test]
+    fn sanitize_preferred_source_keeps_real_device() {
+        let real = Some("alsa_input.usb-OBSBOT_Meet_2".to_string());
+        assert_eq!(sanitize_preferred_source(real.clone()), real);
+    }
+
+    #[test]
+    fn sanitize_preferred_source_passes_through_none() {
+        assert_eq!(sanitize_preferred_source(None), None);
+    }
+
+    #[test]
+    fn select_mic_node_picks_first_real_when_no_preference() {
+        assert!(select_mic_node(None, "alsa_input.usb-OBSBOT_Meet_2", false));
+    }
+
+    #[test]
+    fn select_mic_node_skips_further_sources_once_selected() {
+        assert!(!select_mic_node(None, "alsa_input.second_mic", true));
+    }
+
+    #[test]
+    fn select_mic_node_honors_exact_preferred_even_if_already_selected() {
+        assert!(select_mic_node(Some("micA"), "micA", true));
+    }
+
+    #[test]
+    fn select_mic_node_skips_non_preferred_when_preference_set() {
+        assert!(!select_mic_node(Some("micA"), "micB", false));
+    }
+
+    #[test]
+    fn virtual_mic_as_system_default_still_selects_real_mic() {
+        // Regression: mic passthrough was silent because honkhonk-mic registers
+        // as PipeWire's default.audio.source, so the queried preferred source is
+        // our own virtual mic. Sanitizing it to None must let the first real
+        // Audio/Source be selected — otherwise mic_node_id stays None forever.
+        let preferred = sanitize_preferred_source(Some(SOURCE_NODE_NAME.to_string()));
+        assert_eq!(
+            preferred, None,
+            "virtual mic must not be a preferred source"
+        );
+        assert!(
+            select_mic_node(preferred.as_deref(), "alsa_input.usb-OBSBOT_Meet_2", false),
+            "a real mic must be selected when the only 'preference' was our own virtual mic"
+        );
+    }
 }
 
 fn sink_names(state: &RegistryState) -> Vec<(String, String)> {
@@ -325,7 +408,7 @@ pub fn setup_registry_listener(
         shared_sink_ports,
     } = cfg;
     let state = Rc::new(RefCell::new(RegistryState {
-        preferred_source_name: default_source_name,
+        preferred_source_name: sanitize_preferred_source(default_source_name),
         sink_node_id: None,
         sink_input_ports: Vec::new(),
         sink_output_ports: Vec::new(),
