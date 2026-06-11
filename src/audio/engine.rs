@@ -563,6 +563,107 @@ fn run_engine(
     Ok(())
 }
 
+fn rebuild_monitor_stream(ctx: &EngineCtx) {
+    if let Some(ref mut ap) = *ctx.active.borrow_mut() {
+        let (rate, ch) = {
+            let ms = ap.monitor_state.borrow();
+            (ms.sample_rate(), ms.channels())
+        };
+        let target = ctx.monitor_target.borrow().clone();
+        match playback::create_monitor_stream(
+            ctx.core.clone(),
+            ap.monitor_state.clone(),
+            rate,
+            ch,
+            target.as_deref(),
+        ) {
+            Ok(stream) => ap.monitor_stream = Some(stream),
+            Err(e) => {
+                ap.monitor_stream = None;
+                ap.monitor_state.borrow_mut().stop();
+                let _ = ctx
+                    .evt_tx
+                    .send(AudioEvent::Error(format!("monitor stream rebuild: {e}")));
+            }
+        }
+    }
+}
+
+fn handle_play(
+    ctx: &EngineCtx,
+    sound_id: String,
+    samples: Arc<Vec<f32>>,
+    sample_rate: u32,
+    channels: u16,
+) {
+    if ctx.registry_sink_id.get().is_none() {
+        let _ = ctx
+            .evt_tx
+            .send(AudioEvent::Error("virtual sink not yet registered".into()));
+        return;
+    }
+
+    let prev = ctx.active.borrow_mut().take();
+    if let Some(ap) = prev {
+        let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
+            sound_id: ap.sound_id,
+        });
+    }
+
+    let vol = ctx.engine_volume.get();
+    let sink_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
+    sink_state
+        .borrow_mut()
+        .start(sound_id.clone(), samples.clone(), sample_rate, channels);
+
+    let mon_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
+    mon_state
+        .borrow_mut()
+        .start(sound_id.clone(), samples, sample_rate, channels);
+
+    let target = ctx.monitor_target.borrow().clone();
+    let sink_stream = playback::create_sink_stream(
+        ctx.core.clone(),
+        sink_state.clone(),
+        SINK_NODE_NAME,
+        sample_rate,
+        channels,
+    );
+    let mon_stream = playback::create_monitor_stream(
+        ctx.core.clone(),
+        mon_state.clone(),
+        sample_rate,
+        channels,
+        target.as_deref(),
+    );
+
+    let sink_s = match sink_stream {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = ctx.evt_tx.send(AudioEvent::Error(e.to_string()));
+            return;
+        }
+    };
+    let monitor_stream = match mon_stream {
+        Ok(s) => Some(s),
+        Err(e) => {
+            mon_state.borrow_mut().stop();
+            let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
+                "monitor stream unavailable: {e}"
+            )));
+            None
+        }
+    };
+    *ctx.active.borrow_mut() = Some(ActivePlayback {
+        sound_id: sound_id.clone(),
+        sink_state,
+        monitor_state: mon_state,
+        _sink_stream: sink_s,
+        monitor_stream,
+    });
+    let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -695,105 +796,4 @@ mod tests {
         let _ = AudioCommand::Router(RouterCommand::RouteSource { source_node_id: 1 });
         let _ = AudioCommand::Router(RouterCommand::UnrouteSource { source_node_id: 1 });
     }
-}
-
-fn rebuild_monitor_stream(ctx: &EngineCtx) {
-    if let Some(ref mut ap) = *ctx.active.borrow_mut() {
-        let (rate, ch) = {
-            let ms = ap.monitor_state.borrow();
-            (ms.sample_rate(), ms.channels())
-        };
-        let target = ctx.monitor_target.borrow().clone();
-        match playback::create_monitor_stream(
-            ctx.core.clone(),
-            ap.monitor_state.clone(),
-            rate,
-            ch,
-            target.as_deref(),
-        ) {
-            Ok(stream) => ap.monitor_stream = Some(stream),
-            Err(e) => {
-                ap.monitor_stream = None;
-                ap.monitor_state.borrow_mut().stop();
-                let _ = ctx
-                    .evt_tx
-                    .send(AudioEvent::Error(format!("monitor stream rebuild: {e}")));
-            }
-        }
-    }
-}
-
-fn handle_play(
-    ctx: &EngineCtx,
-    sound_id: String,
-    samples: Arc<Vec<f32>>,
-    sample_rate: u32,
-    channels: u16,
-) {
-    if ctx.registry_sink_id.get().is_none() {
-        let _ = ctx
-            .evt_tx
-            .send(AudioEvent::Error("virtual sink not yet registered".into()));
-        return;
-    }
-
-    let prev = ctx.active.borrow_mut().take();
-    if let Some(ap) = prev {
-        let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
-            sound_id: ap.sound_id,
-        });
-    }
-
-    let vol = ctx.engine_volume.get();
-    let sink_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
-    sink_state
-        .borrow_mut()
-        .start(sound_id.clone(), samples.clone(), sample_rate, channels);
-
-    let mon_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
-    mon_state
-        .borrow_mut()
-        .start(sound_id.clone(), samples, sample_rate, channels);
-
-    let target = ctx.monitor_target.borrow().clone();
-    let sink_stream = playback::create_sink_stream(
-        ctx.core.clone(),
-        sink_state.clone(),
-        SINK_NODE_NAME,
-        sample_rate,
-        channels,
-    );
-    let mon_stream = playback::create_monitor_stream(
-        ctx.core.clone(),
-        mon_state.clone(),
-        sample_rate,
-        channels,
-        target.as_deref(),
-    );
-
-    let sink_s = match sink_stream {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = ctx.evt_tx.send(AudioEvent::Error(e.to_string()));
-            return;
-        }
-    };
-    let monitor_stream = match mon_stream {
-        Ok(s) => Some(s),
-        Err(e) => {
-            mon_state.borrow_mut().stop();
-            let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
-                "monitor stream unavailable: {e}"
-            )));
-            None
-        }
-    };
-    *ctx.active.borrow_mut() = Some(ActivePlayback {
-        sound_id: sound_id.clone(),
-        sink_state,
-        monitor_state: mon_state,
-        _sink_stream: sink_s,
-        monitor_stream,
-    });
-    let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
 }
