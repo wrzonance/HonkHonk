@@ -7,7 +7,7 @@ use std::time::Duration;
 fn virtual_sink_appears_in_wpctl() {
     pipewire::init();
 
-    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+    let handle = honkhonk::audio::spawn(true, None, None).expect("failed to spawn audio engine");
 
     let event = handle
         .recv_timeout(Duration::from_secs(5))
@@ -122,7 +122,7 @@ fn get_pw_links() -> String {
 }
 
 fn spawn_engine_and_wait() -> honkhonk::audio::AudioHandle {
-    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+    let handle = honkhonk::audio::spawn(true, None, None).expect("failed to spawn audio engine");
     let event = handle
         .recv_timeout(Duration::from_secs(5))
         .expect("no Ready event within 5s");
@@ -260,7 +260,7 @@ fn audio_pipeline_end_to_end() {
 fn engine_cleans_up_on_shutdown() {
     pipewire::init();
 
-    let handle = honkhonk::audio::spawn().expect("spawn failed");
+    let handle = honkhonk::audio::spawn(true, None, None).expect("spawn failed");
     let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
 
@@ -287,7 +287,7 @@ fn engine_cleans_up_on_shutdown() {
 fn play_sound_emits_started_and_finished_events() {
     pipewire::init();
 
-    let handle = honkhonk::audio::spawn().expect("failed to spawn audio engine");
+    let handle = honkhonk::audio::spawn(true, None, None).expect("failed to spawn audio engine");
 
     let event = handle
         .recv_timeout(Duration::from_secs(5))
@@ -336,7 +336,7 @@ fn play_sound_emits_started_and_finished_events() {
 fn stop_command_halts_playback() {
     pipewire::init();
 
-    let handle = honkhonk::audio::spawn().expect("spawn failed");
+    let handle = honkhonk::audio::spawn(true, None, None).expect("spawn failed");
     let event = handle.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(matches!(event, honkhonk::audio::AudioEvent::Ready));
 
