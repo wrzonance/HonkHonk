@@ -1187,14 +1187,22 @@ impl HonkHonk {
             self.config.volume,
         );
 
-        let mut items: Vec<Element<'_, Message>> = Vec::new();
+        // The banner shares one stable column slot with the header: inserting
+        // it as its own top-level slot would shift every later sibling during
+        // tree diffing when it appears/dismisses, wiping the grid scrollable's
+        // offset (#112).
+        let mut top = iced::widget::Column::new().spacing(theme::space::MD);
         if let Some(banner) = self.view_shortcuts_banner(t) {
-            items.push(banner);
+            top = top.push(banner);
         }
-        items.push(header);
-        items.push(chips);
-        items.push(scrollable(grid).height(Length::Fill).into());
-        items.push(now_playing);
+        let top = top.push(header);
+
+        let items: Vec<Element<'_, Message>> = vec![
+            top.into(),
+            chips,
+            scrollable(grid).height(Length::Fill).into(),
+            now_playing,
+        ];
 
         let content = iced::widget::Column::with_children(items).spacing(theme::space::MD);
 
@@ -1207,10 +1215,19 @@ impl HonkHonk {
                 ..Default::default()
             });
 
+        // iced reconciles widget state positionally: flipping the root between
+        // `container` (no overlay) and `stack![...]` (overlay open) discards
+        // every descendant's state — including the grid scrollable's offset,
+        // which made the list snap to the top on right-click (#112). Keep the
+        // root a Stack with the base layout always at child 0; overlays only
+        // append/remove child 1, so the base subtree (and its scroll position)
+        // survives the diff.
+        let mut layers: Vec<Element<'_, Message>> = vec![base.into()];
+
         // Overlay context menu at window level so cursor coords map exactly.
         if let (Some(ref sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
             let found = self.sounds.iter().find(|s| s.id == *sound_id);
-            let overlay = sound_grid::context_menu_overlay(
+            layers.push(sound_grid::context_menu_overlay(
                 found,
                 sound_grid::SlotCtx {
                     slots: &self.slots,
@@ -1219,12 +1236,11 @@ impl HonkHonk {
                 t,
                 pos,
                 self.window_size,
-            );
-            iced::widget::stack![base, overlay].into()
+            ));
         } else if let Some(ref sound_id) = self.editor_sound_id {
             // Per-sound editor overlay
             if let Some(sound) = self.sounds.iter().find(|s| s.id == *sound_id) {
-                let editor_overlay = crate::ui::sound_editor::view_editor_overlay(
+                layers.push(crate::ui::sound_editor::view_editor_overlay(
                     crate::ui::sound_editor::EditorCtx {
                         sound,
                         meta: self.sound_meta.get(sound_id),
@@ -1232,14 +1248,14 @@ impl HonkHonk {
                         draft_volume: self.editor_draft_volume,
                     },
                     t,
-                );
-                iced::widget::stack![base, editor_overlay].into()
-            } else {
-                base.into()
+                ));
             }
-        } else {
-            base.into()
         }
+
+        iced::widget::Stack::with_children(layers)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -1347,6 +1363,29 @@ mod tests {
             sound_id: "abc123".into(),
         }));
         assert!(app.playing().is_none());
+    }
+
+    /// Smoke test for the overlay layering in `view_main`: the element tree
+    /// must build in every overlay state. The structural invariant itself
+    /// (stable Stack root preserving scrollable offsets, #112) lives in iced's
+    /// private widget state and is covered by the manual test plan instead.
+    #[test]
+    fn view_builds_in_all_overlay_states() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds = vec![SoundEntry {
+            id: "aaa".into(),
+            name: "Goose Honk".into(),
+            path: "/a.mp3".into(),
+            format: crate::state::AudioFormat::Mp3,
+            duration_ms: Some(1000),
+            category: "Honk".into(),
+        }];
+
+        let _ = app.view(); // no overlay
+        let _ = app.update(Message::OpenContextMenu("aaa".into()));
+        let _ = app.view(); // context menu overlay
+        let _ = app.update(Message::OpenSoundEditor("aaa".into()));
+        let _ = app.view(); // editor overlay
     }
 
     #[test]
