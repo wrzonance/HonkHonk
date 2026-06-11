@@ -36,8 +36,9 @@ Run on an Arch / Manjaro / EndeavourOS host with `base-devel` and `pacman-contri
 cd packaging/aur/honkhonk-bin
 
 # 1. Bump version fields in PKGBUILD
-#    pkgver uses dots:   0.1.0.alpha.1  (AUR forbids '-' in pkgver)
-#    _pkgtag uses dashes: v0.1.0-alpha.1 (matches GitHub release tag)
+#    Stable releases use bare tags, so pkgver == _pkgtag == 0.1.0.
+#    For prereleases, pkgver uses dots (0.2.0.rc.1 — AUR forbids '-' in
+#    pkgver) while _pkgtag keeps the dashes of the GitHub tag (0.2.0-rc.1).
 $EDITOR PKGBUILD
 
 # 2. Populate sha256sums from the live release URL
