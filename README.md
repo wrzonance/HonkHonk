@@ -30,12 +30,14 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 
 ## Status
 
-**Phase 1 complete.** The core soundboard loop is working:
+**0.1.0 — Phases 1 & 2 complete.** The core soundboard loop, global hotkeys,
+and the audio-effects engine are all working:
 
 | Feature | Status |
 |---------|--------|
 | Iced GUI — sound grid, search, categories, volume | ✅ Shipped |
 | PipeWire virtual mic (persistent sink + mic passthrough) | ✅ Shipped |
+| System-persistent virtual mic (survives app restart/reboot) | ✅ Shipped |
 | Play sound → virtual mic + local headset | ✅ Shipped |
 | Stop / volume / now-playing bar | ✅ Shipped |
 | System tray with quit | ✅ Shipped |
@@ -43,12 +45,17 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 | Theme persistence (Light / Dark / System) | ✅ Shipped |
 | Grid density (Compact / Regular / Comfy) | ✅ Shipped |
 | Mic passthrough toggle + level slider | ✅ Shipped |
+| Microphone input device selection | ✅ Shipped |
+| Monitor output device selection | ✅ Shipped |
 | GPU renderer (wgpu default) / software fallback (tiny-skia) | ✅ Shipped |
 | XDG global shortcuts (20 fixed slots) | ✅ Shipped |
-| Monitor output device selection | ✅ Shipped |
 | In-app shortcut assignment with conflict feedback | ✅ Shipped |
 | Persistent shortcut assignments across restarts | ✅ Shipped |
-| System-persistent virtual mic (survives app restart/reboot) | 🔜 Planned (#49) |
+| Favorites tab, per-sound volume, rename (sound editor) | ✅ Shipped |
+| Effects engine — reverb, chorus, flanger, pitch shift, ring mod, bandpass | ✅ Engine shipped |
+| Effects panel UI + presets | 🔜 Planned (#33) |
+| External app routing (PipeWire router + stream watcher) | ✅ Engine shipped |
+| Audio mixer panel UI | 🔜 Planned (#28) |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.
 

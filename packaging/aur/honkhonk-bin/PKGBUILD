@@ -2,19 +2,22 @@
 # GPG: B514 CBC5 B44C AACF 02EA  0D68 B461 236C F8EA 7961
 
 pkgname=honkhonk-bin
-pkgver=0.1.0.alpha.1
-_pkgtag=v0.1.0-alpha.1
+pkgver=0.1.0
+_pkgtag=0.1.0
 pkgrel=1
 pkgdesc="Wayland-native Linux soundboard — Iced GUI + PipeWire audio (binary release)"
 arch=('x86_64')
 url="https://github.com/wrzonance/HonkHonk"
 license=('MIT')
+# NOTE: as of 0.1.0 the released binary no longer links libxdo.so (tray-icon/
+# muda built with default-features=false), so `xdotool` is not a dependency —
+# this also ends the Debian libxdo.so.3 vs Arch libxdo.so.4 soname mismatch
+# that blocked earlier versions of this package.
 depends=(
     'pipewire'
     'wayland'
     'libxkbcommon'
     'gtk3'
-    'xdotool'
     'libayatana-appindicator'
     'xdg-desktop-portal'
 )

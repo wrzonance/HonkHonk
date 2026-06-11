@@ -326,17 +326,18 @@ This mirrors VoiceMod's approach — fixed button grid, user maps sounds to butt
 - ~~Renderer selection — wgpu vs tiny-skia (#73)~~ ✅
 
 ### Phase 3: Polish
-- Favorites / recently played
-- Sound pack import (drag-and-drop folders, MyInstants URL import)
+- ~~Favorites tab~~ ✅ (#102); recently played pending
+- ~~Per-sound volume + rename via sound editor overlay~~ ✅ (#102); per-source mic gain/mute pending (#29)
+- ~~System-persistent virtual mic via `pipewire.conf.d` drop-in (#49)~~ ✅ (#100)
+- ~~Microphone input device selection (#108)~~ ✅ (#109, #110)
+- Sound pack import (drag-and-drop folders, MyInstants URL import) (#16)
 - Accent color intensity (theme variant complete, intensity slider pending)
-- Per-sound volume + mic passthrough gain (#29)
 - Overlap mode (concurrent vs. interrupt)
-- System-persistent virtual mic via `pipewire.conf.d` drop-in (#49)
 
 ### Phase 4: Advanced
-- App audio passthrough (route Spotify/YouTube to mic)
-- Per-app audio routing (like Soundux's passthrough feature)
-- Sound effects (reverb, pitch shift — stretch goal)
+- ~~Sound effects engine~~ ✅ (#104–#107: effect chain + bypass/wet-dry infra; reverb, chorus, flanger, pitch shift, ring modulation, bandpass) — effects panel UI + presets pending (#33)
+- App audio passthrough (route Spotify/YouTube to mic) — router + external stream watcher engine ✅ (#95, #103); mixer panel UI pending (#17, #28)
+- Per-app audio routing (like Soundux's passthrough feature) (#29)
 - Cross-desktop support (GNOME, Hyprland — portal-based, should work)
 
 ## File Structure

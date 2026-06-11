@@ -63,14 +63,12 @@ Both edges must opt out — HonkHonk depends on `muda` directly *and* transitive
 (which include `libxdo`) win if *either* edge requests them. With both disabled,
 `cargo tree -i libxdo` is empty and `readelf -d` shows no `libxdo.so` in `NEEDED`.
 
-**But this package builds the released tag (`$_pkgtag`), not `main`.** The current
-tag `v0.1.0-alpha.1` predates the fix, so the binary it produces *still links
-`libxdo.so`* — verified by `namcap` on the built package
-(`Dependency xdotool detected and not included`). Therefore `xdotool` is declared
-in `depends` for now. **When a release containing the libxdo fix is tagged, bump
-`_pkgtag` past it and drop `xdotool`.** At that point this source package also
-sidesteps the Debian-vs-Arch `libxdo.so.3` / `libxdo.so.4` soname mismatch that
-blocked `honkhonk-bin` on a clean Arch base.
+**This package builds the released tag (`$_pkgtag`), not `main`.** As of tag
+`0.1.0` the libxdo fix is included, so the built binary has no `libxdo.so` in
+`NEEDED` and `xdotool` was dropped from `depends`. This also ended the
+Debian-vs-Arch `libxdo.so.3` / `libxdo.so.4` soname mismatch that blocked
+`honkhonk-bin` on a clean Arch base for the alpha. Re-verify on each bump with
+`namcap` on the built package.
 
 ## Per-release bump runbook
 
@@ -81,8 +79,9 @@ Run on an Arch / Manjaro / EndeavourOS host with `base-devel` and
 cd packaging/aur/honkhonk
 
 # 1. Bump version fields in PKGBUILD
-#    pkgver uses dots:    0.1.0.alpha.1  (AUR forbids '-' in pkgver)
-#    _pkgtag uses dashes: v0.1.0-alpha.1 (matches the GitHub release tag)
+#    Stable releases use bare tags, so pkgver == _pkgtag == 0.1.0.
+#    For prereleases, pkgver uses dots (0.2.0.rc.1 — AUR forbids '-' in
+#    pkgver) while _pkgtag keeps the dashes of the GitHub tag (0.2.0-rc.1).
 $EDITOR PKGBUILD
 
 # 2. Regenerate .SRCINFO
