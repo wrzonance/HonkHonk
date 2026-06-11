@@ -58,6 +58,42 @@ jobs:
           sudo -u builder makepkg --printsrcinfo > /tmp/.SRCINFO.fresh
           diff -u .SRCINFO /tmp/.SRCINFO.fresh
 
+      - name: Wait for release artifacts (tag push only)
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: packaging/aur/${{ matrix.pkg }}
+        # A tag push fires this workflow alongside the release builds that
+        # produce the very artifacts the PKGBUILDs download (deb.yml uploads
+        # the -bin .deb minutes after the tag lands; the source tarball
+        # appears when GitHub processes the tag). Poll each remote source URL
+        # until it exists so validation runs AFTER its dependencies instead
+        # of racing them to a 404. PR/branch runs skip this gate and fail
+        # fast — there, a PKGBUILD pointing at a not-yet-published release is
+        # a legitimate failure.
+        run: |
+          # `|| true` keeps a no-match grep from killing the step under
+          # `bash -e` before the explicit fail-closed check below can print
+          # a usable error.
+          urls=$(sudo -u builder makepkg --printsrcinfo \
+            | grep -oP 'source = (?:[^:]+::)?\Khttps://\S+' || true)
+          if [ -z "$urls" ]; then
+            echo "ERROR: no remote source URLs extracted from the PKGBUILD;" \
+                 "refusing to silently bypass the artifact gate"
+            exit 1
+          fi
+          for url in $urls; do
+            echo "Waiting for: $url"
+            for i in $(seq 1 40); do
+              if curl -sfLI -o /dev/null "$url"; then
+                echo "OK: $url"
+                continue 2
+              fi
+              echo "  not there yet (attempt $i/40), sleeping 30s"
+              sleep 30
+            done
+            echo "ERROR: $url still missing after 20 minutes"
+            exit 1
+          done
+
       - name: Build + install
         working-directory: packaging/aur/${{ matrix.pkg }}
         # Disable LTO and cap codegen parallelism for the CI compile only — the
