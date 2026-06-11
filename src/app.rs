@@ -490,7 +490,15 @@ impl HonkHonk {
                         }
                     }
                     AudioEvent::PlaybackStarted { sound_id } => {
-                        self.playing = Some(sound_id);
+                        // Every play path sets `playing` optimistically at
+                        // dispatch, so a Started for a *different* sound can
+                        // only be a stale event from an older press still in
+                        // the queue — don't let it steal the highlight (#111).
+                        if self.playing.is_none()
+                            || self.playing.as_deref() == Some(sound_id.as_str())
+                        {
+                            self.playing = Some(sound_id);
+                        }
                     }
                     AudioEvent::PlaybackFinished { sound_id } => {
                         // Only clear the highlight if this event refers to the
@@ -1432,6 +1440,21 @@ mod tests {
             bytes.extend_from_slice(&s.to_le_bytes());
         }
         std::fs::write(path, bytes).expect("write test wav");
+    }
+
+    #[test]
+    fn stale_playback_started_does_not_overwrite_newer_playing() {
+        let mut app = HonkHonk::new_for_test();
+        // "newer" is highlighted (set optimistically at dispatch); a Started
+        // for an older press still sitting in the queue must not steal the
+        // highlight back (#111).
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "newer".into(),
+        }));
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "older".into(),
+        }));
+        assert_eq!(app.playing(), Some("newer"));
     }
 
     #[test]
