@@ -99,6 +99,16 @@ impl AudioHandle {
     }
 }
 
+/// Build an `AudioHandle` whose event channel is fed by the returned sender,
+/// without spawning an engine thread. Lets app-level tests enqueue
+/// `AudioEvent`s and observe how the UI drains them.
+#[cfg(test)]
+pub(crate) fn test_handle() -> (AudioHandle, mpsc::Sender<AudioEvent>) {
+    let (cmd_tx, _cmd_rx) = pipewire::channel::channel::<AudioCommand>();
+    let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
+    (AudioHandle { cmd_tx, evt_rx }, evt_tx)
+}
+
 pub fn spawn(
     initial_passthrough: bool,
     initial_monitor_device: Option<String>,

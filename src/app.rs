@@ -479,13 +479,7 @@ impl HonkHonk {
                     return self.update(msg);
                 }
 
-                if let Some(ref audio) = self.audio {
-                    if let Some(event) = audio.try_recv() {
-                        return self.update(Message::AudioEvent(event));
-                    }
-                }
-
-                Task::none()
+                self.drain_audio_events()
             }
             Message::AudioEvent(event) => {
                 match event {
@@ -496,11 +490,24 @@ impl HonkHonk {
                         }
                     }
                     AudioEvent::PlaybackStarted { sound_id } => {
-                        self.playing = Some(sound_id);
+                        // Every play path sets `playing` optimistically at
+                        // dispatch, so a Started for a *different* sound can
+                        // only be a stale event from an older press still in
+                        // the queue — don't let it steal the highlight (#111).
+                        if self.playing.is_none()
+                            || self.playing.as_deref() == Some(sound_id.as_str())
+                        {
+                            self.playing = Some(sound_id);
+                        }
                     }
-                    AudioEvent::PlaybackFinished { .. } => {
-                        self.playing = None;
-                        self.progress = 0.0;
+                    AudioEvent::PlaybackFinished { sound_id } => {
+                        // Only clear the highlight if this event refers to the
+                        // sound we are showing — a Finished for an already-
+                        // replaced sound must not blank a newer press (#111).
+                        if self.playing.as_deref() == Some(sound_id.as_str()) {
+                            self.playing = None;
+                            self.progress = 0.0;
+                        }
                     }
                     AudioEvent::Progress(p) => {
                         self.progress = p;
@@ -560,8 +567,8 @@ impl HonkHonk {
                 Task::none()
             }
             Message::PlaySound(sound_id) => {
-                if let Some(sound) = self.sounds.iter().find(|s| s.id == sound_id) {
-                    self.play_sound_entry(sound, false);
+                if let Some(sound) = self.sounds.iter().find(|s| s.id == sound_id).cloned() {
+                    self.play_sound_entry(&sound, false);
                 }
                 Task::none()
             }
@@ -627,8 +634,8 @@ impl HonkHonk {
             }
             Message::ShortcutActivated(idx) => {
                 if let Some(path) = self.slots.get(idx).cloned() {
-                    if let Some(sound) = self.sounds.iter().find(|s| s.path == path) {
-                        self.play_sound_entry(sound, true);
+                    if let Some(sound) = self.sounds.iter().find(|s| s.path == path).cloned() {
+                        self.play_sound_entry(&sound, true);
                     } else {
                         // Path no longer in library (file deleted/moved) — clear stale slot
                         eprintln!(
@@ -948,7 +955,27 @@ impl HonkHonk {
         }
     }
 
-    fn play_sound_entry(&self, sound: &SoundEntry, stop_before: bool) {
+    /// Process every audio event queued since the last poll tick.
+    ///
+    /// The engine emits ~10 Progress events/sec while playing plus two events
+    /// per Play (Finished for the replaced sound + Started), while this poll
+    /// runs at 10 Hz. Draining one event per tick (the old behavior) therefore
+    /// could never catch up after a burst of button presses, leaving the UI
+    /// seconds behind the audio (#111).
+    fn drain_audio_events(&mut self) -> Task<Message> {
+        let mut tasks = Vec::new();
+        loop {
+            let event = match self.audio {
+                Some(ref audio) => audio.try_recv(),
+                None => None,
+            };
+            let Some(event) = event else { break };
+            tasks.push(self.update(Message::AudioEvent(event)));
+        }
+        Task::batch(tasks)
+    }
+
+    fn play_sound_entry(&mut self, sound: &SoundEntry, stop_before: bool) {
         let decoded = match crate::audio::decode(&sound.path) {
             Ok(d) => d,
             Err(e) => {
@@ -974,6 +1001,10 @@ impl HonkHonk {
                 sample_rate: decoded.sample_rate,
                 channels: decoded.channels,
             });
+            // Highlight the tile immediately rather than waiting for the
+            // engine's PlaybackStarted to round-trip through the event
+            // queue — keeps the UI in lockstep with the press (#111).
+            self.playing = Some(sound.id.clone());
         }
     }
 
@@ -1386,6 +1417,144 @@ mod tests {
         let _ = app.view(); // context menu overlay
         let _ = app.update(Message::OpenSoundEditor("aaa".into()));
         let _ = app.view(); // editor overlay
+    }
+
+    /// Minimal 16-bit PCM mono WAV (4 samples) so tests can exercise the real
+    /// decode path without fixture files.
+    fn write_test_wav(path: &std::path::Path) {
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&44u32.to_le_bytes()); // riff chunk size
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+        bytes.extend_from_slice(&44100u32.to_le_bytes());
+        bytes.extend_from_slice(&88200u32.to_le_bytes()); // byte rate
+        bytes.extend_from_slice(&2u16.to_le_bytes()); // block align
+        bytes.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        for s in [0i16, 8000, -8000, 0] {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        std::fs::write(path, bytes).expect("write test wav");
+    }
+
+    #[test]
+    fn stale_playback_started_does_not_overwrite_newer_playing() {
+        let mut app = HonkHonk::new_for_test();
+        // "newer" is highlighted (set optimistically at dispatch); a Started
+        // for an older press still sitting in the queue must not steal the
+        // highlight back (#111).
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "newer".into(),
+        }));
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "older".into(),
+        }));
+        assert_eq!(app.playing(), Some("newer"));
+    }
+
+    #[test]
+    fn stale_playback_finished_does_not_clear_newer_playing() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "newer".into(),
+        }));
+        // A Finished event for an already-replaced sound must not blank the
+        // highlight of the sound that superseded it (issue #111).
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            sound_id: "older".into(),
+        }));
+        assert_eq!(app.playing(), Some("newer"));
+    }
+
+    #[test]
+    fn play_sound_sets_playing_immediately() {
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("honk.wav");
+        write_test_wav(&wav_path);
+        app.sounds = vec![SoundEntry {
+            id: "wav1".into(),
+            name: "Honk".into(),
+            path: wav_path,
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: Some(100),
+            category: "Test".into(),
+        }];
+
+        // The tile highlight must track the press itself, not wait for the
+        // engine's PlaybackStarted to round-trip through the event queue
+        // (issue #111).
+        let _ = app.update(Message::PlaySound("wav1".into()));
+        assert_eq!(app.playing(), Some("wav1"));
+    }
+
+    #[test]
+    fn drain_audio_events_processes_entire_backlog() {
+        let mut app = HonkHonk::new_for_test();
+        let (handle, evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+
+        // Simulate the queue state after spamming tiles: stale started/finished
+        // pairs piled up behind progress events (issue #111). One drain call
+        // must consume them all so the UI reflects the latest engine state.
+        let events = [
+            AudioEvent::PlaybackStarted {
+                sound_id: "a".into(),
+            },
+            AudioEvent::PlaybackFinished {
+                sound_id: "a".into(),
+            },
+            AudioEvent::PlaybackStarted {
+                sound_id: "b".into(),
+            },
+            AudioEvent::Progress(0.25),
+            AudioEvent::PlaybackFinished {
+                sound_id: "b".into(),
+            },
+            AudioEvent::PlaybackStarted {
+                sound_id: "c".into(),
+            },
+            AudioEvent::Progress(0.5),
+        ];
+        for e in events {
+            evt_tx.send(e).expect("send event");
+        }
+
+        let _ = app.drain_audio_events();
+
+        assert_eq!(app.playing(), Some("c"));
+        assert!((app.progress() - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn shortcut_activation_sets_playing_immediately() {
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("honk.wav");
+        write_test_wav(&wav_path);
+        app.sounds = vec![SoundEntry {
+            id: "wav1".into(),
+            name: "Honk".into(),
+            path: wav_path.clone(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: Some(100),
+            category: "Test".into(),
+        }];
+        app.slots.set(0, wav_path);
+
+        let _ = app.update(Message::ShortcutActivated(0));
+        assert_eq!(app.playing(), Some("wav1"));
     }
 
     #[test]

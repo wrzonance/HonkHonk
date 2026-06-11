@@ -11,6 +11,8 @@ pub mod streams;
 
 pub use decoder::{decode, DecodedAudio};
 pub use effects::{AudioEffect, EffectChain, EffectsCommand, EffectsEvent};
+#[cfg(test)]
+pub(crate) use engine::test_handle;
 pub use engine::{spawn, AudioCommand, AudioEvent, AudioHandle};
 pub use error::{AudioError, EffectsError, RouterError, WatcherError};
 pub use router::{AppIdentity, RouteIntent, Router, RouterCommand, RouterEvent};
