@@ -70,8 +70,16 @@ jobs:
         # fast — there, a PKGBUILD pointing at a not-yet-published release is
         # a legitimate failure.
         run: |
+          # `|| true` keeps a no-match grep from killing the step under
+          # `bash -e` before the explicit fail-closed check below can print
+          # a usable error.
           urls=$(sudo -u builder makepkg --printsrcinfo \
             | grep -oP 'source = (?:[^:]+::)?\Khttps://\S+' || true)
+          if [ -z "$urls" ]; then
+            echo "ERROR: no remote source URLs extracted from the PKGBUILD;" \
+                 "refusing to silently bypass the artifact gate"
+            exit 1
+          fi
           for url in $urls; do
             echo "Waiting for: $url"
             for i in $(seq 1 40); do
