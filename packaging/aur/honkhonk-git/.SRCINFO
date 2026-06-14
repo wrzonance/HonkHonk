@@ -1,0 +1,25 @@
+pkgbase = honkhonk-git
+	pkgdesc = Wayland-native Linux soundboard — Iced GUI + PipeWire audio (VCS build)
+	pkgver = 0.1.0.r1.g5ddcab0
+	pkgrel = 1
+	url = https://github.com/wrzonance/HonkHonk
+	arch = x86_64
+	license = MIT
+	makedepends = cargo
+	makedepends = rust
+	makedepends = pkgconf
+	makedepends = clang
+	makedepends = git
+	depends = pipewire
+	depends = gtk3
+	depends = libayatana-appindicator
+	depends = wayland
+	depends = libxkbcommon
+	depends = xdg-desktop-portal
+	provides = honkhonk
+	conflicts = honkhonk
+	conflicts = honkhonk-bin
+	source = git+https://github.com/wrzonance/HonkHonk.git#branch=main
+	sha256sums = SKIP
+
+pkgname = honkhonk-git

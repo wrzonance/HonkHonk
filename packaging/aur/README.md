@@ -9,12 +9,12 @@ subdirectory and per-variant README:
 - [`honkhonk-bin/`](honkhonk-bin/) — binary variant: re-extracts the upstream
   `.deb` from GitHub Releases. Kept as a convenience secondary (built on a Debian
   base; see the source README for why source is preferred).
-- `honkhonk-git` — VCS variant tracking `main` (planned, separate PR).
+- [`honkhonk-git/`](honkhonk-git/) — VCS variant tracking `main`.
 
 ## What CI validates
 
-`.github/workflows/aur.yml` runs a **matrix over both `honkhonk` and
-`honkhonk-bin`** on every push/PR touching `packaging/aur/**`,
+`.github/workflows/aur.yml` runs a **matrix over `honkhonk`, `honkhonk-bin`, and
+`honkhonk-git`** on every push/PR touching `packaging/aur/**`,
 `.github/workflows/aur.yml`, or `Cargo.toml`. For each package, in
 `archlinux:base-devel`:
 
@@ -26,7 +26,7 @@ subdirectory and per-variant README:
 The source variant's per-release runbook lives in
 [`honkhonk/README.md`](honkhonk/README.md). The `-bin` runbook is below. The
 shared notes (AUR account setup, reserved CI SSH key, future auto-publish) apply
-to both.
+to all three packages.
 
 ## Per-release bump runbook (`honkhonk-bin`)
 
@@ -64,6 +64,34 @@ git commit -m "honkhonk-bin <new-version>"
 git push origin master
 ```
 
+## Rolling update runbook (`honkhonk-git`)
+
+The VCS package usually needs no manual version bump: `pkgver()` derives the
+installed version from `git describe` against `main`.
+
+```bash
+cd packaging/aur/honkhonk-git
+
+# 1. Regenerate .SRCINFO after changing the PKGBUILD
+makepkg --printsrcinfo > .SRCINFO
+
+# 2. Lint
+namcap PKGBUILD
+
+# 3. Smoke test locally (compiles current main)
+makepkg --noconfirm --syncdeps --install
+honkhonk --version    # or launch on a Wayland session
+sudo pacman -Rns honkhonk-git
+
+# 4. Push to the AUR repo (separate clone)
+git clone ssh://aur@aur.archlinux.org/honkhonk-git.git /tmp/aur-honkhonk-git
+cp PKGBUILD .SRCINFO /tmp/aur-honkhonk-git/
+cd /tmp/aur-honkhonk-git
+git add PKGBUILD .SRCINFO
+git commit -m "honkhonk-git update"
+git push origin master
+```
+
 ## First-time AUR account setup
 
 1. Register at https://aur.archlinux.org/register
@@ -96,5 +124,5 @@ Arch `libxdo.so.4` (issue #98). `honkhonk-bin` is **kept as a convenience
 secondary**, not removed. The real fix is on `main`: the `libxdo` Cargo feature is
 disabled (see [`honkhonk/README.md`](honkhonk/README.md)), so once a release
 carrying that change is tagged, both the source and `-bin` packages stop needing
-`xdotool`/`libxdo` entirely. A `honkhonk-git` VCS variant follows
-in its own PR.
+`xdotool`/`libxdo` entirely. `honkhonk-git` is available for users who want
+current `main` before the next tagged release.
