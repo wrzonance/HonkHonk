@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 
 use super::confd;
-use super::error::AudioError;
+use super::error::{AudioError, EngineErrorEvent};
 use super::playback::{self, PlaybackState};
 use super::registry::{setup_registry_listener, RegistryConfig};
 use super::router::{Router, RouterEvent};
@@ -60,7 +60,7 @@ pub enum AudioEvent {
         sound_id: String,
     },
     Progress(f32),
-    Error(String),
+    Error(EngineErrorEvent),
     OutputDevicesChanged(Vec<(String, String)>),
     /// The set of real microphone (input) sources changed; carries
     /// (node_name, display_name) for each, to populate the input-device picker.
@@ -130,7 +130,9 @@ pub fn spawn(
                 initial_passthrough,
                 initial_monitor_device,
             ) {
-                let _ = evt_tx.send(AudioEvent::Error(e.to_string()));
+                let _ = evt_tx.send(AudioEvent::Error(EngineErrorEvent::EngineInitialization {
+                    detail: e.to_string(),
+                }));
             }
         })
         .map_err(AudioError::ThreadSpawn)?;
@@ -238,11 +240,15 @@ fn create_virtual_source(
 fn write_first_run_confd(evt_tx: &mpsc::Sender<AudioEvent>) -> bool {
     match confd::user_confd_dir() {
         Ok(dir) => confd::write_user_confd_in(&dir).unwrap_or_else(|e| {
-            let _ = evt_tx.send(AudioEvent::Error(format!("conf.d write: {e}")));
+            let _ = evt_tx.send(AudioEvent::Error(EngineErrorEvent::ConfdWrite {
+                detail: e.to_string(),
+            }));
             false
         }),
         Err(e) => {
-            let _ = evt_tx.send(AudioEvent::Error(format!("conf.d path: {e}")));
+            let _ = evt_tx.send(AudioEvent::Error(EngineErrorEvent::ConfdPath {
+                detail: e.to_string(),
+            }));
             false
         }
     }
@@ -538,9 +544,12 @@ fn run_engine(
         }
         AudioCommand::SetEffectBypass { index, bypass } => {
             if let Err(e) = ctx.mixer.borrow_mut().chain_mut().set_bypass(index, bypass) {
-                let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
-                    "set effect bypass (index {index}): {e}"
-                )));
+                let _ = ctx
+                    .evt_tx
+                    .send(AudioEvent::Error(EngineErrorEvent::EffectBypass {
+                        index,
+                        detail: e.to_string(),
+                    }));
             }
         }
         AudioCommand::SetEffectParam {
@@ -554,9 +563,13 @@ fn run_engine(
                 .chain_mut()
                 .set_param(index, &param, value)
             {
-                let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
-                    "set effect param (index {index}, param {param:?}): {e}"
-                )));
+                let _ = ctx
+                    .evt_tx
+                    .send(AudioEvent::Error(EngineErrorEvent::EffectParam {
+                        index,
+                        param,
+                        detail: e.to_string(),
+                    }));
             }
         }
         AudioCommand::SetEffectWetDry(wet_dry) => {
@@ -591,9 +604,11 @@ fn rebuild_monitor_stream(ctx: &EngineCtx) {
             Err(e) => {
                 ap.monitor_stream = None;
                 ap.monitor_state.borrow_mut().stop();
-                let _ = ctx
-                    .evt_tx
-                    .send(AudioEvent::Error(format!("monitor stream rebuild: {e}")));
+                let _ =
+                    ctx.evt_tx
+                        .send(AudioEvent::Error(EngineErrorEvent::MonitorStreamRebuild {
+                            detail: e.to_string(),
+                        }));
             }
         }
     }
@@ -607,9 +622,9 @@ fn handle_play(
     channels: u16,
 ) {
     if ctx.registry_sink_id.get().is_none() {
-        let _ = ctx
-            .evt_tx
-            .send(AudioEvent::Error("virtual sink not yet registered".into()));
+        let _ = ctx.evt_tx.send(AudioEvent::Error(
+            EngineErrorEvent::VirtualSinkNotRegistered,
+        ));
         return;
     }
 
@@ -650,7 +665,11 @@ fn handle_play(
     let sink_s = match sink_stream {
         Ok(s) => s,
         Err(e) => {
-            let _ = ctx.evt_tx.send(AudioEvent::Error(e.to_string()));
+            let _ = ctx
+                .evt_tx
+                .send(AudioEvent::Error(EngineErrorEvent::SinkStreamCreation {
+                    detail: e.to_string(),
+                }));
             return;
         }
     };
@@ -658,9 +677,11 @@ fn handle_play(
         Ok(s) => Some(s),
         Err(e) => {
             mon_state.borrow_mut().stop();
-            let _ = ctx.evt_tx.send(AudioEvent::Error(format!(
-                "monitor stream unavailable: {e}"
-            )));
+            let _ = ctx.evt_tx.send(AudioEvent::Error(
+                EngineErrorEvent::MonitorStreamUnavailable {
+                    detail: e.to_string(),
+                },
+            ));
             None
         }
     };
