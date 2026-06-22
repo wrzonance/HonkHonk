@@ -6,6 +6,11 @@ use iced::{
 
 use crate::app::{HonkHonk, Message, SettingsSection};
 
+/// SPDX license shown on the About screen, sourced from `Cargo.toml`'s
+/// `license = "MIT"` field at compile time so the displayed value can never
+/// drift from the project's real license. See issue #128.
+const LICENSE: &str = env!("CARGO_PKG_LICENSE");
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MonitorDeviceOption {
     Default,
@@ -897,15 +902,12 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
     ]
     .spacing(theme::space::XS);
 
-    let license = container(
-        text("GPL-3.0-or-later")
-            .size(theme::font::LABEL)
-            .color(t.ink())
-            .font(iced::Font {
-                family: iced::font::Family::Monospace,
-                ..Default::default()
-            }),
-    )
+    let license = container(text(LICENSE).size(theme::font::LABEL).color(t.ink()).font(
+        iced::Font {
+            family: iced::font::Family::Monospace,
+            ..Default::default()
+        },
+    ))
     .padding([4.0, 10.0])
     .style(move |_t| container::Style {
         background: Some(theme::bg_color(t.panel())),
@@ -951,4 +953,18 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
             .into(),
         t,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The About screen must show the project's real license. It is sourced
+    /// from Cargo.toml via `env!("CARGO_PKG_LICENSE")`, so this guards against
+    /// drift between the binary's displayed license and `license = "MIT"`.
+    #[test]
+    fn about_license_matches_cargo_manifest() {
+        assert_eq!(LICENSE, "MIT");
+        assert_eq!(LICENSE, env!("CARGO_PKG_LICENSE"));
+    }
 }
