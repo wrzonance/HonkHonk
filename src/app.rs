@@ -391,6 +391,15 @@ impl HonkHonk {
         self.active_category.as_deref()
     }
 
+    /// Route effects commands to the audio thread, no-op when no engine is up.
+    fn send_audio_commands(&self, cmds: impl IntoIterator<Item = AudioCommand>) {
+        if let Some(ref audio) = self.audio {
+            for cmd in cmds {
+                audio.send(cmd);
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn effects_ui_preset(&self) -> PresetId {
         self.effects_ui.preset
@@ -903,34 +912,23 @@ impl HonkHonk {
                 Task::none()
             }
             Message::SelectEffectPreset(preset) => {
-                self.effects_ui.apply_preset(preset);
-                if let Some(ref audio) = self.audio {
-                    for cmd in effects_panel::preset_commands(preset) {
-                        audio.send(cmd);
-                    }
-                }
+                let cmds = effects_panel::select_preset(&mut self.effects_ui, preset);
+                self.send_audio_commands(cmds);
                 Task::none()
             }
             Message::SetEffectBypassUi(bypass) => {
-                self.effects_ui.chain_bypass = bypass;
-                if let Some(ref audio) = self.audio {
-                    audio.send(AudioCommand::SetEffectChainBypass(bypass));
-                }
+                let cmd = effects_panel::set_chain_bypass(&mut self.effects_ui, bypass);
+                self.send_audio_commands([cmd]);
                 Task::none()
             }
             Message::SetWetDryMix(mix) => {
-                self.effects_ui.wet_dry = mix;
-                if let Some(ref audio) = self.audio {
-                    audio.send(AudioCommand::SetEffectWetDry(mix));
-                }
+                let cmd = effects_panel::set_wet_dry(&mut self.effects_ui, mix);
+                self.send_audio_commands([cmd]);
                 Task::none()
             }
             Message::SetEffectParamUi { slot, param, value } => {
-                self.effects_ui.preset = PresetId::Custom;
-                effects_panel::store_effect_param(&mut self.effects_ui, slot, param, value);
-                if let Some(ref audio) = self.audio {
-                    audio.send(effects_panel::param_command(slot, param, value));
-                }
+                let cmds = effects_panel::edit_param(&mut self.effects_ui, slot, param, value);
+                self.send_audio_commands(cmds);
                 Task::none()
             }
             Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender)) => {

@@ -143,6 +143,49 @@ pub fn store_effect_param(state: &mut EffectsUiState, slot: EffectSlot, param: &
     }
 }
 
+/// Apply `preset` to the UI state and return the audio commands realizing it.
+///
+/// Keeps the state-mirror update and command derivation together and testable,
+/// so `app.rs` only routes the result to the audio thread.
+pub fn select_preset(state: &mut EffectsUiState, preset: PresetId) -> Vec<AudioCommand> {
+    state.apply_preset(preset);
+    preset_commands(preset)
+}
+
+/// Set the whole-chain bypass in the UI state and return the matching command.
+pub fn set_chain_bypass(state: &mut EffectsUiState, bypass: bool) -> AudioCommand {
+    state.chain_bypass = bypass;
+    AudioCommand::SetEffectChainBypass(bypass)
+}
+
+/// Clamp `mix` to the valid wet/dry range, store it, and return the command.
+///
+/// Clamping here guards both the UI state and the engine input against
+/// out-of-range values from any (including non-UI) message producer.
+pub fn set_wet_dry(state: &mut EffectsUiState, mix: f32) -> AudioCommand {
+    let mix = mix.clamp(0.0, 1.0);
+    state.wet_dry = mix;
+    AudioCommand::SetEffectWetDry(mix)
+}
+
+/// Apply a single parameter edit: switch to `Custom`, mirror the value, and
+/// return the commands. Editing a slider implies the user wants to *hear* that
+/// effect, so the slot is unbypassed before its parameter is set — otherwise a
+/// just-edited (still-bypassed) slot would leave the change inaudible.
+pub fn edit_param(
+    state: &mut EffectsUiState,
+    slot: EffectSlot,
+    param: &str,
+    value: f32,
+) -> Vec<AudioCommand> {
+    state.preset = PresetId::Custom;
+    store_effect_param(state, slot, param, value);
+    vec![
+        bypass_command(slot, false),
+        param_command(slot, param, value),
+    ]
+}
+
 /// Full command set realizing `preset`: bypass every slot, then unbypass +
 /// parameterize the ones the preset uses.
 pub fn preset_commands(preset: PresetId) -> Vec<AudioCommand> {
@@ -301,5 +344,57 @@ mod tests {
             assert!(!p.description().is_empty());
             assert!(!p.glyph().is_empty());
         }
+    }
+
+    #[test]
+    fn select_preset_mirrors_state_and_returns_commands() {
+        let mut state = EffectsUiState::default();
+        let cmds = select_preset(&mut state, PresetId::Robot);
+        assert_eq!(state.preset, PresetId::Robot);
+        assert!(has_unbypass(&cmds, EffectSlot::RingMod));
+    }
+
+    #[test]
+    fn set_chain_bypass_mirrors_state() {
+        let mut state = EffectsUiState::default();
+        let cmd = set_chain_bypass(&mut state, true);
+        assert!(state.chain_bypass);
+        assert!(matches!(cmd, AudioCommand::SetEffectChainBypass(true)));
+    }
+
+    #[test]
+    fn set_wet_dry_clamps_out_of_range_values() {
+        let mut state = EffectsUiState::default();
+        // Above 1.0 clamps down.
+        match set_wet_dry(&mut state, 2.5) {
+            AudioCommand::SetEffectWetDry(v) => assert_eq!(v, 1.0),
+            other => panic!("expected SetEffectWetDry, got {other:?}"),
+        }
+        assert_eq!(state.wet_dry, 1.0);
+        // Below 0.0 clamps up.
+        match set_wet_dry(&mut state, -0.3) {
+            AudioCommand::SetEffectWetDry(v) => assert_eq!(v, 0.0),
+            other => panic!("expected SetEffectWetDry, got {other:?}"),
+        }
+        assert_eq!(state.wet_dry, 0.0);
+        // In-range passes through unchanged.
+        let _ = set_wet_dry(&mut state, 0.42);
+        assert!((state.wet_dry - 0.42).abs() < 1e-6);
+    }
+
+    #[test]
+    fn edit_param_unbypasses_slot_so_change_is_audible() {
+        let mut state = EffectsUiState::default();
+        let cmds = edit_param(&mut state, EffectSlot::Pitch, "semitones", -2.0);
+        // Switching to Custom and mirroring the value.
+        assert_eq!(state.preset, PresetId::Custom);
+        assert_eq!(state.pitch_semitones, -2.0);
+        // The edited slot is unbypassed (otherwise the change is inaudible)…
+        assert!(has_unbypass(&cmds, EffectSlot::Pitch));
+        // …and the parameter command is sent for that slot.
+        assert_eq!(
+            param_value(&cmds, EffectSlot::Pitch, "semitones"),
+            Some(-2.0)
+        );
     }
 }

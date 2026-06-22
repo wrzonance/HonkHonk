@@ -88,11 +88,20 @@ fn view_preset_chips(active: PresetId, t: Theme) -> Element<'static, Message> {
     let mut chips = Row::new().spacing(theme::space::SM);
     for p in PresetId::ALL {
         let selected = p == active;
-        let label = format!("{} {}", p.glyph(), p.label());
-        let chip = button(text(label).size(theme::font::LABEL).color(t.ink()))
-            .on_press(Message::SelectEffectPreset(p))
-            .padding([theme::space::XS, theme::space::MD])
-            .style(move |_th, _s| chip_style(t, selected));
+        let chip = button(
+            column![
+                text(format!("{} {}", p.glyph(), p.label()))
+                    .size(theme::font::LABEL)
+                    .color(t.ink()),
+                text(p.description())
+                    .size(theme::font::LABEL)
+                    .color(t.ink_dim()),
+            ]
+            .spacing(theme::space::XS),
+        )
+        .on_press(Message::SelectEffectPreset(p))
+        .padding([theme::space::XS, theme::space::MD])
+        .style(move |_th, _s| chip_style(t, selected));
         chips = chips.push(chip);
     }
     chips.into()
