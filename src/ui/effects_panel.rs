@@ -1,7 +1,7 @@
-//! Voice-effects panel: preset selector, master bypass, wet/dry, and per-effect
-//! parameter controls. The *logic* here (presets → `AudioCommand`s, UI state) is
-//! unit-tested at the module boundary; the Iced view (`view_effects_panel`) is a
-//! thin rendering of this state and is intentionally not unit-tested.
+//! Voice-effects panel logic: presets, the UI-side state mirror, and the
+//! mapping from a preset (or a single param edit) to the `AudioCommand`s sent to
+//! the audio thread. The Iced view lives in [`super::effects_panel_view`]; this
+//! module holds only the testable, render-free logic.
 
 use crate::audio::effects::EffectSlot;
 use crate::audio::AudioCommand;
@@ -155,11 +155,19 @@ pub fn preset_commands(preset: PresetId) -> Vec<AudioCommand> {
     match preset {
         PresetId::Robot => {
             cmds.push(bypass_command(EffectSlot::RingMod, false));
-            cmds.push(param_command(EffectSlot::RingMod, "carrier", ROBOT_CARRIER_HZ));
+            cmds.push(param_command(
+                EffectSlot::RingMod,
+                "carrier",
+                ROBOT_CARRIER_HZ,
+            ));
         }
         PresetId::Radio => {
             cmds.push(bypass_command(EffectSlot::Bandpass, false));
-            cmds.push(param_command(EffectSlot::Bandpass, "center", RADIO_CENTER_HZ));
+            cmds.push(param_command(
+                EffectSlot::Bandpass,
+                "center",
+                RADIO_CENTER_HZ,
+            ));
             cmds.push(param_command(
                 EffectSlot::Bandpass,
                 "bandwidth",
@@ -169,7 +177,11 @@ pub fn preset_commands(preset: PresetId) -> Vec<AudioCommand> {
         }
         PresetId::Deep => {
             cmds.push(bypass_command(EffectSlot::Pitch, false));
-            cmds.push(param_command(EffectSlot::Pitch, "semitones", DEEP_SEMITONES));
+            cmds.push(param_command(
+                EffectSlot::Pitch,
+                "semitones",
+                DEEP_SEMITONES,
+            ));
         }
         PresetId::Chipmunk => {
             cmds.push(bypass_command(EffectSlot::Pitch, false));
@@ -218,7 +230,10 @@ mod tests {
         assert!(has_unbypass(&cmds, EffectSlot::RingMod));
         assert!(has_bypass(&cmds, EffectSlot::Pitch));
         assert!(has_bypass(&cmds, EffectSlot::Bandpass));
-        assert_eq!(param_value(&cmds, EffectSlot::RingMod, "carrier"), Some(150.0));
+        assert_eq!(
+            param_value(&cmds, EffectSlot::RingMod, "carrier"),
+            Some(150.0)
+        );
     }
 
     #[test]
@@ -226,7 +241,10 @@ mod tests {
         let cmds = preset_commands(PresetId::Radio);
         assert!(has_unbypass(&cmds, EffectSlot::Bandpass));
         assert!(has_bypass(&cmds, EffectSlot::RingMod));
-        assert_eq!(param_value(&cmds, EffectSlot::Bandpass, "center"), Some(1500.0));
+        assert_eq!(
+            param_value(&cmds, EffectSlot::Bandpass, "center"),
+            Some(1500.0)
+        );
         assert_eq!(param_value(&cmds, EffectSlot::Bandpass, "noise"), Some(0.1));
     }
 
@@ -251,7 +269,10 @@ mod tests {
     fn custom_bypasses_all_effects() {
         let cmds = preset_commands(PresetId::Custom);
         for slot in EffectSlot::ORDER {
-            assert!(has_bypass(&cmds, slot), "custom starts with {slot:?} bypassed");
+            assert!(
+                has_bypass(&cmds, slot),
+                "custom starts with {slot:?} bypassed"
+            );
         }
     }
 

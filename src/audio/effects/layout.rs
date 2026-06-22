@@ -82,7 +82,10 @@ mod tests {
     fn default_chain_has_one_effect_per_slot_all_bypassed() {
         let chain = default_chain(4096, 48_000);
         assert_eq!(chain.len(), EffectSlot::ORDER.len());
-        assert!(chain.iter().all(|e| e.bypass()), "all effects start bypassed");
+        assert!(
+            chain.iter().all(|e| e.bypass()),
+            "all effects start bypassed"
+        );
     }
 
     #[test]
