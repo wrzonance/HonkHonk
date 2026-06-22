@@ -62,3 +62,24 @@ hold:
 
 Bottom line: the 0.14 bump does not reopen the canvas-sticker-tile approach. The cache
 lifecycle, scroll-clip, and text-overflow prerequisites in the Decision remain in force.
+
+## Update: persistent-cache pattern proven (#131)
+
+Decision step 4 ("prove a persistent `Cache` pattern at small scale") is done.
+`src/ui/now_playing.rs` is the reference. The rule, for #13/#92:
+
+1. The `canvas::Cache` lives in **persistent state** (a struct field), never
+   `Cache::new()` inside `view()`. Here `NowPlaying` owns it; the app holds one
+   `NowPlaying` field.
+2. A **render key** captures everything the cached geometry depends on (here:
+   sound id + a *quantized* progress bucket). `NowPlaying::sync` clears the cache
+   **only** when the key changes — called once from `update()`, never `view()`.
+3. Quantize continuous inputs (progress) into buckets so sub-pixel ticks do not
+   thrash the cache.
+4. Draw cheap, frequently-moving elements (the playhead) as a **separate
+   per-frame overlay** that does not invalidate the cached geometry.
+
+For the tile grid (#13): the grid's `Cache` belongs in app state keyed on the
+filtered-sound set + density, cleared on filter/density change — not rebuilt per
+`view()`. The text-overflow and tiny-skia scroll-clip lessons above still stand
+and are out of scope for #131.
