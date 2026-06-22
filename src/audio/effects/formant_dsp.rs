@@ -7,9 +7,9 @@
 //! # Const placement rationale
 //! `WINDOW` and `BINS` are both defined here as `pub(super)` so that their
 //! relationship (`BINS = WINDOW / 2 + 1`) lives in one place. `formant.rs`
-//! imports them via `use super::formant_dsp::*;`. `MIN_RATIO` / `MAX_RATIO`
-//! and the semitone clamp consts are effect-level concerns and stay in
-//! `formant.rs`.
+//! imports them by name (`use super::formant_dsp::{.., BINS, WINDOW};`).
+//! `MIN_RATIO` / `MAX_RATIO` and the semitone clamp consts are effect-level
+//! concerns and stay in `formant.rs`.
 
 use fundsp::prelude32::*;
 
