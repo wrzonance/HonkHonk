@@ -90,6 +90,8 @@ pub(super) fn lerp_read(src: &[f32], pos: f32) -> f32 {
 /// resampled by `1/pitch`, the envelope independently by `1/formant`; the bin
 /// count is taken from the equal-length `exc`/`env`/`phase` slices.
 pub(super) fn recombine(fft: &mut FftWindow, exc: &[f32], env: &[f32], phase: &[f32], r: &Ratios) {
+    debug_assert_eq!(exc.len(), env.len());
+    debug_assert_eq!(exc.len(), phase.len());
     for i in 0..exc.len() {
         let src_pos = i as f32 / r.pitch;
         let exc_mag = lerp_read(exc, src_pos);
