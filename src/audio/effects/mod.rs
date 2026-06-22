@@ -4,6 +4,7 @@ pub mod commands;
 pub mod filter;
 pub mod flanger;
 pub mod formant;
+pub mod formant_dsp;
 pub mod formant_preset;
 pub mod modulation;
 pub mod pitch;
