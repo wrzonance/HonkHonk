@@ -34,3 +34,31 @@ Aesthetic exploration resumes only after those are in hand, and only in small su
 - The `feat/issue-13` branch and PR #96 are discarded. The spec doc at `docs/superpowers/specs/2026-05-17-issue-13-sticker-tiles-static-design.md` was on that branch and dies with it; this ADR is the record.
 - Future agents must not re-attempt a canvas sticker tile for the grid without first addressing the cache lifecycle, scroll-clip behavior, and text overflow lessons recorded here. A revival attempt that ignores those lessons is in scope for revert.
 - The cost of this revert is one rejected PR. The cost of merging it would have been a perf regression on the most-used surface (the grid) and a follow-on stream of patches chasing each defect in turn. Walking back is cheaper than half-running.
+
+## Note: Iced 0.13 → 0.14 re-validation
+
+This ADR's three rendering lessons were recorded against Iced 0.13; the project now
+builds on Iced 0.14 (`Cargo.toml` pins `iced = "0.14"`). Re-validated against the
+vendored `iced-0.14.0` CHANGELOG and `iced_graphics-0.14.0` source — the lessons still
+hold:
+
+1. **Per-frame cache invalidation (point 1) is unchanged.** `canvas::Cache`'s core API
+   (`new`/`clear`/`draw`) is identical in 0.14; reconstructing a `Cache` inside `view()`
+   still discards it every frame. This was always a usage anti-pattern, not a version bug,
+   so 0.14 does not absolve it. 0.14 *adds* `Cache::draw_with_bounds`
+   ([#3035](https://github.com/iced-rs/iced/pull/3035)) but no API forces persistent
+   caching for you — the prerequisite to hold the `Cache` in widget state still applies.
+2. **tiny-skia scroll-clip / composition (point 2) saw fixes but no contract change.** The
+   0.14 cycle landed several `iced_tiny_skia` corrections — clip-transformation and stroke
+   bounds ([#2882](https://github.com/iced-rs/iced/pull/2882)), text clipping
+   ([#2929](https://github.com/iced-rs/iced/pull/2929)), cached-primitive transforms
+   ([#2977](https://github.com/iced-rs/iced/pull/2977)), and buffer presentation
+   ([#3032](https://github.com/iced-rs/iced/pull/3032)). These may reduce the specific
+   software-renderer mis-clip artifact observed, but none documents canvas children gaining
+   the dirty-rect / scroll-clip treatment built-in widgets get. Treat point 2 as still open
+   and re-measure on the bench harness (decision step 3) before relying on it.
+3. **Text overflow (point 3) is unchanged.** `canvas::Frame` text fill still does not wrap
+   or ellipsize; address overflow with widget-tree primitives, not canvas.
+
+Bottom line: the 0.14 bump does not reopen the canvas-sticker-tile approach. The cache
+lifecycle, scroll-clip, and text-overflow prerequisites in the Decision remain in force.

@@ -1,6 +1,6 @@
 # HonkHonk
 
-Wayland-native Linux soundboard. Pure Rust — Iced 0.13 GUI (Elm/MVU) + PipeWire audio.
+Wayland-native Linux soundboard. Pure Rust — Iced 0.14 GUI (Elm/MVU) + PipeWire audio.
 
 > Shared agent memory: `AGENTS.md` is canonical; `CLAUDE.md` symlinks here for Claude
 > compatibility. Generic workflow, security, and agent rules belong in global agent configuration
@@ -16,7 +16,7 @@ Wayland-native Linux soundboard. Pure Rust — Iced 0.13 GUI (Elm/MVU) + PipeWir
 
 ## Architecture
 
-- Iced 0.13 GUI (Elm/MVU); no other frontend framework — UI is `Element<Message>` functions.
+- Iced 0.14 GUI (Elm/MVU); no other frontend framework — UI is `Element<Message>` functions.
 - PipeWire via pipewire-rs: one persistent virtual sink, no per-sound node churn.
 - Global shortcuts via ashpd (xdg-desktop-portal GlobalShortcuts v2) — Phase 2.
 - Tray via tray-icon (StatusNotifierItem; cross-DE). Audio decode via symphonia (pure Rust).

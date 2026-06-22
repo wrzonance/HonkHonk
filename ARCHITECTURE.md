@@ -164,7 +164,7 @@ The complete HTML/JSX mockup lives in the design handoff bundle (exported from c
 | Component | Technology | Why |
 |-----------|------------|-----|
 | Language | **Rust** | Single language for everything — GUI, audio, system integration. Memory safety. Strong PipeWire/portal ecosystem |
-| GUI | **Iced 0.13** | Pure Rust, Elm/MVU architecture, wgpu GPU rendering, Wayland-native via winit. MIT license |
+| GUI | **Iced 0.14** | Pure Rust, Elm/MVU architecture, wgpu GPU rendering, Wayland-native via winit. MIT license |
 | Renderer | **wgpu** (default) / **tiny-skia** (fallback) | GPU-accelerated by default, software renderer via env var for edge cases |
 | PipeWire | **pipewire-rs 0.8** | Official Rust bindings from PipeWire project. Production-proven |
 | Global Shortcuts | **ashpd 0.13** (`global_shortcuts` feature) | Full xdg-desktop-portal GlobalShortcuts API. Async/tokio |
@@ -418,7 +418,7 @@ honkhonk/
 
 ```toml
 [dependencies]
-iced = { version = "0.13", features = ["tokio", "tiny-skia"] }
+iced = { version = "0.14", features = ["tokio", "tiny-skia"] }
 pipewire = "0.8"           # pipewire-rs — official PipeWire Rust bindings
 ashpd = { version = "0.13", features = ["global_shortcuts", "tokio"] }  # Phase 2
 symphonia = { version = "0.5", features = ["mp3", "ogg", "flac", "wav", "pcm", "aac"] }
