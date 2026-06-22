@@ -257,4 +257,42 @@ mod tests {
         np.sync(Some("s1"), 0.5);
         assert!(np.sync(None, 0.0), "stopping must invalidate the cache");
     }
+
+    #[test]
+    fn steady_playback_frames_reuse_cache() {
+        // Simulate 60 consecutive frames of the SAME sound at the SAME progress
+        // bucket (the common idle-render case Iced triggers on every Message).
+        // Exactly one clear (the first); the rest reuse — proving the cache is
+        // NOT rebuilt per frame (the ADR-009 anti-pattern).
+        let mut np = NowPlaying::default();
+        let mut clears = 0;
+        for _ in 0..60 {
+            if np.sync(Some("s1"), 0.5) {
+                clears += 1;
+            }
+        }
+        assert_eq!(clears, 1, "only the first frame may clear; rest reuse");
+    }
+
+    #[test]
+    fn smooth_progress_clears_once_per_bucket_not_per_frame() {
+        // Advance progress smoothly across one bucket worth of frames; the cache
+        // clears at most once per bucket boundary, never every frame.
+        use crate::ui::waveform::PROGRESS_BUCKETS;
+        let mut np = NowPlaying::default();
+        let step = 1.0 / (PROGRESS_BUCKETS as f32 * 4.0); // 4 frames per bucket
+        let mut clears = 0;
+        let mut p = 0.0;
+        for _ in 0..16 {
+            if np.sync(Some("s1"), p) {
+                clears += 1;
+            }
+            p += step;
+        }
+        // 16 frames spanning ~4 buckets ⇒ far fewer clears than frames.
+        assert!(
+            clears <= 5,
+            "got {clears} clears in 16 frames — cache thrashing"
+        );
+    }
 }
