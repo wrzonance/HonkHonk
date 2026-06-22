@@ -33,8 +33,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # honkhonk: source build (recommended). honkhonk-bin: .deb re-extract.
-        pkg: [honkhonk, honkhonk-bin]
+        # honkhonk: source build. honkhonk-bin: .deb re-extract.
+        # honkhonk-git: VCS build from main.
+        pkg: [honkhonk, honkhonk-bin, honkhonk-git]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -59,7 +60,7 @@ jobs:
           diff -u .SRCINFO /tmp/.SRCINFO.fresh
 
       - name: Wait for release artifacts (tag push only)
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && matrix.pkg != 'honkhonk-git'
         working-directory: packaging/aur/${{ matrix.pkg }}
         # A tag push fires this workflow alongside the release builds that
         # produce the very artifacts the PKGBUILDs download (deb.yml uploads
@@ -119,14 +120,14 @@ jobs:
           pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/applications/honkhonk.desktop$'
           pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/icons/hicolor/256x256/apps/honkhonk.png$'
 
-      - name: Persistent-source conf.d packaged (honkhonk-bin only)
-        if: matrix.pkg == 'honkhonk-bin'
+      - name: Persistent-source conf.d packaged
+        if: matrix.pkg == 'honkhonk-bin' || matrix.pkg == 'honkhonk-git'
         # The source `honkhonk` package builds the released tag, which predates
-        # the #49 conf.d drop-in, so only `-bin` vendors and ships it today.
+        # the #49 conf.d drop-in, so only `-bin` and the VCS package ship it today.
         # Once `_pkgtag` bumps past a release containing #49, extend this to the
         # `honkhonk` leg too.
         run: |
-          pacman -Ql honkhonk-bin | grep -q '/usr/share/pipewire/pipewire.conf.d/50-honkhonk.conf$'
+          pacman -Ql ${{ matrix.pkg }} | grep -q '/usr/share/pipewire/pipewire.conf.d/50-honkhonk.conf$'
 
       - name: Vendored conf.d matches canonical drop-in
         if: matrix.pkg == 'honkhonk-bin'

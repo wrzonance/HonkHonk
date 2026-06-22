@@ -8,7 +8,7 @@ Alternatives live alongside this directory:
 - `honkhonk-bin` — re-extracts the upstream `.deb` from GitHub Releases. Kept as
   a convenience for users who want a fast install, but it is built on a Debian
   base (see the libxdo note below for why source is preferred).
-- `honkhonk-git` — VCS variant tracking `main` (planned, separate PR).
+- `honkhonk-git` — VCS variant tracking `main`.
 
 ## Source
 
@@ -106,9 +106,10 @@ git push origin master
 
 ## What CI validates
 
-`.github/workflows/aur.yml` runs a matrix over `honkhonk-bin` and `honkhonk` on
-every push/PR touching `packaging/aur/**`, `.github/workflows/aur.yml`, or
-`Cargo.toml`. For this package it runs, in `archlinux:base-devel`:
+`.github/workflows/aur.yml` runs a matrix over `honkhonk`, `honkhonk-bin`, and
+`honkhonk-git` on every push/PR touching `packaging/aur/**`,
+`.github/workflows/aur.yml`, or `Cargo.toml`. For this package it runs, in
+`archlinux:base-devel`:
 
 1. `namcap PKGBUILD` — style / missing-field lint.
 2. `.SRCINFO` freshness — diffs the committed file against a fresh

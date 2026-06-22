@@ -74,7 +74,7 @@ Alternatives:
 
 ```bash
 yay -S honkhonk-bin    # pre-built binary re-extracted from the GitHub .deb (Debian base)
-yay -S honkhonk-git    # bleeding-edge, tracks main (planned)
+yay -S honkhonk-git    # bleeding-edge, tracks main
 ```
 
 See [`packaging/aur/README.md`](packaging/aur/README.md) for maintainer notes and
