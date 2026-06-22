@@ -10,6 +10,7 @@
 //! Until then, `process_block` is a transparent passthrough.
 
 use crate::audio::effects::{default_chain, EffectChain};
+use crate::audio::error::EffectsError;
 
 /// Holds the effect chain and applies it to mic audio blocks.
 ///
@@ -43,12 +44,15 @@ impl Mixer {
     ///
     /// Cold path — call once at engine startup before the audio callback runs.
     /// `push_effect` only errors on `ChainTooLong`, which the small fixed layout
-    /// cannot reach, so any push error is silently ignored.
-    pub fn install_default_chain(&mut self, sample_rate: u32) {
+    /// cannot reach today; the error is surfaced rather than dropped so a future
+    /// layout that outgrows the chain capacity fails loudly instead of silently
+    /// installing a partial chain.
+    pub fn install_default_chain(&mut self, sample_rate: u32) -> Result<(), EffectsError> {
         let block = self.output_capacity;
         for effect in default_chain(block, sample_rate) {
-            let _ = self.chain.push_effect(effect, block);
+            self.chain.push_effect(effect, block)?;
         }
+        Ok(())
     }
 
     /// Prepare `Mixer` to handle blocks up to `required_capacity` samples.
@@ -116,7 +120,9 @@ mod tests {
     fn install_default_chain_populates_all_slots_bypassed() {
         use crate::audio::effects::EffectSlot;
         let mut mixer = Mixer::new(4096);
-        mixer.install_default_chain(48_000);
+        mixer
+            .install_default_chain(48_000)
+            .expect("default chain fits within MAX_CHAIN_LEN");
         assert_eq!(mixer.chain_mut().len(), EffectSlot::ORDER.len());
         // All effects start bypassed → the chain is a passthrough.
         let input = vec![0.3_f32; 64];

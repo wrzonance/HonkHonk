@@ -26,11 +26,16 @@ impl EffectSlot {
         [EffectSlot::Pitch, EffectSlot::RingMod, EffectSlot::Bandpass];
 
     /// Stable chain index for this slot.
+    ///
+    /// An exhaustive `match` (not an `ORDER` lookup with a fallback): the
+    /// compiler forces this to stay in sync with `ORDER`, so a future drift is
+    /// a build error rather than a silent mis-route to index 0.
     pub fn index(self) -> usize {
-        Self::ORDER
-            .iter()
-            .position(|&s| s == self)
-            .unwrap_or_default()
+        match self {
+            EffectSlot::Pitch => 0,
+            EffectSlot::RingMod => 1,
+            EffectSlot::Bandpass => 2,
+        }
     }
 
     /// Human-readable label for UI.

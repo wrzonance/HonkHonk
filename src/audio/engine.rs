@@ -465,7 +465,7 @@ fn run_engine(
     let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
     let mixer = Rc::new(RefCell::new(super::mixer::Mixer::new(4096)));
-    mixer.borrow_mut().install_default_chain(48_000);
+    mixer.borrow_mut().install_default_chain(48_000)?;
 
     let ctx = EngineCtx {
         registry_sink_id,

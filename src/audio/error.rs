@@ -126,6 +126,9 @@ pub enum AudioError {
 
     #[error("router error")]
     RouterError(#[source] RouterError),
+
+    #[error("effect chain error")]
+    EffectChain(#[from] EffectsError),
 }
 
 #[cfg(test)]
