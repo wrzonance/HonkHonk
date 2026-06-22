@@ -1,0 +1,44 @@
+name: Flatpak cargo sources freshness
+
+# Regenerates packaging/flatpak/cargo-sources.json on a plain Ubuntu runner.
+# Do not move this into the Flatpak builder container: it lacks pip.
+
+on:
+  push:
+    paths:
+      - 'Cargo.lock'
+      - 'packaging/flatpak/cargo-sources.json'
+      - 'packaging/flatpak/flatpak-cargo-generator.py'
+      - 'tests/packaging/flatpak_cargo_sources_fresh.sh'
+      - '.github/workflows/flatpak-cargo-sources.yml'
+  pull_request:
+    paths:
+      - 'Cargo.lock'
+      - 'packaging/flatpak/cargo-sources.json'
+      - 'packaging/flatpak/flatpak-cargo-generator.py'
+      - 'tests/packaging/flatpak_cargo_sources_fresh.sh'
+      - '.github/workflows/flatpak-cargo-sources.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: Regenerate and diff cargo-sources.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install generator dependencies
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install \
+            'aiohttp>=3.9.5,<4.0.0' \
+            'tomlkit>=0.13.3,<1.0'
+
+      - name: Regenerate and diff Flatpak Cargo sources
+        run: |
+          . .venv/bin/activate
+          tests/packaging/flatpak_cargo_sources_fresh.sh
