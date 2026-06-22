@@ -1,3 +1,5 @@
+pub mod effects_panel;
+pub mod effects_panel_view;
 pub mod now_playing;
 pub mod search_bar;
 pub mod settings;

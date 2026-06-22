@@ -4,11 +4,14 @@ use std::sync::{Arc, Mutex};
 use iced::widget::{button, container, row, scrollable, space, text};
 use iced::{Element, Length, Point, Subscription, Task, Theme};
 
+use crate::audio::effects::EffectSlot;
 use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
 use crate::shortcuts::ShortcutsStatus;
 use crate::state::config::Density;
 use crate::state::{AppConfig, SlotMap, SoundEntry, SoundMeta, SoundMetaStore};
 use crate::tray::{TrayEvent, TrayHandle};
+use crate::ui::effects_panel::{self, EffectsUiState, PresetId};
+use crate::ui::effects_panel_view;
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
@@ -87,6 +90,15 @@ pub enum Message {
     MicPassthroughLevelChanged(f32),
     MonitorDeviceChanged(Option<String>),
     InputDeviceChanged(Option<String>),
+    // Voice effects
+    SelectEffectPreset(PresetId),
+    SetEffectBypassUi(bool),
+    SetWetDryMix(f32),
+    SetEffectParamUi {
+        slot: EffectSlot,
+        param: &'static str,
+        value: f32,
+    },
     /// Carries the command sender from the portal stream.
     /// Two `ShortcutHandle` messages are never meaningfully equal — treated as always-unequal.
     ShortcutHandle(crate::shortcuts::PortalCmdSender),
@@ -157,6 +169,8 @@ pub struct HonkHonk {
     editor_draft_name: String,
     /// Draft per-sound volume held while the editor is open.
     editor_draft_volume: f32,
+    /// User-facing voice-effects state (preset, bypass, wet/dry, params).
+    effects_ui: EffectsUiState,
     /// Persistent now-playing waveform cache owner (#131). App holds it but all
     /// cache-lifecycle logic lives in `ui::now_playing::NowPlaying`.
     now_playing: crate::ui::now_playing::NowPlaying,
@@ -318,6 +332,7 @@ impl HonkHonk {
             editor_sound_id: None,
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
+            effects_ui: EffectsUiState::default(),
             now_playing: crate::ui::now_playing::NowPlaying::default(),
         }
     }
@@ -360,6 +375,7 @@ impl HonkHonk {
             editor_sound_id: None,
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
+            effects_ui: EffectsUiState::default(),
             now_playing: crate::ui::now_playing::NowPlaying::default(),
         }
     }
@@ -378,6 +394,30 @@ impl HonkHonk {
 
     pub fn active_category(&self) -> Option<&str> {
         self.active_category.as_deref()
+    }
+
+    /// Route effects commands to the audio thread, no-op when no engine is up.
+    fn send_audio_commands(&self, cmds: impl IntoIterator<Item = AudioCommand>) {
+        if let Some(ref audio) = self.audio {
+            for cmd in cmds {
+                audio.send(cmd);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn effects_ui_preset(&self) -> PresetId {
+        self.effects_ui.preset
+    }
+
+    #[cfg(test)]
+    pub(crate) fn effects_ui_wet_dry(&self) -> f32 {
+        self.effects_ui.wet_dry
+    }
+
+    #[cfg(test)]
+    pub(crate) fn effects_ui_chain_bypass(&self) -> bool {
+        self.effects_ui.chain_bypass
     }
 
     pub fn search_query(&self) -> &str {
@@ -876,6 +916,26 @@ impl HonkHonk {
                 }
                 Task::none()
             }
+            Message::SelectEffectPreset(preset) => {
+                let cmds = effects_panel::select_preset(&mut self.effects_ui, preset);
+                self.send_audio_commands(cmds);
+                Task::none()
+            }
+            Message::SetEffectBypassUi(bypass) => {
+                let cmd = effects_panel::set_chain_bypass(&mut self.effects_ui, bypass);
+                self.send_audio_commands([cmd]);
+                Task::none()
+            }
+            Message::SetWetDryMix(mix) => {
+                let cmd = effects_panel::set_wet_dry(&mut self.effects_ui, mix);
+                self.send_audio_commands([cmd]);
+                Task::none()
+            }
+            Message::SetEffectParamUi { slot, param, value } => {
+                let cmds = effects_panel::edit_param(&mut self.effects_ui, slot, param, value);
+                self.send_audio_commands(cmds);
+                Task::none()
+            }
             Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender)) => {
                 self.shortcut_config.set_portal_sender(sender);
                 Task::none()
@@ -1229,6 +1289,8 @@ impl HonkHonk {
             self.config.volume,
         );
 
+        let effects = effects_panel_view::view_effects_panel(&self.effects_ui, t);
+
         // The banner shares one stable column slot with the header: inserting
         // it as its own top-level slot would shift every later sibling during
         // tree diffing when it appears/dismisses, wiping the grid scrollable's
@@ -1243,6 +1305,7 @@ impl HonkHonk {
             top.into(),
             chips,
             scrollable(grid).height(Length::Fill).into(),
+            effects,
             now_playing,
         ];
 
@@ -1352,6 +1415,39 @@ mod tests {
         assert_eq!(app.active_category(), Some("Memes"));
         let _ = app.update(Message::SelectCategory(None));
         assert!(app.active_category().is_none());
+    }
+
+    #[test]
+    fn select_effect_preset_updates_ui_state() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SelectEffectPreset(PresetId::Robot));
+        assert_eq!(app.effects_ui_preset(), PresetId::Robot);
+    }
+
+    #[test]
+    fn set_wet_dry_updates_ui_state() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SetWetDryMix(0.4));
+        assert!((app.effects_ui_wet_dry() - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn set_effect_bypass_updates_ui_state() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SetEffectBypassUi(true));
+        assert!(app.effects_ui_chain_bypass());
+    }
+
+    #[test]
+    fn set_effect_param_switches_to_custom_preset() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::SelectEffectPreset(PresetId::Robot));
+        let _ = app.update(Message::SetEffectParamUi {
+            slot: EffectSlot::Pitch,
+            param: "semitones",
+            value: -2.0,
+        });
+        assert_eq!(app.effects_ui_preset(), PresetId::Custom);
     }
 
     #[test]
