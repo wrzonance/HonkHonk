@@ -157,6 +157,9 @@ pub struct HonkHonk {
     editor_draft_name: String,
     /// Draft per-sound volume held while the editor is open.
     editor_draft_volume: f32,
+    /// Persistent now-playing waveform cache owner (#131). App holds it but all
+    /// cache-lifecycle logic lives in `ui::now_playing::NowPlaying`.
+    now_playing: crate::ui::now_playing::NowPlaying,
 }
 
 fn shortcuts_stream_sub(
@@ -315,6 +318,7 @@ impl HonkHonk {
             editor_sound_id: None,
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
+            now_playing: crate::ui::now_playing::NowPlaying::default(),
         }
     }
 
@@ -356,6 +360,7 @@ impl HonkHonk {
             editor_sound_id: None,
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
+            now_playing: crate::ui::now_playing::NowPlaying::default(),
         }
     }
 
@@ -452,7 +457,7 @@ impl HonkHonk {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
+        let task = match message {
             Message::ToggleVisibility => {
                 self.visible = !self.visible;
                 Task::none()
@@ -952,7 +957,12 @@ impl HonkHonk {
                 self.editor_draft_volume = 1.0;
                 Task::none()
             }
-        }
+        };
+        // Keep the now-playing waveform cache in step with playback state.
+        // Single delegating call — all lifecycle logic lives in NowPlaying.
+        self.now_playing
+            .sync(self.playing.as_deref(), self.progress);
+        task
     }
 
     /// Process every audio event queued since the last poll tick.
@@ -1212,6 +1222,7 @@ impl HonkHonk {
         );
 
         let now_playing = now_playing::view_now_playing(
+            &self.now_playing,
             self.playing.as_deref(),
             &self.sounds,
             self.progress,
