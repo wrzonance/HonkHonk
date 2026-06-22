@@ -32,6 +32,40 @@ pub enum RouterError {
     SourcePortsUnavailable { node_id: u32 },
 }
 
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum EngineErrorEvent {
+    #[error("{detail}")]
+    EngineInitialization { detail: String },
+
+    #[error("conf.d write: {detail}")]
+    ConfdWrite { detail: String },
+
+    #[error("conf.d path: {detail}")]
+    ConfdPath { detail: String },
+
+    #[error("set effect bypass (index {index}): {detail}")]
+    EffectBypass { index: usize, detail: String },
+
+    #[error("set effect param (index {index}, param {param:?}): {detail}")]
+    EffectParam {
+        index: usize,
+        param: String,
+        detail: String,
+    },
+
+    #[error("monitor stream rebuild: {detail}")]
+    MonitorStreamRebuild { detail: String },
+
+    #[error("virtual sink not yet registered")]
+    VirtualSinkNotRegistered,
+
+    #[error("{detail}")]
+    SinkStreamCreation { detail: String },
+
+    #[error("monitor stream unavailable: {detail}")]
+    MonitorStreamUnavailable { detail: String },
+}
+
 #[derive(Error, Debug)]
 pub enum AudioError {
     #[error("failed to open audio file")]
@@ -161,5 +195,80 @@ mod effects_error_tests {
     fn effects_error_index_out_of_range_is_constructible() {
         let e = EffectsError::IndexOutOfRange { index: 3, len: 2 };
         assert!(e.to_string().contains("3"));
+    }
+}
+
+#[cfg(test)]
+mod engine_error_event_tests {
+    use super::*;
+
+    #[test]
+    fn engine_error_event_display_preserves_existing_log_text() {
+        let cases = [
+            (
+                EngineErrorEvent::EngineInitialization {
+                    detail: "failed to initialize PipeWire: main loop: boom".into(),
+                },
+                "failed to initialize PipeWire: main loop: boom",
+            ),
+            (
+                EngineErrorEvent::ConfdWrite {
+                    detail: "failed to write PipeWire conf.d file at /tmp/honkhonk.conf".into(),
+                },
+                "conf.d write: failed to write PipeWire conf.d file at /tmp/honkhonk.conf",
+            ),
+            (
+                EngineErrorEvent::ConfdPath {
+                    detail: "failed to resolve XDG config directory for PipeWire conf.d".into(),
+                },
+                "conf.d path: failed to resolve XDG config directory for PipeWire conf.d",
+            ),
+            (
+                EngineErrorEvent::EffectBypass {
+                    index: 1,
+                    detail: "effect index 1 out of range (chain length 0)".into(),
+                },
+                "set effect bypass (index 1): effect index 1 out of range (chain length 0)",
+            ),
+            (
+                EngineErrorEvent::MonitorStreamRebuild {
+                    detail: "failed to create playback stream: node missing".into(),
+                },
+                "monitor stream rebuild: failed to create playback stream: node missing",
+            ),
+            (
+                EngineErrorEvent::EffectParam {
+                    index: 2,
+                    param: "gain".into(),
+                    detail: "unknown parameter \"gain\"".into(),
+                },
+                "set effect param (index 2, param \"gain\"): unknown parameter \"gain\"",
+            ),
+            (
+                EngineErrorEvent::VirtualSinkNotRegistered,
+                "virtual sink not yet registered",
+            ),
+            (
+                EngineErrorEvent::SinkStreamCreation {
+                    detail: "failed to create playback stream: sink missing".into(),
+                },
+                "failed to create playback stream: sink missing",
+            ),
+            (
+                EngineErrorEvent::MonitorStreamUnavailable {
+                    detail: "failed to create playback stream: monitor missing".into(),
+                },
+                "monitor stream unavailable: failed to create playback stream: monitor missing",
+            ),
+        ];
+
+        for (event, expected) in cases {
+            assert_eq!(event.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn audio_error_event_payload_is_typed() {
+        let _ = crate::audio::AudioEvent::Error(EngineErrorEvent::VirtualSinkNotRegistered);
     }
 }
