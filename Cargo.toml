@@ -49,6 +49,28 @@ pipewire-test = []
 
 [dev-dependencies]
 tempfile = "3"
+# Bench harness for the sound-grid render baseline (ADR-009). Criterion is the
+# de-facto Rust micro-benchmark standard; stdlib #[bench] is nightly-only.
+# License: Apache-2.0 OR MIT (cargo-deny clean).
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+# block_on for the headless wgpu device setup in the grid_render bench — avoids
+# pulling a full async runtime into a bench. License: MIT OR Apache-2.0.
+pollster = "0.4"
+# Iced internals the grid_render bench drives directly for a headless render
+# baseline (layout via UserInterface, per-renderer rasterization). All are
+# already in the dependency graph at these exact versions (transitive deps of
+# `iced`), so declaring them as dev-deps pulls no new crates. Pinned with `=` so
+# the bench tracks whatever `iced` resolves to.
+iced_runtime = "=0.14.0"
+iced_wgpu = "=0.14.0"
+iced_tiny_skia = "=0.14.0"
+iced_core = "=0.14.0"
+iced_graphics = "=0.14.0"
+tiny-skia = "=0.11.4"
+
+[[bench]]
+name = "grid_render"
+harness = false
 
 [package.metadata.deb]
 maintainer = "thewrz <djfreaq@gmail.com>"
