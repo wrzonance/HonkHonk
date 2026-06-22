@@ -208,7 +208,6 @@ mod tests {
         FormantPitchEffect::new(SR)
     }
 
-    /// Run `fx` on `input`, return output of same length.
     fn run(fx: &mut FormantPitchEffect, input: &[f32]) -> Vec<f32> {
         let mut out = vec![0.0f32; input.len()];
         fx.process(input, &mut out, SR);
@@ -259,9 +258,20 @@ mod tests {
         fx.set_semitones(7.0);
         fx.set_bypass(true);
         let input: Vec<f32> = (0..512).map(|i| (i as f32 * 0.01).sin()).collect();
-        let mut output = vec![0.0_f32; input.len()];
-        fx.process(&input, &mut output, SR);
-        assert_eq!(output, input);
+        assert_eq!(run(&mut fx, &input), input);
+    }
+
+    #[test]
+    fn bypass_transition_flushes_overlap_state() {
+        // Regression (mirrors pitch.rs / PR #106): a bypass toggle must reset the
+        // resynth overlap state so pre-bypass audio cannot leak out afterward.
+        let mut fx = effect();
+        fx.set_semitones(7.0);
+        let _ = run(&mut fx, &make_sine(440.0, SR as f32, 4096));
+        fx.set_bypass(true);
+        fx.set_bypass(false);
+        let out = run(&mut fx, &vec![0.0f32; WINDOW * 3]);
+        assert!(out.iter().all(|&s| s.abs() < 1e-3), "stale audio leaked");
     }
 
     #[test]
