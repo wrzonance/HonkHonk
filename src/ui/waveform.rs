@@ -9,24 +9,43 @@ use std::hash::{Hash, Hasher};
 /// Number of vertical bars in the now-playing waveform.
 pub const WAVEFORM_BARS: usize = 48;
 
-/// Quantization resolution for progress. The cache is keyed on the bucket, not
-/// the raw float, so identical-looking frames reuse the cached geometry instead
-/// of re-tessellating every sub-pixel `progress` tick.
-pub const PROGRESS_BUCKETS: u16 = 240;
+/// Quantization resolution for progress — one bucket per bar, matching
+/// `WAVEFORM_BARS`. The cached bars are the only cache-sensitive content, and
+/// they change only when `played_to` crosses a bar boundary, so `WAVEFORM_BARS`
+/// distinct buckets are sufficient. The smooth playhead overlay uses raw
+/// `progress` directly and does NOT depend on this bucket, so no visual
+/// precision is lost.
+///
+/// This is the max bucket INDEX (inclusive); there are `PROGRESS_BUCKETS + 1`
+/// distinct bucket values, including the exact-end bucket at `progress == 1.0`.
+pub const PROGRESS_BUCKETS: u16 = WAVEFORM_BARS as u16;
 
 /// Deterministic bar heights for a sound id, each in `0.15..=1.0`.
+///
+/// The id is hashed once up front; each bar mixes in its index via a
+/// cheap integer multiply, so the id is not re-hashed 48 times.
 pub fn samples(id: &str) -> [f32; WAVEFORM_BARS] {
+    use std::collections::hash_map::DefaultHasher;
+    // Hash the id once.
+    let mut h = DefaultHasher::new();
+    id.hash(&mut h);
+    let base: u64 = h.finish();
+
     std::array::from_fn(|i| {
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        id.hash(&mut h);
-        (i as u64).hash(&mut h);
-        // Map the hash into 0.15..=1.0 so no bar fully disappears.
-        let frac = (h.finish() % 1000) as f32 / 1000.0;
+        // Mix bar index into the base hash with a fast integer combine.
+        // All arithmetic is wrapping to avoid overflow in debug builds.
+        let mixed = base
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add((i as u64).wrapping_mul(1442695040888963407).wrapping_add(1));
+        // Map the mixed value into 0.15..=1.0 so no bar fully disappears.
+        let frac = (mixed % 1000) as f32 / 1000.0;
         0.15 + frac * 0.85
     })
 }
 
-/// Quantizes progress into `0..=PROGRESS_BUCKETS`.
+/// Quantizes progress into `0..=PROGRESS_BUCKETS` (inclusive). Returns the
+/// max bucket index `PROGRESS_BUCKETS` when `progress >= 1.0`, so there are
+/// `PROGRESS_BUCKETS + 1` distinct return values in total.
 pub fn progress_bucket(progress: f32) -> u16 {
     let p = progress.clamp(0.0, 1.0);
     (p * PROGRESS_BUCKETS as f32).round() as u16

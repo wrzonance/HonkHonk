@@ -73,8 +73,16 @@ impl<Message> canvas::Program<Message> for WaveformProgram<'_> {
 
         // Static bars: drawn once and reused. `Cache::draw` only re-runs this
         // closure when the cache was cleared (NowPlaying::sync on a key change).
+        // The `bounds.size()` argument is what triggers re-tessellation on window
+        // resize — Iced treats a size change as a cache miss automatically.
         let played_to = (self.progress.clamp(0.0, 1.0) * bounds.width).round();
         let bars = self.cache.draw(renderer, bounds.size(), |frame| {
+            // The played/unplayed bar split is baked into the CACHED geometry via
+            // `played_to` here. This is safe because `played_to` is a pure
+            // function of `progress` (reflected in the cache key via the bucket)
+            // and of `bounds` (invalidated by the size arg above). If any future
+            // change makes the cached content depend on state NOT in `RenderKey`
+            // or the cache bounds, bars will go stale.
             for (i, &h) in self.samples.iter().enumerate() {
                 let x = i as f32 * (bar_w + gap);
                 let bh = (h * bounds.height).max(1.0);
@@ -161,6 +169,9 @@ fn view_waveform<'a>(
         bar_dim: t.ink_faint(),
         accent: t.ink(),
     };
+    // `canvas::Canvas::new` (the struct) is used here rather than the
+    // `canvas(program)` free function because `use iced::widget::canvas;`
+    // above shadows the helper name.
     canvas::Canvas::new(program)
         .width(320.0)
         .height(theme::component::ARTWORK_SQ)
@@ -230,6 +241,10 @@ mod tests {
         let mut np = NowPlaying::default();
         np.sync(Some("s1"), 0.5000);
         // A tiny progress tick within the same bucket must NOT thrash the cache.
+        // This assertion depends on the bucket width (1/PROGRESS_BUCKETS ≈ 0.021)
+        // being larger than the 0.0001 jitter — a future bucketing change that
+        // shrinks buckets below this gap would be a genuine intentional trade-off,
+        // not a sync bug.
         let cleared = np.sync(Some("s1"), 0.5001);
         assert!(!cleared, "sub-bucket jitter must not invalidate the cache");
     }
