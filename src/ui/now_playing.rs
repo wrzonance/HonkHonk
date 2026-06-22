@@ -40,7 +40,72 @@ impl NowPlaying {
     }
 }
 
+/// Canvas program for the now-playing waveform. `draw` paints the static bars
+/// through the persistent cache (reused frame-to-frame) and overlays the moving
+/// playhead separately, so the expensive bar tessellation happens once per
+/// sound — not once per frame (the ADR-009 anti-pattern PR #96 hit).
+struct WaveformProgram<'a> {
+    cache: &'a canvas::Cache,
+    samples: [f32; crate::ui::waveform::WAVEFORM_BARS],
+    progress: f32,
+    bar: iced::Color,
+    bar_dim: iced::Color,
+    accent: iced::Color,
+}
+
+impl<Message> canvas::Program<Message> for WaveformProgram<'_> {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &iced::Renderer,
+        _theme: &iced::Theme,
+        bounds: iced::Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<canvas::Geometry> {
+        use iced::widget::canvas::{Path, Stroke};
+        use iced::{Point, Size};
+
+        let n = self.samples.len() as f32;
+        let gap = 2.0;
+        let bar_w = ((bounds.width - gap * (n - 1.0)) / n).max(1.0);
+
+        // Static bars: drawn once and reused. `Cache::draw` only re-runs this
+        // closure when the cache was cleared (NowPlaying::sync on a key change).
+        let played_to = (self.progress.clamp(0.0, 1.0) * bounds.width).round();
+        let bars = self.cache.draw(renderer, bounds.size(), |frame| {
+            for (i, &h) in self.samples.iter().enumerate() {
+                let x = i as f32 * (bar_w + gap);
+                let bh = (h * bounds.height).max(1.0);
+                let y = (bounds.height - bh) / 2.0;
+                let color = if x <= played_to {
+                    self.bar
+                } else {
+                    self.bar_dim
+                };
+                frame.fill_rectangle(Point::new(x, y), Size::new(bar_w, bh), color);
+            }
+        });
+
+        // Playhead overlay: a thin accent line at the progress position, drawn
+        // fresh each frame WITHOUT invalidating the cached bars above.
+        let mut overlay = canvas::Frame::new(renderer, bounds.size());
+        let line = Path::line(
+            Point::new(played_to, 0.0),
+            Point::new(played_to, bounds.height),
+        );
+        overlay.stroke(
+            &line,
+            Stroke::default().with_color(self.accent).with_width(2.0),
+        );
+
+        vec![bars, overlay.into_geometry()]
+    }
+}
+
 pub fn view_now_playing<'a>(
+    now_playing: &'a NowPlaying,
     playing: Option<&'a str>,
     sounds: &'a [SoundEntry],
     progress: f32,
@@ -48,12 +113,7 @@ pub fn view_now_playing<'a>(
 ) -> Element<'a, Message> {
     let t = Theme::Dark;
 
-    let sound = match playing {
-        Some(id) => sounds.iter().find(|s| s.id == id),
-        None => None,
-    };
-
-    let sound = match sound {
+    let sound = match playing.and_then(|id| sounds.iter().find(|s| s.id == id)) {
         Some(s) => s,
         None => return Space::new().into(),
     };
@@ -61,7 +121,7 @@ pub fn view_now_playing<'a>(
     let content = row![
         view_placeholder(t),
         view_sound_info(sound, t),
-        view_progress_bar(progress, t),
+        view_waveform(now_playing, &sound.id, progress, t),
         space::horizontal(),
         volume::view_volume(vol),
     ]
@@ -80,6 +140,30 @@ pub fn view_now_playing<'a>(
             },
             ..Default::default()
         })
+        .into()
+}
+
+/// Builds the canvas widget backed by the persistent cache. The waveform samples
+/// are derived per-sound; the cache itself is owned by `now_playing` and reused
+/// across frames (cleared only by `NowPlaying::sync`).
+fn view_waveform<'a>(
+    now_playing: &'a NowPlaying,
+    id: &str,
+    progress: f32,
+    t: Theme,
+) -> Element<'a, Message> {
+    use crate::ui::waveform;
+    let program = WaveformProgram {
+        cache: &now_playing.cache,
+        samples: waveform::samples(id),
+        progress,
+        bar: t.accent(),
+        bar_dim: t.ink_faint(),
+        accent: t.ink(),
+    };
+    canvas::Canvas::new(program)
+        .width(320.0)
+        .height(theme::component::ARTWORK_SQ)
         .into()
 }
 
@@ -114,35 +198,6 @@ fn view_sound_info<'a>(sound: &'a SoundEntry, t: Theme) -> Element<'a, Message> 
         .push(name)
         .push(subtitle)
         .spacing(theme::space::XS)
-        .into()
-}
-
-fn view_progress_bar(progress: f32, t: Theme) -> Element<'static, Message> {
-    let filled_width = (progress.clamp(0.0, 1.0) * 320.0).round();
-
-    let filled = container(Space::new())
-        .width(filled_width)
-        .height(theme::component::PROGRESS_BAR_H)
-        .style(move |_theme| container::Style {
-            background: Some(theme::bg_color(t.accent())),
-            border: Border {
-                radius: theme::radius::SM,
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-
-    container(filled)
-        .width(320.0)
-        .height(theme::component::PROGRESS_BAR_H)
-        .style(move |_theme| container::Style {
-            background: Some(theme::bg_color(t.bg())),
-            border: Border {
-                radius: theme::radius::SM,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
         .into()
 }
 
