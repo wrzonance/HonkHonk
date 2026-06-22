@@ -25,12 +25,15 @@ impl NowPlaying {
     /// existing cache is reused. Call once per update/view glue — the only place
     /// the cache is ever cleared.
     pub fn sync(&mut self, playing: Option<&str>, progress: f32) -> bool {
-        let next = render_key(playing, progress);
-        if self.key.as_ref() == Some(&next) {
-            return false;
+        // Hot path: compare without allocating an owned id. Only build the
+        // owned `RenderKey` when the key actually changes (i.e. on a clear).
+        if let Some(key) = &self.key {
+            if key.matches(playing, progress) {
+                return false;
+            }
         }
         self.cache.clear();
-        self.key = Some(next);
+        self.key = Some(render_key(playing, progress));
         true
     }
 

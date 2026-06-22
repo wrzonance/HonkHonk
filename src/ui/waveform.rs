@@ -66,6 +66,16 @@ pub fn render_key(playing: Option<&str>, progress: f32) -> RenderKey {
     }
 }
 
+impl RenderKey {
+    /// Whether this key already describes `(playing, progress)` — the
+    /// allocation-free equivalent of `*self == render_key(playing, progress)`.
+    /// Lets the cache hot path (called every `update`) skip building an owned
+    /// `id` on the common no-change frame.
+    pub fn matches(&self, playing: Option<&str>, progress: f32) -> bool {
+        self.bucket == progress_bucket(progress) && self.id.as_deref() == playing
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +125,21 @@ mod tests {
     #[test]
     fn render_key_none_when_idle() {
         assert_eq!(render_key(None, 0.7).id, None);
+    }
+
+    #[test]
+    fn matches_is_allocation_free_equivalent_of_render_key() {
+        let key = render_key(Some("s1"), 0.5);
+        // Same id + same bucket (incl. sub-bucket jitter) ⇒ matches.
+        assert!(key.matches(Some("s1"), 0.5));
+        assert!(key.matches(Some("s1"), 0.5001));
+        // Any of id / bucket / playing-state differing ⇒ no match.
+        assert!(!key.matches(Some("s2"), 0.5));
+        assert!(!key.matches(Some("s1"), 1.0));
+        assert!(!key.matches(None, 0.5));
+        // Equivalence with the owned-key comparison it replaces.
+        for (p, id) in [(0.5_f32, Some("s1")), (1.0, Some("s2")), (0.0, None)] {
+            assert_eq!(key.matches(id, p), key == render_key(id, p));
+        }
     }
 }
