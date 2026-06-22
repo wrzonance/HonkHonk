@@ -8,6 +8,7 @@ pub mod sound_editor;
 pub mod sound_grid;
 pub mod theme;
 pub mod volume;
+pub mod waveform;
 
 pub fn fmt_duration(ms: Option<u64>) -> String {
     match ms {
