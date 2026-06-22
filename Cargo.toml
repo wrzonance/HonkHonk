@@ -8,7 +8,7 @@ description = "Wayland-native Linux soundboard"
 repository = "https://github.com/thewrz/HonkHonk"
 
 [dependencies]
-iced = { version = "0.14", features = ["tokio", "tiny-skia"] }
+iced = { version = "0.14", features = ["tokio", "tiny-skia", "canvas"] }
 # Wayland-only: disable default features on BOTH tray-icon and its (also-direct)
 # muda dep to drop the `libxdo` X11 keystroke path. muda only uses libxdo for the
 # predefined Copy/Cut/Paste/SelectAll items, which HonkHonk does not use (our tray
