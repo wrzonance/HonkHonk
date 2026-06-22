@@ -40,6 +40,7 @@ flamegraph.svg
 *.profdata
 callgrind.out.*
 cachegrind.out.*
+.playwright-mcp/
 
 # Coverage
 tarpaulin-report.html
