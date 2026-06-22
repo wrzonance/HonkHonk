@@ -164,17 +164,24 @@ pub fn render_tiny_skia(sounds: &[&SoundEntry], grid: GridCtx) -> u32 {
 
 // ───────────────────────────── wgpu driver ─────────────────────────────
 
-/// Headless wgpu context: an `iced_wgpu::Engine` (which owns the device/queue)
-/// plus the target format. `None` when no adapter exists (e.g. CI without a
-/// GPU) so the bench skips the wgpu group cleanly.
+/// Headless wgpu context: an `iced_wgpu::Engine` (which owns the device/queue),
+/// the target format, and a persistent offscreen render target. `None` when no
+/// adapter exists (e.g. CI without a GPU) so the bench skips the wgpu group
+/// cleanly. The target texture/view is created once and reused every iteration,
+/// mirroring how a real frame loop reuses its render target — so the bench
+/// measures steady-state per-frame render, not per-iteration texture allocation.
 pub struct WgpuCtx {
     engine: iced_wgpu::Engine,
-    device: iced_wgpu::wgpu::Device,
     format: iced_wgpu::wgpu::TextureFormat,
+    // `_texture` owns the GPU allocation `view` points into; held for its
+    // lifetime even though only `view` is referenced after construction.
+    _texture: iced_wgpu::wgpu::Texture,
+    view: iced_wgpu::wgpu::TextureView,
 }
 
-/// Attempts to create a headless wgpu device + engine. Returns `None` if no
-/// adapter is available so callers can skip rather than panic.
+/// Attempts to create a headless wgpu device + engine + reusable render target.
+/// Returns `None` if no adapter is available so callers can skip rather than
+/// panic.
 pub fn init_wgpu() -> Option<WgpuCtx> {
     use iced_wgpu::wgpu;
 
@@ -192,6 +199,22 @@ pub fn init_wgpu() -> Option<WgpuCtx> {
     .ok()?;
 
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("honkhonk-grid-bench-target"),
+        size: wgpu::Extent3d {
+            width: VIEW_W,
+            height: VIEW_H,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
     let engine = iced_wgpu::Engine::new(
         &adapter,
         device.clone(),
@@ -202,16 +225,16 @@ pub fn init_wgpu() -> Option<WgpuCtx> {
     );
     Some(WgpuCtx {
         engine,
-        device,
         format,
+        _texture: texture,
+        view,
     })
 }
 
-/// Full wgpu render: layout + draw + present to an offscreen texture. Returns a
-/// token so the work cannot be optimized away. Requires an initialized context.
+/// Full wgpu render: layout + draw + present to the reusable offscreen target.
+/// Returns a token so the work cannot be optimized away. Requires an
+/// initialized context.
 pub fn try_render_wgpu(sounds: &[&SoundEntry], grid: GridCtx, gpu: &WgpuCtx) -> u32 {
-    use iced_wgpu::wgpu;
-
     let mut renderer = iced::Renderer::Primary(iced_wgpu::Renderer::new(
         gpu.engine.clone(),
         Font::DEFAULT,
@@ -223,25 +246,11 @@ pub fn try_render_wgpu(sounds: &[&SoundEntry], grid: GridCtx, gpu: &WgpuCtx) -> 
         unreachable!("constructed Primary");
     };
 
-    let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("honkhonk-grid-bench-target"),
-        size: wgpu::Extent3d {
-            width: VIEW_W,
-            height: VIEW_H,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: gpu.format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-    // `present` builds the encoder, submits to the engine's queue, and recalls
-    // the staging belt — the full GPU draw path minus swapchain present.
-    let _submission = wr.present(Some(BG), gpu.format, &view, &full_viewport());
+    // `present` clears the target with `BG` and re-renders each call, so reusing
+    // one texture across iterations is correct. It builds the encoder, submits
+    // to the engine's queue, and recalls the staging belt — the full GPU draw
+    // path minus swapchain present.
+    let _submission = wr.present(Some(BG), gpu.format, &gpu.view, &full_viewport());
     1
 }
 

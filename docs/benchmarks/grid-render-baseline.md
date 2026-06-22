@@ -20,7 +20,8 @@ through Iced 0.14's headless render path, per iteration:
    - **tiny-skia:** into a 1200×900 CPU `Pixmap` (the `HONKHONK_RENDERER=software`
      path). Fully exercised on every host, including headless CI.
    - **wgpu:** `Renderer::present` to an offscreen 1200×900 texture on a headless
-     device (no swapchain). Skipped (with a printed note) when no GPU adapter is
+     device (no swapchain), reusing one render target across iterations as a real
+     frame loop does. Skipped (with a printed note) when no GPU adapter is
      available, so the harness still runs on GPU-less CI.
 
 It does **not** measure compositor/windowing, swapchain present-to-screen,
@@ -33,13 +34,13 @@ frame loop spends on the CPU side.
 
 Host: AMD Ryzen 9 5900X · NVIDIA GeForce RTX 3080 Ti · Linux 6.18 (Manjaro) ·
 rustc 1.95.0 · Criterion `bench` profile (release + LTO).
-Date: 2026-06-22 · Commit: `0486b94`
+Date: 2026-06-22
 
 | Tiles | tiny-skia (median) | wgpu (median) |
 |------:|-------------------:|--------------:|
-|    50 |           2.239 ms |      933.6 µs |
-|   200 |           3.899 ms |       3.402 ms |
-|   500 |           8.255 ms |       8.450 ms |
+|    50 |           2.224 ms |      906.6 µs |
+|   200 |           3.920 ms |       3.348 ms |
+|   500 |           8.274 ms |       8.091 ms |
 
 (Numbers are per full layout + draw + raster iteration. Absolute values are
 host-dependent; the gate below compares same-host before/after, not across
