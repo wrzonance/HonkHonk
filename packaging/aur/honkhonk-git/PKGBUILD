@@ -1,0 +1,64 @@
+# Maintainer: thewrz <adam@wrze.ski>
+# GPG: B514 CBC5 B44C AACF 02EA  0D68 B461 236C F8EA 7961
+
+pkgname=honkhonk-git
+pkgver=0.1.0.r1.g5ddcab0
+pkgrel=1
+pkgdesc="Wayland-native Linux soundboard — Iced GUI + PipeWire audio (VCS build)"
+arch=('x86_64')
+url="https://github.com/wrzonance/HonkHonk"
+license=('MIT')
+depends=(
+    'pipewire'                # libpipewire-0.3.so — audio engine (pipewire-sys)
+    'gtk3'                    # libgtk-3.so / libgdk-3.so — tray menu (muda gtk feature)
+    'libayatana-appindicator' # libayatana-appindicator3.so — SNI tray (dlopened)
+    'wayland'                 # libwayland-client.so — Iced/winit Wayland backend (dlopened)
+    'libxkbcommon'            # libxkbcommon.so — keyboard mapping (winit, dlopened)
+    'xdg-desktop-portal'      # D-Bus portal: file chooser + global shortcuts (ashpd)
+)
+makedepends=(
+    'cargo'   # build driver
+    'rust'    # toolchain
+    'pkgconf' # pkg-config for -sys crate build scripts
+    'clang'   # libclang.so — pipewire-sys runs bindgen at build time
+    'git'     # VCS source checkout + pkgver()
+)
+provides=('honkhonk')
+conflicts=('honkhonk' 'honkhonk-bin')
+source=("git+$url.git#branch=main")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/HonkHonk"
+    git describe --tags --long --abbrev=7 \
+        | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+}
+
+prepare() {
+    cd "$srcdir/HonkHonk"
+    cargo fetch --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$srcdir/HonkHonk"
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release
+}
+
+check() {
+    cd "$srcdir/HonkHonk"
+    export CARGO_TARGET_DIR=target
+    cargo test --frozen --release
+}
+
+package() {
+    cd "$srcdir/HonkHonk"
+    install -Dm755 "target/release/honkhonk" "$pkgdir/usr/bin/honkhonk"
+    install -Dm644 "assets/honkhonk.desktop" \
+        "$pkgdir/usr/share/applications/honkhonk.desktop"
+    install -Dm644 "assets/icons/hicolor/256x256/apps/honkhonk.png" \
+        "$pkgdir/usr/share/icons/hicolor/256x256/apps/honkhonk.png"
+    install -Dm644 "packaging/pipewire/50-honkhonk.conf" \
+        "$pkgdir/usr/share/pipewire/pipewire.conf.d/50-honkhonk.conf"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
