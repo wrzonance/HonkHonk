@@ -90,7 +90,8 @@ impl<Message> canvas::Program<Message> for WaveformProgram<'_> {
                 let x = i as f32 * (bar_w + gap);
                 let bh = (h * bounds.height).max(1.0);
                 let y = (bounds.height - bh) / 2.0;
-                let color = if x <= played_to {
+                // Strict `<`: at 0% progress (played_to == 0.0) no bar reads as played.
+                let color = if x < played_to {
                     self.bar
                 } else {
                     self.bar_dim

@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **⚠️ Snippets below are *as-planned*, not *as-shipped*.** They record the original plan; the implementation refined several details. The **source of truth for the proven pattern is the shipped code (`src/ui/waveform.rs`, `src/ui/now_playing.rs`) and ADR-009** — `#13`/`#92` implementers should copy from those, not from these plan snippets. Refinements made during implementation: `PROGRESS_BUCKETS = WAVEFORM_BARS` (**48** — one bucket per bar, not 240); `samples()` hashes the id **once** and mixes the bar index via wrapping arithmetic (not re-hashing per bar); and `NowPlaying::sync` compares via the allocation-free `RenderKey::matches()` rather than building an owned key every call.
+
 **Goal:** Prove the correct persistent-`canvas::Cache` pattern (cache held in persistent state, cleared only on content change — never rebuilt in `view()`) on the low-risk now-playing waveform surface, per ADR-009, to de-risk it for the tile grid (#13/#92).
 
 **Architecture:** A `NowPlaying` cache-owner struct lives in `src/ui/now_playing.rs` and owns the persistent `canvas::Cache` plus a render key (the playing sound id + the progress bucket). It exposes `sync(playing, progress)` which clears the cache **only** when the key changes, and a `canvas::Program` impl whose `draw` reuses the cache for the static waveform bars and paints the moving playhead as a cheap per-frame overlay. `HonkHonk` holds one `now_playing: NowPlaying` field and, in `update`/`view` glue, calls `sync(..)` — no cache-lifecycle business logic enters `app.rs`.
