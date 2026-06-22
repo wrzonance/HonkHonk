@@ -74,12 +74,9 @@ fn default_mic_linked_to_virtual_sink() {
 
     let default_source = match get_default_source_name() {
         Some(name) if name != SOURCE_NODE_NAME => name,
-        None => {
+        _ => {
             handle.shutdown();
-            return;
-        }
-        Some(_) => {
-            handle.shutdown();
+            std::thread::sleep(Duration::from_millis(500));
             return;
         }
     };
