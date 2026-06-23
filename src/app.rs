@@ -1,5 +1,6 @@
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use iced::widget::{button, container, row, scrollable, space, text};
 use iced::{Element, Length, Point, Subscription, Task, Theme};
@@ -69,6 +70,9 @@ pub enum Message {
     // Window / cursor
     CursorMoved(Point),
     WindowResized(f32, f32),
+    /// Per-frame redraw tick (vsync-paced via `window::frames()`), carrying the
+    /// frame time. Only subscribed while a sound plays. Drives playhead interpolation.
+    Frame(Instant),
     // Navigation
     ShowSlots,
     ShowMain,
@@ -174,6 +178,12 @@ pub struct HonkHonk {
     /// Persistent now-playing waveform cache owner (#131). App holds it but all
     /// cache-lifecycle logic lives in `ui::now_playing::NowPlaying`.
     now_playing: crate::ui::now_playing::NowPlaying,
+    /// Predict-and-correct clock driving the smooth playhead; `Some` while a
+    /// sound plays. Authoritative anchor is the 10 Hz `AudioEvent::Progress`.
+    playhead: Option<crate::ui::playhead::PlayheadClock>,
+    /// Frame-interpolated playhead position fed to the now-playing view and the
+    /// waveform cache-sync. Distinct from `progress` (the raw 10 Hz anchor).
+    display_progress: f32,
 }
 
 fn shortcuts_stream_sub(
@@ -334,6 +344,8 @@ impl HonkHonk {
             editor_draft_volume: 1.0,
             effects_ui: EffectsUiState::default(),
             now_playing: crate::ui::now_playing::NowPlaying::default(),
+            playhead: None,
+            display_progress: 0.0,
         }
     }
 
@@ -377,6 +389,8 @@ impl HonkHonk {
             editor_draft_volume: 1.0,
             effects_ui: EffectsUiState::default(),
             now_playing: crate::ui::now_playing::NowPlaying::default(),
+            playhead: None,
+            display_progress: 0.0,
         }
     }
 
@@ -552,10 +566,19 @@ impl HonkHonk {
                         if self.playing.as_deref() == Some(sound_id.as_str()) {
                             self.playing = None;
                             self.progress = 0.0;
+                            self.playhead = None;
+                            self.display_progress = 0.0;
                         }
                     }
                     AudioEvent::Progress(p) => {
                         self.progress = p;
+                        let now = Instant::now();
+                        if let Some(ref mut clock) = self.playhead {
+                            clock.on_progress(p, now);
+                            self.display_progress = clock.display(now);
+                        } else {
+                            self.display_progress = p;
+                        }
                     }
                     AudioEvent::Error(e) => {
                         eprintln!("honkhonk: audio error: {e}");
@@ -740,6 +763,12 @@ impl HonkHonk {
             }
             Message::WindowResized(w, h) => {
                 self.window_size = (w, h);
+                Task::none()
+            }
+            Message::Frame(now) => {
+                if let Some(ref clock) = self.playhead {
+                    self.display_progress = clock.display(now);
+                }
                 Task::none()
             }
             Message::ShowSlots => {
@@ -1021,7 +1050,7 @@ impl HonkHonk {
         // Keep the now-playing waveform cache in step with playback state.
         // Single delegating call — all lifecycle logic lives in NowPlaying.
         self.now_playing
-            .sync(self.playing.as_deref(), self.progress);
+            .sync(self.playing.as_deref(), self.display_progress);
         task
     }
 
@@ -1053,6 +1082,14 @@ impl HonkHonk {
                 return;
             }
         };
+        // Start the smooth-playhead clock; duration is exact from the decoded
+        // PCM (avoids depending on the lazy duration scan). PR-B inserts the
+        // waveform envelope here too, from `decoded.samples` before per-vol.
+        self.playhead = Some(crate::ui::playhead::PlayheadClock::new(
+            decoded.duration,
+            Instant::now(),
+        ));
+        self.display_progress = 0.0;
         if let Some(ref audio) = self.audio {
             if stop_before {
                 audio.send(AudioCommand::Stop);
@@ -1226,6 +1263,14 @@ impl HonkHonk {
             ));
         }
 
+        // Vsync-paced playhead animation — subscribed ONLY while a sound plays so
+        // an idle tray app never repaints. `window::frames()` yields one `Instant`
+        // per refresh; subscriptions are re-evaluated each update, so this drops
+        // out automatically when playback ends. No fps cap (let it fly at refresh).
+        if self.playing.is_some() {
+            subs.push(iced::window::frames().map(Message::Frame));
+        }
+
         Subscription::batch(subs)
     }
 
@@ -1285,7 +1330,7 @@ impl HonkHonk {
             &self.now_playing,
             self.playing.as_deref(),
             &self.sounds,
-            self.progress,
+            self.display_progress,
             self.config.volume,
         );
 
@@ -1694,6 +1739,57 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::VolumeChanged(0.42));
         assert!((app.config.volume - 0.42).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn frame_message_advances_display_progress_while_playing() {
+        use std::time::{Duration, Instant};
+        let mut app = HonkHonk::new_for_test();
+        let t0 = Instant::now();
+        app.playhead = Some(crate::ui::playhead::PlayheadClock::new(
+            Duration::from_secs(10),
+            t0,
+        ));
+        let _ = app.update(Message::Frame(t0 + Duration::from_secs(5)));
+        assert!(
+            (app.display_progress - 0.5).abs() < 1e-3,
+            "got {}",
+            app.display_progress
+        );
+    }
+
+    #[test]
+    fn frame_message_is_noop_when_idle() {
+        use std::time::{Duration, Instant};
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::Frame(Instant::now() + Duration::from_secs(1)));
+        assert_eq!(app.display_progress, 0.0);
+    }
+
+    #[test]
+    fn progress_event_sets_display_progress() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.65)));
+        assert!((app.display_progress - 0.65).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn playback_finished_clears_playhead_and_display_progress() {
+        use std::time::{Duration, Instant};
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "test".into(),
+        }));
+        app.playhead = Some(crate::ui::playhead::PlayheadClock::new(
+            Duration::from_secs(5),
+            Instant::now(),
+        ));
+        let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            sound_id: "test".into(),
+        }));
+        assert!(app.playhead.is_none());
+        assert_eq!(app.display_progress, 0.0);
     }
 
     #[test]
