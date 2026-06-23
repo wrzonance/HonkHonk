@@ -82,11 +82,12 @@ impl<Message> canvas::Program<Message> for WaveformProgram<'_> {
         let played_to = (self.progress.clamp(0.0, 1.0) * bounds.width).round();
         let bars = self.cache.draw(renderer, bounds.size(), |frame| {
             // The played/unplayed bar split is baked into the CACHED geometry via
-            // `played_to` here. This is safe because `played_to` is a pure
-            // function of `progress` (reflected in the cache key via the bucket)
-            // and of `bounds` (invalidated by the size arg above). If any future
-            // change makes the cached content depend on state NOT in `RenderKey`
-            // or the cache bounds, bars will go stale.
+            // `played_to` here: the SMOOTH progress sampled at the last cache
+            // rebuild. Rebuilds happen on bucket crossings (RenderKey's bucket)
+            // and on bounds changes (the size arg above), so the cached split
+            // advances in bucket-sized steps while the overlay line below moves
+            // every frame. If future code makes the cached content depend on
+            // state NOT in `RenderKey` or the cache bounds, bars will go stale.
             for (i, &h) in self.samples.iter().enumerate() {
                 let x = i as f32 * (bar_w + gap);
                 let bh = (h * bounds.height).max(1.0);

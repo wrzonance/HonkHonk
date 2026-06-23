@@ -569,10 +569,7 @@ impl HonkHonk {
                         // sound we are showing — a Finished for an already-
                         // replaced sound must not blank a newer press (#111).
                         if self.playing.as_deref() == Some(sound_id.as_str()) {
-                            self.playing = None;
-                            self.progress = 0.0;
-                            self.playhead = None;
-                            self.display_progress = 0.0;
+                            self.clear_playback_state();
                         }
                     }
                     AudioEvent::Progress(p) => {
@@ -647,7 +644,7 @@ impl HonkHonk {
                 if let Some(ref audio) = self.audio {
                     audio.send(AudioCommand::Stop);
                 }
-                self.playing = None;
+                self.clear_playback_state();
                 Task::none()
             }
             Message::SelectCategory(cat) => {
@@ -1075,6 +1072,16 @@ impl HonkHonk {
             tasks.push(self.update(Message::AudioEvent(event)));
         }
         Task::batch(tasks)
+    }
+
+    /// Clears all now-playing state together so the highlight, raw progress
+    /// anchor, playhead clock, and smooth display position never drift apart.
+    /// The single teardown path for both StopAll and the PlaybackFinished end.
+    fn clear_playback_state(&mut self) {
+        self.playing = None;
+        self.progress = 0.0;
+        self.playhead = None;
+        self.display_progress = 0.0;
     }
 
     fn play_sound_entry(&mut self, sound: &SoundEntry, stop_before: bool) {
@@ -1526,6 +1533,24 @@ mod tests {
         }));
         let _ = app.update(Message::StopAll);
         assert!(app.playing().is_none());
+    }
+
+    #[test]
+    fn stop_all_clears_all_playback_state() {
+        use std::time::{Duration, Instant};
+        let mut app = HonkHonk::new_for_test();
+        app.playing = Some("x".into());
+        app.progress = 0.7;
+        app.display_progress = 0.7;
+        app.playhead = Some(crate::ui::playhead::PlayheadClock::new(
+            Duration::from_secs(5),
+            Instant::now(),
+        ));
+        let _ = app.update(Message::StopAll);
+        assert!(app.playing.is_none());
+        assert_eq!(app.progress, 0.0);
+        assert_eq!(app.display_progress, 0.0);
+        assert!(app.playhead.is_none());
     }
 
     #[test]
