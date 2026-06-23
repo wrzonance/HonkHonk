@@ -113,8 +113,16 @@ mod tests {
         let mut samples = vec![0.25_f32; 2048];
         samples.extend(vec![0.5_f32; 2048]);
         let env = Envelope::from_samples(&samples, 1, 2);
-        assert!((env.peaks()[0] - 0.5).abs() < 1e-6, "got {}", env.peaks()[0]);
-        assert!((env.peaks()[1] - 1.0).abs() < 1e-6, "got {}", env.peaks()[1]);
+        assert!(
+            (env.peaks()[0] - 0.5).abs() < 1e-6,
+            "got {}",
+            env.peaks()[0]
+        );
+        assert!(
+            (env.peaks()[1] - 1.0).abs() < 1e-6,
+            "got {}",
+            env.peaks()[1]
+        );
     }
 
     #[test]

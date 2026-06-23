@@ -2769,7 +2769,9 @@ mod tests {
             "envelope should be cached after play"
         );
         assert_eq!(
-            app.waveform_cache["wav1"].bars(crate::ui::waveform::WAVEFORM_BARS).len(),
+            app.waveform_cache["wav1"]
+                .bars(crate::ui::waveform::WAVEFORM_BARS)
+                .len(),
             crate::ui::waveform::WAVEFORM_BARS
         );
     }
