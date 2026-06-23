@@ -1,6 +1,6 @@
 # Smooth Playhead + Real Waveform Envelope
 
-**Issue:** TBD (filed at implementation — PR-A: smooth playhead; PR-B: real waveform envelope)
+**Issue:** [#138](https://github.com/wrzonance/HonkHonk/issues/138) — PR-A: smooth playhead; PR-B: real waveform envelope
 **Date:** 2026-06-22
 **Status:** Approved
 
