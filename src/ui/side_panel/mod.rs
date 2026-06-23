@@ -4,7 +4,7 @@
 //! in [`geometry`], rendering in [`view`].
 
 mod anim;
-pub mod geometry;
+mod geometry;
 
 pub use anim::{PanelAnim, SLIDE_DURATION};
 pub use geometry::{panel_geometry, PanelRect};
