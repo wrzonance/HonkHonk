@@ -1409,19 +1409,32 @@ impl HonkHonk {
         }
         let top = top.push(header);
 
-        let items: Vec<Element<'_, Message>> = vec![
-            top.into(),
-            chips,
-            scrollable(grid).height(Length::Fill).into(),
-            now_playing,
-        ];
+        // Inset the grid from the overlay scrollbar (10px, drawn over content) so
+        // the last tile column is never clipped by it.
+        let grid_scroll = scrollable(container(grid).width(Length::Fill).padding(iced::Padding {
+            top: 0.0,
+            right: theme::space::LG,
+            bottom: 0.0,
+            left: 0.0,
+        }))
+        .height(Length::Fill);
+
+        let items: Vec<Element<'_, Message>> =
+            vec![top.into(), chips, grid_scroll.into(), now_playing];
 
         let content = iced::widget::Column::with_children(items).spacing(theme::space::MD);
 
         let base = container(content)
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(theme::space::XL)
+            // Larger right padding reserves a clean gutter for the closed side-panel
+            // handle (#143, ~28px) so it never overlaps the grid or its scrollbar.
+            .padding(iced::Padding {
+                top: theme::space::XL,
+                right: theme::space::XL + theme::space::SM,
+                bottom: theme::space::XL,
+                left: theme::space::XL,
+            })
             .style(move |_theme| container::Style {
                 background: Some(theme::bg_color(t.bg())),
                 ..Default::default()
