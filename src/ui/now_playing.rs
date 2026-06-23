@@ -3,6 +3,7 @@ use iced::widget::{container, row, space, text, Column, Space};
 use iced::{Border, Element, Length};
 
 use crate::app::Message;
+use crate::audio::Envelope;
 use crate::state::SoundEntry;
 use crate::ui::theme::{self, Hh, Theme};
 use crate::ui::volume;
@@ -49,7 +50,7 @@ impl NowPlaying {
 /// sound — not once per frame (the ADR-009 anti-pattern PR #96 hit).
 struct WaveformProgram<'a> {
     cache: &'a canvas::Cache,
-    samples: [f32; crate::ui::waveform::WAVEFORM_BARS],
+    samples: Vec<f32>,
     progress: f32,
     bar: iced::Color,
     bar_dim: iced::Color,
@@ -118,22 +119,21 @@ impl<Message> canvas::Program<Message> for WaveformProgram<'_> {
 
 pub fn view_now_playing<'a>(
     now_playing: &'a NowPlaying,
-    playing: Option<&'a str>,
-    sounds: &'a [SoundEntry],
+    sound: Option<&'a SoundEntry>,
     progress: f32,
     vol: f32,
+    envelope: Option<&Envelope>,
 ) -> Element<'a, Message> {
     let t = Theme::Dark;
 
-    let sound = match playing.and_then(|id| sounds.iter().find(|s| s.id == id)) {
-        Some(s) => s,
-        None => return Space::new().into(),
+    let Some(sound) = sound else {
+        return Space::new().into();
     };
 
     let content = row![
         view_placeholder(t),
         view_sound_info(sound, t),
-        view_waveform(now_playing, &sound.id, progress, t),
+        view_waveform(now_playing, envelope, progress, t),
         space::horizontal(),
         volume::view_volume(vol),
     ]
@@ -155,19 +155,23 @@ pub fn view_now_playing<'a>(
         .into()
 }
 
-/// Builds the canvas widget backed by the persistent cache. The waveform samples
-/// are derived per-sound; the cache itself is owned by `now_playing` and reused
-/// across frames (cleared only by `NowPlaying::sync`).
+/// Builds the canvas widget backed by the persistent cache. Display bars are
+/// max-pooled from the cached `Envelope`; a missing envelope renders a flat
+/// baseline (never fake bars). The cache is owned by `now_playing`.
 fn view_waveform<'a>(
     now_playing: &'a NowPlaying,
-    id: &str,
+    envelope: Option<&Envelope>,
     progress: f32,
     t: Theme,
 ) -> Element<'a, Message> {
-    use crate::ui::waveform;
+    use crate::ui::waveform::WAVEFORM_BARS;
+    let samples = match envelope {
+        Some(env) => env.bars(WAVEFORM_BARS),
+        None => vec![0.0; WAVEFORM_BARS],
+    };
     let program = WaveformProgram {
         cache: &now_playing.cache,
-        samples: waveform::samples(id),
+        samples,
         progress,
         bar: t.accent(),
         bar_dim: t.ink_faint(),
