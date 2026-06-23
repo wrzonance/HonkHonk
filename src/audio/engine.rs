@@ -661,6 +661,14 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
         let _ = ctx.evt_tx.send(AudioEvent::Error(
             EngineErrorEvent::VirtualSinkNotRegistered,
         ));
+        // Uphold the invariant that every Play yields one matching-generation
+        // Finished. Without it the app's optimistic playing/playhead state for
+        // this generation would stick forever, since the generation guard
+        // ignores any other Finished (#149).
+        let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
+            sound_id,
+            generation,
+        });
         return;
     }
 
@@ -710,6 +718,14 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
                 .send(AudioEvent::Error(EngineErrorEvent::SinkStreamCreation {
                     detail: e.to_string(),
                 }));
+            // Same invariant as the sink-not-registered path: signal that this
+            // generation produced no playback so the app clears it rather than
+            // getting stuck on a phantom playing state (#149). The displaced
+            // voice (if any) was already taken above and dropped.
+            let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
+                sound_id,
+                generation,
+            });
             return;
         }
     };
