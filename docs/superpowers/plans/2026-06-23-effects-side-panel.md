@@ -51,7 +51,8 @@
   - `pub fn toggle(&mut self, now: Instant)`
   - `pub fn close(&mut self, now: Instant)`
   - `pub fn is_animating(&self) -> bool`
-  - `pub fn is_open(&self) -> bool`
+  - `pub fn is_open(&self) -> bool` (target-based: open/opening; drives slide direction)
+  - `pub fn is_visible(&self) -> bool` (true through the close slide; for dismissal/Escape)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -139,6 +140,24 @@ mod tests {
     }
 
     #[test]
+    fn is_visible_stays_true_through_close_slide() {
+        // is_open() is target-based (false while closing); is_visible() must stay
+        // true so a mid-close dismiss is absorbed by the on-screen drawer.
+        let t0 = Instant::now();
+        let mut a = PanelAnim::default();
+        assert!(!a.is_visible());
+        a.toggle(t0); // opening
+        assert!(a.is_visible());
+        a.tick(t0 + SLIDE_DURATION); // settled open
+        let t1 = t0 + SLIDE_DURATION;
+        a.toggle(t1); // closing
+        assert!(!a.is_open(), "closing reads not-open");
+        assert!(a.is_visible(), "but still on screen mid-close");
+        a.tick(t1 + SLIDE_DURATION); // settled closed
+        assert!(!a.is_visible());
+    }
+
+    #[test]
     fn ease_hits_endpoints_and_midpoint() {
         assert_eq!(ease(0.0), 0.0);
         assert_eq!(ease(1.0), 1.0);
@@ -209,9 +228,16 @@ impl PanelAnim {
         matches!(self, PanelAnim::Animating { .. })
     }
 
-    /// True when open or opening (target progress > 0).
+    /// True when open or *opening* (target progress > 0). Drives slide direction.
     pub fn is_open(&self) -> bool {
         self.target() > 0.0
+    }
+
+    /// True whenever the drawer is on screen — open, opening, *or* closing (only
+    /// fully `Settled(0.0)` reads false). Use for dismissal (Escape) so a mid-close
+    /// dismiss is absorbed rather than leaking to other handlers.
+    pub fn is_visible(&self) -> bool {
+        !matches!(self, PanelAnim::Settled(v) if *v == 0.0)
     }
 
     /// Reverses or begins a slide toward the opposite end, continuous from the

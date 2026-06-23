@@ -94,16 +94,22 @@ panel continues from its **current** visible progress rather than snapping to an
 endpoint (compute the equivalent elapsed for the current progress in the new
 direction).
 
-### Slide mechanism — `Pin` (stock Iced 0.14)
+### Slide mechanism — `Float` (stock Iced 0.14)
 
-Iced 0.14 has no general-element opacity wrapper (only image/svg), but it has
-`pin` (absolute x/y positioning) and clips to the window surface. The drawer is a
-`row![tab_handle, panel_body]` placed with `pin(drawer).x(drawer_x).y(0)`, where:
+Iced 0.14 has no general-element opacity wrapper (only image/svg). `Pin` was the
+first candidate but clamps its child's layout to the space between the pin point
+and the parent edge — squishing a right-anchored body. `Float` is the right tool:
+it lays the child out at natural size and, while translated, re-hosts it as an
+overlay (so the body keeps full width sliding off-screen *and* input lands at the
+drawn position). The drawer is a `row![tab_handle, panel_body]` rendered via
+`float(drawer).translate(|_, _| Vector::new(offset_x, 0.0))`, right-anchored with
+`container(...).align_right(Length::Fill)`, where:
 
 ```
-drawer_x = lerp(closed_x, open_x, progress)
-closed_x = window_w - TAB_W              // only the tab pokes out at the edge
-open_x   = window_w - TAB_W - PANEL_W    // full body visible, tab at its left
+offset_x = (1.0 - progress) * PANEL_W    // progress=1 → offset 0 (fully open,
+                                         // Float renders in place); progress=0 →
+                                         // body pushed one panel-width off-screen,
+                                         // only the tab visible at the edge
 ```
 
 The scrim is a full-window `mouse_area` whose background alpha = `progress *
@@ -111,9 +117,11 @@ SCRIM_MAX`. The scrim layer is rendered **only while `progress > 0`** so a fully
 closed panel never intercepts grid clicks. The pull tab is part of the drawer, so
 it travels with the panel and is always reachable on the right edge.
 
-**Key implementation risk (manual-gated):** a full-window pinned layer must not
-swallow input to the grid beneath when the panel is closed. Verified by manual
-interaction check (the #139 lesson) and by only mounting the scrim when open.
+**Key implementation risk (manual-gated):** the closed drawer layer must not
+swallow input to the grid beneath. `Float`/`container` forward events to children
+only (empty regions fall through the `stack!` to the grid), and the scrim is
+mounted only when open — verified by source-reading and a manual interaction
+check (the #139 lesson).
 
 ### Module structure — `src/ui/side_panel/` (DRY framework)
 
@@ -123,7 +131,7 @@ Split to honor the 400-line file cap and high cohesion:
 |---|---|---|
 | `side_panel/anim.rs` | `PanelAnim` state machine + eased `progress` | unit (pure) |
 | `side_panel/geometry.rs` | `panel_geometry(window, panel_w) -> PanelRect` | unit (pure) |
-| `side_panel/view.rs` | `view_side_panel(cfg, progress, window, body)` → scrim + pinned drawer | build-smoke |
+| `side_panel/view.rs` | `view_side_panel(cfg, progress, tab_open, body)` → scrim + Float drawer | build-smoke |
 | `side_panel/mod.rs` | re-exports; `SidePanelConfig`, `PanelRect` types | — |
 
 `PanelRect { x, y, w, h, center: Point }` describes the panel body at full open.
