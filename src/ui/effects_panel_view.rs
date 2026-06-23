@@ -5,7 +5,7 @@
 
 use std::ops::RangeInclusive;
 
-use iced::widget::{button, column, container, row, slider, text, Column, Row, Space};
+use iced::widget::{button, column, container, row, slider, text, Column, Space};
 use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message;
@@ -84,8 +84,10 @@ fn view_master_row(state: &EffectsUiState, t: Theme) -> Element<'static, Message
 }
 
 /// Preset chip bar. The active preset is highlighted with the accent tone.
+/// Chips are stacked vertically so each description line is readable at any
+/// panel width.
 fn view_preset_chips(active: PresetId, t: Theme) -> Element<'static, Message> {
-    let mut chips = Row::new().spacing(theme::space::SM);
+    let mut chips = Column::new().spacing(theme::space::SM);
     for p in PresetId::ALL {
         let selected = p == active;
         let chip = button(
@@ -101,6 +103,7 @@ fn view_preset_chips(active: PresetId, t: Theme) -> Element<'static, Message> {
         )
         .on_press(Message::SelectEffectPreset(p))
         .padding([theme::space::XS, theme::space::MD])
+        .width(Length::Fill)
         .style(move |_th, _s| chip_style(t, selected));
         chips = chips.push(chip);
     }
