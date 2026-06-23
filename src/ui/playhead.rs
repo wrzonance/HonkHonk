@@ -1,54 +1,49 @@
-//! Predict-and-correct clock for the now-playing playhead. The 10 Hz audio
-//! `AudioEvent::Progress` events are the authoritative anchor; `display`
-//! extrapolates between them from wall-clock elapsed so the line moves at the
-//! display refresh rate without drifting (#138, PR-A).
+//! Wall-clock playhead clock for the now-playing waveform. The line position is
+//! a pure linear function of elapsed wall-clock time since playback start, so it
+//! flows smoothly and monotonically left→right over the clip's duration.
+//!
+//! PipeWire plays in real time, so wall-clock elapsed tracks the audio. An
+//! earlier predict-and-correct design re-anchored to the 10 Hz `Progress`
+//! samples, but those samples are measured up to ~100 ms before they are
+//! drained — binding a stale measurement to the current instant snapped the line
+//! backward every drain (visible left/right jitter, #138). Driving purely from
+//! the start instant removes the re-anchoring, and monotonicity is then
+//! guaranteed by construction.
 
 use std::time::{Duration, Instant};
 
-/// Holds the last authoritative progress sample and extrapolates a smooth
-/// display position from wall-clock time since that sample.
+/// Maps elapsed wall-clock time since playback start to a `0.0..=1.0` position.
 #[derive(Debug, Clone)]
 pub struct PlayheadClock {
-    anchor: f32,
-    anchor_at: Instant,
+    start: Instant,
     duration: Duration,
 }
 
 impl PlayheadClock {
-    /// Starts a clock at progress 0 for a sound of length `duration`.
+    /// Starts the clock at playback start: progress `0.0` at `now`, reaching
+    /// `1.0` after `duration`.
     pub fn new(duration: Duration, now: Instant) -> Self {
         Self {
-            anchor: 0.0,
-            anchor_at: now,
+            start: now,
             duration,
         }
     }
 
-    /// Re-anchors to an authoritative progress sample, snapping out any
-    /// accumulated prediction error (forward or backward).
-    pub fn on_progress(&mut self, progress: f32, now: Instant) {
-        self.anchor = progress.clamp(0.0, 1.0);
-        self.anchor_at = now;
-    }
-
-    /// Extrapolated display progress at `now`, clamped to `0.0..=1.0`.
+    /// Linear progress `0.0..=1.0` from elapsed wall-clock since `start`.
+    /// Monotonic non-decreasing in `now` (`Instant` is monotonic); a zero
+    /// `duration` reads `0.0`.
     pub fn display(&self, now: Instant) -> f32 {
-        extrapolate(
-            self.anchor,
-            now.saturating_duration_since(self.anchor_at),
-            self.duration,
-        )
+        fraction(now.saturating_duration_since(self.start), self.duration)
     }
 }
 
-/// Pure extrapolation core: `anchor + elapsed/duration`, clamped to `0..=1`.
-/// A zero `duration` yields the clamped anchor (no division).
-fn extrapolate(anchor: f32, elapsed: Duration, duration: Duration) -> f32 {
-    let anchor = anchor.clamp(0.0, 1.0);
+/// Pure core: `elapsed / duration`, clamped to `0.0..=1.0`. A zero `duration`
+/// yields `0.0` (no division).
+fn fraction(elapsed: Duration, duration: Duration) -> f32 {
     if duration.is_zero() {
-        return anchor;
+        return 0.0;
     }
-    (anchor + elapsed.as_secs_f32() / duration.as_secs_f32()).clamp(0.0, 1.0)
+    (elapsed.as_secs_f32() / duration.as_secs_f32()).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -56,50 +51,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extrapolate_midpoint() {
-        let p = extrapolate(0.0, Duration::from_secs(5), Duration::from_secs(10));
+    fn fraction_midpoint() {
+        let p = fraction(Duration::from_secs(5), Duration::from_secs(10));
         assert!((p - 0.5).abs() < 1e-6, "got {p}");
     }
 
     #[test]
-    fn extrapolate_clamps_at_end() {
-        let p = extrapolate(0.9, Duration::from_secs(100), Duration::from_secs(10));
+    fn fraction_clamps_at_end() {
+        let p = fraction(Duration::from_secs(100), Duration::from_secs(10));
         assert_eq!(p, 1.0);
     }
 
     #[test]
-    fn extrapolate_zero_duration_returns_anchor() {
-        let p = extrapolate(0.4, Duration::from_secs(5), Duration::ZERO);
-        assert!((p - 0.4).abs() < 1e-6, "got {p}");
+    fn fraction_zero_duration_is_zero() {
+        let p = fraction(Duration::from_secs(5), Duration::ZERO);
+        assert_eq!(p, 0.0);
     }
 
     #[test]
-    fn display_advances_with_time() {
+    fn display_advances_linearly_with_time() {
         let t0 = Instant::now();
         let clock = PlayheadClock::new(Duration::from_secs(10), t0);
-        let early = clock.display(t0 + Duration::from_secs(2));
-        let late = clock.display(t0 + Duration::from_secs(8));
-        assert!(late > early, "expected {late} > {early}");
-        assert!((early - 0.2).abs() < 1e-6, "got {early}");
+        assert!((clock.display(t0) - 0.0).abs() < 1e-6);
+        assert!((clock.display(t0 + Duration::from_secs(2)) - 0.2).abs() < 1e-6);
+        assert!((clock.display(t0 + Duration::from_secs(5)) - 0.5).abs() < 1e-6);
+        assert_eq!(clock.display(t0 + Duration::from_secs(10)), 1.0);
     }
 
     #[test]
-    fn on_progress_snaps_back_an_overshooting_prediction() {
+    fn display_is_monotonic_non_decreasing() {
+        // The fix: the line must never move backward as time advances. Densely
+        // sampling a short clip must yield a non-decreasing sequence ending at 1.0.
         let t0 = Instant::now();
-        let mut clock = PlayheadClock::new(Duration::from_secs(10), t0);
-        let predicted = clock.display(t0 + Duration::from_secs(8));
-        assert!((predicted - 0.8).abs() < 1e-6, "got {predicted}");
-        // Authoritative sample says we are only at 0.3 — snap back.
-        let t1 = t0 + Duration::from_secs(8);
-        clock.on_progress(0.3, t1);
-        assert!((clock.display(t1) - 0.3).abs() < 1e-6);
+        let clock = PlayheadClock::new(Duration::from_millis(500), t0);
+        let mut prev = 0.0;
+        for ms in 0..=600 {
+            let v = clock.display(t0 + Duration::from_millis(ms));
+            assert!(v >= prev, "went backward at {ms}ms: {v} < {prev}");
+            prev = v;
+        }
+        assert_eq!(prev, 1.0);
     }
 
     #[test]
-    fn display_never_exceeds_one_or_drops_below_zero() {
+    fn display_never_below_zero() {
         let t0 = Instant::now();
         let clock = PlayheadClock::new(Duration::from_secs(1), t0);
-        assert_eq!(clock.display(t0 + Duration::from_secs(100)), 1.0);
         assert!(clock.display(t0) >= 0.0);
     }
 }

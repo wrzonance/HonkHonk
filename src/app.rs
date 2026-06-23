@@ -571,14 +571,12 @@ impl HonkHonk {
                         }
                     }
                     AudioEvent::Progress(p) => {
+                        // Raw 10 Hz anchor, retained for diagnostics/tests. The
+                        // smooth playhead is wall-clock driven (`Message::Frame`),
+                        // NOT this sample: re-anchoring a sample measured ~100 ms
+                        // ago to the current instant snapped the line backward
+                        // every drain (left/right jitter, #138).
                         self.progress = p;
-                        let now = Instant::now();
-                        if let Some(ref mut clock) = self.playhead {
-                            clock.on_progress(p, now);
-                            self.display_progress = clock.display(now);
-                        } else {
-                            self.display_progress = p;
-                        }
                     }
                     AudioEvent::Error(e) => {
                         eprintln!("honkhonk: audio error: {e}");
@@ -1767,10 +1765,15 @@ mod tests {
     }
 
     #[test]
-    fn progress_event_sets_display_progress() {
+    fn progress_event_does_not_drive_display_progress() {
+        // The smooth playhead is wall-clock driven (`Message::Frame`), NOT the
+        // raw 10 Hz `Progress` anchor — re-anchoring to stale samples caused the
+        // left/right jitter (#138). A Progress event updates the raw anchor but
+        // must leave the smooth `display_progress` untouched.
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.65)));
-        assert!((app.display_progress - 0.65).abs() < f32::EPSILON);
+        assert!((app.progress() - 0.65).abs() < f32::EPSILON);
+        assert_eq!(app.display_progress, 0.0);
     }
 
     #[test]
