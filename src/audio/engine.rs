@@ -22,6 +22,11 @@ pub enum AudioCommand {
         samples: Arc<Vec<f32>>,
         sample_rate: u32,
         channels: u16,
+        /// Monotonic token identifying this specific play. Echoed back on the
+        /// matching `PlaybackFinished` so the app can tell a genuine end from the
+        /// stale `Finished` emitted for a voice that was immediately superseded by
+        /// a re-press of the same sound (#149).
+        generation: u64,
     },
     Stop,
     SetVolume(f32),
@@ -58,6 +63,10 @@ pub enum AudioEvent {
     },
     PlaybackFinished {
         sound_id: String,
+        /// Echoes the `generation` of the `Play` this voice came from, so a stale
+        /// `Finished` for a superseded voice can be distinguished from a genuine
+        /// end (#149).
+        generation: u64,
     },
     Progress(f32),
     Error(EngineErrorEvent),
@@ -156,6 +165,9 @@ fn query_default_source_name() -> Option<String> {
 
 struct ActivePlayback {
     sound_id: String,
+    /// The `generation` of the `Play` command that started this voice; echoed on
+    /// its `PlaybackFinished` so the app can ignore a stale end (#149).
+    generation: u64,
     sink_state: Rc<RefCell<PlaybackState>>,
     monitor_state: Rc<RefCell<PlaybackState>>,
     _sink_stream: playback::PlaybackStream,
@@ -301,6 +313,7 @@ fn setup_completion_timer(
             if let Some(ap) = active_timer.borrow_mut().take() {
                 let _ = evt_tx_timer.send(AudioEvent::PlaybackFinished {
                     sound_id: ap.sound_id,
+                    generation: ap.generation,
                 });
             }
         }
@@ -490,14 +503,25 @@ fn run_engine(
             samples,
             sample_rate,
             channels,
+            generation,
         } => {
-            handle_play(&ctx, sound_id, samples, sample_rate, channels);
+            handle_play(
+                &ctx,
+                PlayRequest {
+                    sound_id,
+                    samples,
+                    sample_rate,
+                    channels,
+                    generation,
+                },
+            );
         }
         AudioCommand::Stop => {
             let prev = ctx.active.borrow_mut().take();
             if let Some(ap) = prev {
                 let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
                     sound_id: ap.sound_id,
+                    generation: ap.generation,
                 });
             }
         }
@@ -615,13 +639,24 @@ fn rebuild_monitor_stream(ctx: &EngineCtx) {
     }
 }
 
-fn handle_play(
-    ctx: &EngineCtx,
+/// Decoded PCM plus identity for a single play, bundled so `handle_play` stays
+/// within the argument-count lint as fields accrete (e.g. `generation`, #149).
+struct PlayRequest {
     sound_id: String,
     samples: Arc<Vec<f32>>,
     sample_rate: u32,
     channels: u16,
-) {
+    generation: u64,
+}
+
+fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
+    let PlayRequest {
+        sound_id,
+        samples,
+        sample_rate,
+        channels,
+        generation,
+    } = req;
     if ctx.registry_sink_id.get().is_none() {
         let _ = ctx.evt_tx.send(AudioEvent::Error(
             EngineErrorEvent::VirtualSinkNotRegistered,
@@ -631,8 +666,12 @@ fn handle_play(
 
     let prev = ctx.active.borrow_mut().take();
     if let Some(ap) = prev {
+        // The displaced voice carries its OWN (older) generation, so the app can
+        // tell this "superseded" Finished from the genuine end of the new voice
+        // when a sound is re-pressed while still playing (#149).
         let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
             sound_id: ap.sound_id,
+            generation: ap.generation,
         });
     }
 
@@ -688,6 +727,7 @@ fn handle_play(
     };
     *ctx.active.borrow_mut() = Some(ActivePlayback {
         sound_id: sound_id.clone(),
+        generation,
         sink_state,
         monitor_state: mon_state,
         _sink_stream: sink_s,

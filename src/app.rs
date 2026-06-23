@@ -195,6 +195,11 @@ pub struct HonkHonk {
     /// Frame-interpolated playhead position fed to the now-playing view and the
     /// waveform cache-sync. Distinct from `progress` (the raw 10 Hz anchor).
     display_progress: f32,
+    /// Monotonic counter bumped on every play dispatch. Stamped onto the `Play`
+    /// command and echoed back on `PlaybackFinished`, so the app can tell the
+    /// genuine end of the current voice from the stale `Finished` emitted for a
+    /// voice that was superseded by re-pressing the same sound (#149).
+    play_generation: u64,
     /// Per-sound peak-amplitude envelopes for the now-playing waveform, computed
     /// once at decode and reused across frames (#138, PR-B). Session-lifetime.
     waveform_cache: std::collections::HashMap<String, std::sync::Arc<crate::audio::Envelope>>,
@@ -362,6 +367,7 @@ impl HonkHonk {
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             playhead: None,
             display_progress: 0.0,
+            play_generation: 0,
             waveform_cache: std::collections::HashMap::new(),
         }
     }
@@ -410,6 +416,7 @@ impl HonkHonk {
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             playhead: None,
             display_progress: 0.0,
+            play_generation: 0,
             waveform_cache: std::collections::HashMap::new(),
         }
     }
@@ -579,11 +586,21 @@ impl HonkHonk {
                             self.playing = Some(sound_id);
                         }
                     }
-                    AudioEvent::PlaybackFinished { sound_id } => {
-                        // Only clear the highlight if this event refers to the
-                        // sound we are showing — a Finished for an already-
-                        // replaced sound must not blank a newer press (#111).
-                        if self.playing.as_deref() == Some(sound_id.as_str()) {
+                    AudioEvent::PlaybackFinished {
+                        sound_id,
+                        generation,
+                    } => {
+                        // Clear only when this Finished is for the sound we are
+                        // showing AND belongs to the current play. The sound_id
+                        // check keeps a Finished for an already-replaced sound
+                        // from blanking a newer press (#111); the generation
+                        // check additionally ignores the stale Finished emitted
+                        // for a same-sound voice that was superseded by an
+                        // immediate re-press, so its fresh playhead survives
+                        // (#149).
+                        if self.playing.as_deref() == Some(sound_id.as_str())
+                            && generation == self.play_generation
+                        {
                             self.clear_playback_state();
                         }
                     }
@@ -1127,6 +1144,12 @@ impl HonkHonk {
                 return;
             }
         };
+        // Bump the play generation so this dispatch is distinguishable from any
+        // voice it supersedes. The matching `PlaybackFinished` echoes it back; a
+        // stale `Finished` for a re-pressed (superseded) voice carries an older
+        // generation and must not tear down this fresh playhead (#149).
+        self.play_generation = self.play_generation.wrapping_add(1);
+        let generation = self.play_generation;
         // Start the smooth-playhead clock; duration is exact from the decoded
         // PCM (avoids depending on the lazy duration scan). PR-B inserts the
         // waveform envelope here too, from `decoded.samples` before per-vol.
@@ -1163,6 +1186,7 @@ impl HonkHonk {
                 samples,
                 sample_rate: decoded.sample_rate,
                 channels: decoded.channels,
+                generation,
             });
             // Highlight the tile immediately rather than waiting for the
             // engine's PlaybackStarted to round-trip through the event
@@ -1646,6 +1670,7 @@ mod tests {
         }));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "abc123".into(),
+            generation: 0,
         }));
         assert!(app.playing().is_none());
     }
@@ -1721,6 +1746,7 @@ mod tests {
         // highlight of the sound that superseded it (issue #111).
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "older".into(),
+            generation: 0,
         }));
         assert_eq!(app.playing(), Some("newer"));
     }
@@ -1765,6 +1791,7 @@ mod tests {
             },
             AudioEvent::PlaybackFinished {
                 sound_id: "a".into(),
+                generation: 0,
             },
             AudioEvent::PlaybackStarted {
                 sound_id: "b".into(),
@@ -1772,6 +1799,7 @@ mod tests {
             AudioEvent::Progress(0.25),
             AudioEvent::PlaybackFinished {
                 sound_id: "b".into(),
+                generation: 0,
             },
             AudioEvent::PlaybackStarted {
                 sound_id: "c".into(),
@@ -1894,9 +1922,63 @@ mod tests {
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "test".into(),
+            generation: 0,
         }));
         assert!(app.playhead.is_none());
         assert_eq!(app.display_progress, 0.0);
+    }
+
+    #[test]
+    fn re_pressing_same_sound_keeps_playhead_alive() {
+        // Re-pressing the SAME tile while it is still playing must re-trigger the
+        // playhead. The engine replaces the active voice and emits a
+        // `PlaybackFinished` for the *displaced* voice carrying the SAME
+        // `sound_id`; the app must not mistake that stale event for a genuine end
+        // and tear down the freshly-created playhead, freezing it at 0 (#149).
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("honk.wav");
+        write_test_wav(&wav_path);
+        app.sounds = vec![SoundEntry {
+            id: "wav1".into(),
+            name: "Honk".into(),
+            path: wav_path,
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: Some(100),
+            category: "Test".into(),
+        }];
+
+        // First press → playhead created for the first voice (generation 1).
+        let _ = app.update(Message::PlaySound("wav1".into()));
+        // Second press re-triggers the same sound → a fresh playhead (generation 2).
+        let _ = app.update(Message::PlaySound("wav1".into()));
+        assert!(
+            app.playhead.is_some(),
+            "re-press should create a fresh playhead"
+        );
+
+        // The displaced first voice's Finished (older generation) arrives on the
+        // next drain — it must NOT clear the re-triggered playhead.
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            sound_id: "wav1".into(),
+            generation: 1,
+        }));
+        assert!(
+            app.playhead.is_some(),
+            "stale displaced Finished must not clear the re-triggered playhead"
+        );
+        assert_eq!(app.playing(), Some("wav1"));
+
+        // The genuine end of the current voice (matching generation) still clears.
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            sound_id: "wav1".into(),
+            generation: 2,
+        }));
+        assert!(app.playhead.is_none(), "genuine end clears the playhead");
+        assert_eq!(app.playing(), None);
     }
 
     #[test]
@@ -1915,6 +1997,7 @@ mod tests {
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "test".into(),
+            generation: 0,
         }));
         assert!((app.progress() - 0.0).abs() < f32::EPSILON);
     }
@@ -1995,6 +2078,7 @@ mod tests {
 
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "old".into(),
+            generation: 0,
         }));
 
         assert!(
