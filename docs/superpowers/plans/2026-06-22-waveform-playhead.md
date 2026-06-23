@@ -1,5 +1,7 @@
 # Smooth Playhead + Real Waveform Envelope — Implementation Plan
 
+> **Revision 2026-06-23:** Task 1's `PlayheadClock` below is the original *predict-and-correct* design (`anchor`/`on_progress`/`extrapolate`). It was reimplemented as a pure **wall-clock** clock (`start`/`duration`, `display = (now − start)/duration`) after testing revealed left/right jitter from re-anchoring stale 10 Hz samples — see commit `3c34c2b` / PR #139. The Task 1 snippet here is kept as the historical record; the shipped code lives in `src/ui/playhead.rs`. Tasks 2–4 are accurate as built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the now-playing playhead track playback smoothly at the display refresh rate, and replace the fake id-hash waveform with a real peak-amplitude envelope (groundwork for a future trim function).

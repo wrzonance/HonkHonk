@@ -2,7 +2,17 @@
 
 **Issue:** [#138](https://github.com/wrzonance/HonkHonk/issues/138) — PR-A: smooth playhead; PR-B: real waveform envelope
 **Date:** 2026-06-22
-**Status:** Approved
+**Status:** Approved (playhead approach revised — see below)
+
+> **Revision 2026-06-23 — playhead is now a pure wall-clock, not predict-and-correct.**
+> The PR-A "predict-and-correct" `PlayheadClock` described below re-anchored on every
+> 10 Hz `Progress` event. In testing that snapped the line backward each drain (the
+> samples are measured ~100 ms before they are drained), producing visible left/right
+> jitter. It was replaced with a pure wall-clock clock — `position = (now − start) /
+> duration`, clamped — which is smooth and **monotonic by construction**. `Progress`
+> events no longer drive the playhead. See commit `3c34c2b` / PR #139. The
+> `on_progress`/`anchor`/`extrapolate` design below is retained as the original record;
+> the envelope design (PR-B) is unchanged.
 
 ## Problem
 
