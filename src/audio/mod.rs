@@ -1,5 +1,6 @@
 mod confd;
 mod decoder;
+mod envelope;
 pub mod effects;
 mod engine;
 mod error;
@@ -11,6 +12,7 @@ pub mod streams;
 
 pub use decoder::{decode, DecodedAudio};
 pub use effects::{AudioEffect, EffectChain, EffectsCommand, EffectsEvent};
+pub use envelope::{Envelope, ENVELOPE_BUCKETS};
 #[cfg(test)]
 pub(crate) use engine::test_handle;
 pub use engine::{spawn, AudioCommand, AudioEvent, AudioHandle};
