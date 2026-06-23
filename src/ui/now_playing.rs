@@ -3,6 +3,7 @@ use iced::widget::{container, row, space, text, Column, Space};
 use iced::{Border, Element, Length};
 
 use crate::app::Message;
+use crate::audio::Envelope;
 use crate::state::SoundEntry;
 use crate::ui::theme::{self, Hh, Theme};
 use crate::ui::volume;
@@ -49,7 +50,7 @@ impl NowPlaying {
 /// sound — not once per frame (the ADR-009 anti-pattern PR #96 hit).
 struct WaveformProgram<'a> {
     cache: &'a canvas::Cache,
-    samples: [f32; crate::ui::waveform::WAVEFORM_BARS],
+    samples: Vec<f32>,
     progress: f32,
     bar: iced::Color,
     bar_dim: iced::Color,
@@ -81,11 +82,12 @@ impl<Message> canvas::Program<Message> for WaveformProgram<'_> {
         let played_to = (self.progress.clamp(0.0, 1.0) * bounds.width).round();
         let bars = self.cache.draw(renderer, bounds.size(), |frame| {
             // The played/unplayed bar split is baked into the CACHED geometry via
-            // `played_to` here. This is safe because `played_to` is a pure
-            // function of `progress` (reflected in the cache key via the bucket)
-            // and of `bounds` (invalidated by the size arg above). If any future
-            // change makes the cached content depend on state NOT in `RenderKey`
-            // or the cache bounds, bars will go stale.
+            // `played_to` here: the SMOOTH progress sampled at the last cache
+            // rebuild. Rebuilds happen on bucket crossings (RenderKey's bucket)
+            // and on bounds changes (the size arg above), so the cached split
+            // advances in bucket-sized steps while the overlay line below moves
+            // every frame. If future code makes the cached content depend on
+            // state NOT in `RenderKey` or the cache bounds, bars will go stale.
             for (i, &h) in self.samples.iter().enumerate() {
                 let x = i as f32 * (bar_w + gap);
                 let bh = (h * bounds.height).max(1.0);
@@ -118,22 +120,21 @@ impl<Message> canvas::Program<Message> for WaveformProgram<'_> {
 
 pub fn view_now_playing<'a>(
     now_playing: &'a NowPlaying,
-    playing: Option<&'a str>,
-    sounds: &'a [SoundEntry],
+    sound: Option<&'a SoundEntry>,
     progress: f32,
     vol: f32,
+    envelope: Option<&Envelope>,
 ) -> Element<'a, Message> {
     let t = Theme::Dark;
 
-    let sound = match playing.and_then(|id| sounds.iter().find(|s| s.id == id)) {
-        Some(s) => s,
-        None => return Space::new().into(),
+    let Some(sound) = sound else {
+        return Space::new().into();
     };
 
     let content = row![
         view_placeholder(t),
         view_sound_info(sound, t),
-        view_waveform(now_playing, &sound.id, progress, t),
+        view_waveform(now_playing, envelope, progress, t),
         space::horizontal(),
         volume::view_volume(vol),
     ]
@@ -155,19 +156,23 @@ pub fn view_now_playing<'a>(
         .into()
 }
 
-/// Builds the canvas widget backed by the persistent cache. The waveform samples
-/// are derived per-sound; the cache itself is owned by `now_playing` and reused
-/// across frames (cleared only by `NowPlaying::sync`).
+/// Builds the canvas widget backed by the persistent cache. Display bars are
+/// max-pooled from the cached `Envelope`; a missing envelope renders a flat
+/// baseline (never fake bars). The cache is owned by `now_playing`.
 fn view_waveform<'a>(
     now_playing: &'a NowPlaying,
-    id: &str,
+    envelope: Option<&Envelope>,
     progress: f32,
     t: Theme,
 ) -> Element<'a, Message> {
-    use crate::ui::waveform;
+    use crate::ui::waveform::WAVEFORM_BARS;
+    let samples = match envelope {
+        Some(env) => env.bars(WAVEFORM_BARS),
+        None => vec![0.0; WAVEFORM_BARS],
+    };
     let program = WaveformProgram {
         cache: &now_playing.cache,
-        samples: waveform::samples(id),
+        samples,
         progress,
         bar: t.accent(),
         bar_dim: t.ink_faint(),

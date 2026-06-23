@@ -1,13 +1,12 @@
-//! Pure, deterministic waveform-sample generation and the render-key used to
-//! decide when the now-playing `canvas::Cache` must be invalidated (#131).
+//! The now-playing waveform's render-key (the `canvas::Cache` invalidation key)
+//! and progress bucketing. Real bar heights come from `audio::Envelope` (#138).
 //!
 //! No Iced types live here so the cache-lifecycle decision stays unit-testable
 //! without a renderer (ADR-009: prove the persistent-cache pattern first).
 
-use std::hash::{Hash, Hasher};
-
-/// Number of vertical bars in the now-playing waveform.
-pub const WAVEFORM_BARS: usize = 48;
+/// Number of vertical bars in the now-playing waveform. Downsampled from the
+/// hi-res `Envelope` (`ENVELOPE_BUCKETS`) at view time.
+pub const WAVEFORM_BARS: usize = 64;
 
 /// Quantization resolution for progress — one bucket per bar, matching
 /// `WAVEFORM_BARS`. The cached bars are the only cache-sensitive content, and
@@ -19,29 +18,6 @@ pub const WAVEFORM_BARS: usize = 48;
 /// This is the max bucket INDEX (inclusive); there are `PROGRESS_BUCKETS + 1`
 /// distinct bucket values, including the exact-end bucket at `progress == 1.0`.
 pub const PROGRESS_BUCKETS: u16 = WAVEFORM_BARS as u16;
-
-/// Deterministic bar heights for a sound id, each in `0.15..=1.0`.
-///
-/// The id is hashed once up front; each bar mixes in its index via a
-/// cheap integer multiply, so the id is not re-hashed 48 times.
-pub fn samples(id: &str) -> [f32; WAVEFORM_BARS] {
-    use std::collections::hash_map::DefaultHasher;
-    // Hash the id once.
-    let mut h = DefaultHasher::new();
-    id.hash(&mut h);
-    let base: u64 = h.finish();
-
-    std::array::from_fn(|i| {
-        // Mix bar index into the base hash with a fast integer combine.
-        // All arithmetic is wrapping to avoid overflow in debug builds.
-        let mixed = base
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add((i as u64).wrapping_mul(1442695040888963407).wrapping_add(1));
-        // Map the mixed value into 0.15..=1.0 so no bar fully disappears.
-        let frac = (mixed % 1000) as f32 / 1000.0;
-        0.15 + frac * 0.85
-    })
-}
 
 /// Quantizes progress into `0..=PROGRESS_BUCKETS` (inclusive). Returns the
 /// max bucket index `PROGRESS_BUCKETS` when `progress >= 1.0`, so there are
@@ -79,23 +55,6 @@ impl RenderKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn samples_are_deterministic_for_same_id() {
-        assert_eq!(samples("abc123"), samples("abc123"));
-    }
-
-    #[test]
-    fn samples_differ_across_ids() {
-        assert_ne!(samples("abc123"), samples("def456"));
-    }
-
-    #[test]
-    fn samples_stay_in_visible_range() {
-        for v in samples("any-id") {
-            assert!((0.15..=1.0).contains(&v), "bar {v} out of range");
-        }
-    }
 
     #[test]
     fn progress_bucket_is_monotonic_and_bounded() {
