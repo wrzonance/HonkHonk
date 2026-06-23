@@ -11,6 +11,7 @@ use iced::{Alignment, Border, Element, Length};
 use crate::app::Message;
 use crate::audio::effects::EffectSlot;
 use crate::ui::effects_panel::{EffectsUiState, PresetId};
+use crate::ui::side_panel::{self, SidePanelConfig};
 use crate::ui::theme::{self, Hh, Theme};
 
 // Slider geometry shared by the parameter controls.
@@ -49,6 +50,24 @@ pub fn view_effects_panel(state: &EffectsUiState, t: Theme) -> Element<'static, 
             ..Default::default()
         })
         .into()
+}
+
+/// Assembles the effects controls into the reusable side-panel drawer (#143).
+/// Owns the drawer's config + body wiring so `app.rs::view_main` only pushes the
+/// returned layer — keeping the effects-specific glue out of the god file.
+pub fn effects_side_panel_layer(
+    state: &EffectsUiState,
+    panel_progress: f32,
+    t: Theme,
+) -> Element<'static, Message> {
+    let cfg = SidePanelConfig {
+        panel_w: 400.0,
+        tab_w: 28.0,
+        title: "Voice Effects",
+        on_toggle: Message::ToggleEffectsPanel,
+        on_close: Message::CloseEffectsPanel,
+    };
+    side_panel::view_side_panel(cfg, panel_progress, view_effects_panel(state, t), t)
 }
 
 /// Master row: chain bypass toggle + wet/dry mix slider.

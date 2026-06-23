@@ -1,9 +1,13 @@
-//! Renders the side-panel drawer: a fading scrim over the main view plus a
-//! pull-tab + body that slides in from the right edge. The slide uses `Float`
-//! (stock Iced 0.14): the drawer is laid out at natural size, then translated by
-//! the hidden fraction; while translated `Float` re-hosts it as an overlay, so
-//! the body keeps full width off-screen and input lands at the drawn position.
+//! Renders the side-panel drawer. Closed, it shows only a small grab handle at
+//! the right edge — the rest of the window stays clear and clickable. Open, it is
+//! a fading scrim plus the body sliding in from the right edge; the handle sits
+//! *beneath* the panel, so an open drawer reads as one fluid object (the handle
+//! is revealed only as the panel slides back out). The body slides via `Float`
+//! (stock Iced 0.14): laid out at natural width, then translated by the hidden
+//! fraction and re-hosted as an overlay, so it keeps full width off-screen and
+//! input lands where it is drawn.
 
+use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, column, container, float, mouse_area, row, scrollable, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Length, Vector};
 
@@ -30,12 +34,14 @@ const SCRIM_MAX: f32 = 0.5;
 const TITLE_SIZE: f32 = 14.0;
 /// Chevron glyph size.
 const GLYPH_SIZE: f32 = 18.0;
+/// Height of the right-edge grab handle — a small centered nub, deliberately not
+/// full height, so it never covers the toolbar or the right column of tiles.
+const HANDLE_H: f32 = 96.0;
 
-/// Builds the side-panel overlay layer for animation `progress` (0=closed..1=open),
-/// wrapping `body` as the drawer content. The `Float`-based slide and `Fill` scrim
-/// are window-agnostic, so no window size is needed here; the #144 feather puff
-/// will derive its origin from [`panel_geometry`](super::panel_geometry) at its
-/// own call site.
+/// Builds the side-panel layer for animation `progress` (0=closed..1=open),
+/// wrapping `body` as the drawer content. Window-agnostic — the `Float` slide and
+/// `Fill` scrim need no window size; #144 derives its feather origin from
+/// [`panel_geometry`](super::panel_geometry) at its own call site.
 pub fn view_side_panel<'a>(
     cfg: SidePanelConfig,
     progress: f32,
@@ -43,18 +49,20 @@ pub fn view_side_panel<'a>(
     t: Theme,
 ) -> Element<'a, Message> {
     let progress = progress.clamp(0.0, 1.0);
-    let panel_w = cfg.panel_w;
 
-    let drawer = row![tab(&cfg, progress, t), panel_body(&cfg, body, t)].height(Length::Fill);
-    let floated = float(drawer)
-        .translate(move |_content, _viewport| Vector::new((1.0 - progress) * panel_w, 0.0));
-    let anchored = container(floated)
-        .align_right(Length::Fill)
-        .height(Length::Fill);
-
+    // Fully closed: only the grab handle. No scrim, no full-width layer — the grid
+    // stays entirely visible and clickable except under the small handle.
     if progress <= 0.0 {
-        return anchored.into();
+        return edge_handle(&cfg, t);
     }
+
+    let panel_w = cfg.panel_w;
+    let sliding = container(
+        float(panel_body(&cfg, body, t))
+            .translate(move |_content, _viewport| Vector::new((1.0 - progress) * panel_w, 0.0)),
+    )
+    .align_right(Length::Fill)
+    .height(Length::Fill);
 
     let alpha = SCRIM_MAX * progress;
     let scrim = mouse_area(
@@ -70,29 +78,34 @@ pub fn view_side_panel<'a>(
     )
     .on_press(cfg.on_close.clone());
 
-    iced::widget::stack![scrim, anchored]
+    // Handle beneath the panel: covered when open, revealed as the panel slides
+    // out — so the open drawer is one fluid object, not a panel plus a stub.
+    iced::widget::stack![scrim, edge_handle(&cfg, t), sliding]
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
 }
 
-/// Vertical pull tab. Chevron hints the action: "‹" to pull open, "›" to push closed.
-fn tab<'a>(cfg: &SidePanelConfig, progress: f32, t: Theme) -> Element<'a, Message> {
-    let glyph = if progress > 0.5 {
-        "\u{203A}"
-    } else {
-        "\u{2039}"
-    };
-    button(
-        container(text(glyph).size(GLYPH_SIZE).color(t.ink()))
+/// Small grab handle pinned to the right edge, vertically centered — the panel's
+/// open affordance (closing is via the ✕, the scrim, or Escape). As a layer it
+/// occupies only the handle's bounds, so clicks elsewhere fall through to the grid.
+fn edge_handle<'a>(cfg: &SidePanelConfig, t: Theme) -> Element<'a, Message> {
+    let handle = button(
+        container(text("\u{2039}").size(GLYPH_SIZE).color(t.ink()))
             .center_x(Length::Fill)
             .center_y(Length::Fill),
     )
     .width(Length::Fixed(cfg.tab_w))
-    .height(Length::Fill)
+    .height(Length::Fixed(HANDLE_H))
     .on_press(cfg.on_toggle.clone())
-    .style(move |_th, _s| tab_style(t))
-    .into()
+    .style(move |_th, _s| handle_style(t));
+
+    container(handle)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Horizontal::Right)
+        .align_y(Vertical::Center)
+        .into()
 }
 
 /// Drawer body: title bar (+ ✕) over the scrollable content.
@@ -144,7 +157,7 @@ fn close_button<'a>(cfg: &SidePanelConfig, t: Theme) -> Element<'a, Message> {
         .into()
 }
 
-fn tab_style(t: Theme) -> button::Style {
+fn handle_style(t: Theme) -> button::Style {
     button::Style {
         background: Some(theme::bg_color(t.panel())),
         text_color: t.ink(),

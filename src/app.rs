@@ -13,7 +13,7 @@ use crate::state::{AppConfig, SlotMap, SoundEntry, SoundMeta, SoundMetaStore};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::effects_panel::{self, EffectsUiState, PresetId};
 use crate::ui::effects_panel_view;
-use crate::ui::side_panel::{self, PanelAnim, SidePanelConfig};
+use crate::ui::side_panel::PanelAnim;
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
@@ -1438,19 +1438,10 @@ impl HonkHonk {
 
         // Effects side panel (#143): pull tab always visible; scrim + body slide
         // in when open. Pushed below the context-menu/editor modals so those stack
-        // on top. All drawer logic lives in `ui::side_panel`.
-        let effects_body = effects_panel_view::view_effects_panel(&self.effects_ui, t);
-        let effects_cfg = SidePanelConfig {
-            panel_w: 400.0,
-            tab_w: 28.0,
-            title: "Voice Effects",
-            on_toggle: Message::ToggleEffectsPanel,
-            on_close: Message::CloseEffectsPanel,
-        };
-        layers.push(side_panel::view_side_panel(
-            effects_cfg,
+        // on top. All drawer assembly + logic lives in `ui` modules, not here.
+        layers.push(effects_panel_view::effects_side_panel_layer(
+            &self.effects_ui,
             self.panel_progress,
-            effects_body,
             t,
         ));
 
