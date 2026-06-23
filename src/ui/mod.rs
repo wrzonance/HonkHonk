@@ -1,6 +1,7 @@
 pub mod effects_panel;
 pub mod effects_panel_view;
 pub mod now_playing;
+pub mod playhead;
 pub mod search_bar;
 pub mod settings;
 pub mod slot_manager;
