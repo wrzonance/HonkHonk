@@ -31,12 +31,14 @@ const TITLE_SIZE: f32 = 14.0;
 /// Chevron glyph size.
 const GLYPH_SIZE: f32 = 18.0;
 
-/// Builds the side-panel overlay layer for animation `progress` (0=closed..1=open)
-/// in a `window`-sized area, wrapping `body` as the drawer content.
+/// Builds the side-panel overlay layer for animation `progress` (0=closed..1=open),
+/// wrapping `body` as the drawer content. The `Float`-based slide and `Fill` scrim
+/// are window-agnostic, so no window size is needed here; the #144 feather puff
+/// will derive its origin from [`panel_geometry`](super::panel_geometry) at its
+/// own call site.
 pub fn view_side_panel<'a>(
     cfg: SidePanelConfig,
     progress: f32,
-    _window: (f32, f32),
     body: Element<'a, Message>,
     t: Theme,
 ) -> Element<'a, Message> {
@@ -126,9 +128,19 @@ fn panel_body<'a>(
 }
 
 fn close_button<'a>(cfg: &SidePanelConfig, t: Theme) -> Element<'a, Message> {
-    button(text("\u{2715}").size(TITLE_SIZE).color(t.ink()))
+    // Borderless icon button so the ✕ reads as a glyph, not a second tab-like chip.
+    button(text("\u{2715}").size(TITLE_SIZE).color(t.ink_dim()))
         .on_press(cfg.on_close.clone())
-        .style(move |_th, _s| tab_style(t))
+        .style(move |_th, _s| button::Style {
+            background: None,
+            text_color: t.ink(),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: theme::radius::SM,
+            },
+            ..Default::default()
+        })
         .into()
 }
 
@@ -164,7 +176,7 @@ mod tests {
     #[test]
     fn builds_across_progress() {
         for p in [0.0_f32, 0.5, 1.0] {
-            let _el = view_side_panel(cfg(), p, (1280.0, 800.0), text("body").into(), Theme::Dark);
+            let _el = view_side_panel(cfg(), p, text("body").into(), Theme::Dark);
         }
     }
 }

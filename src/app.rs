@@ -676,8 +676,10 @@ impl HonkHonk {
                     self.editor_sound_id = None;
                     self.editor_draft_name = String::new();
                     self.editor_draft_volume = 1.0;
-                } else if self.effects_panel.is_open() {
-                    // Effects drawer closes before search-state handling.
+                } else if self.effects_panel.is_visible() {
+                    // Drawer absorbs Escape whenever it is on screen — including
+                    // mid-close — so a second Escape never falls through to clear
+                    // the search query. `close` is a no-op if already closing.
                     let now = Instant::now();
                     self.effects_panel.close(now);
                     self.panel_progress = self.effects_panel.progress(now);
@@ -1448,7 +1450,6 @@ impl HonkHonk {
         layers.push(side_panel::view_side_panel(
             effects_cfg,
             self.panel_progress,
-            self.window_size,
             effects_body,
             t,
         ));
@@ -2862,5 +2863,22 @@ mod tests {
         let _ = app.update(Message::Frame(later));
         assert_eq!(app.panel_progress, 1.0);
         assert!(!app.effects_panel.is_animating());
+    }
+
+    #[test]
+    fn escape_during_close_does_not_clear_search() {
+        // Regression: while the drawer is mid-close, is_open() is false but the
+        // panel is still on screen. Escape must be absorbed by the drawer, not
+        // fall through and wipe the search query.
+        let mut app = HonkHonk::new_for_test();
+        app.search_query = "bark".to_owned();
+        let _ = app.update(Message::ToggleEffectsPanel); // opening
+        let open = Instant::now() + crate::ui::side_panel::SLIDE_DURATION;
+        let _ = app.update(Message::Frame(open)); // settled open
+        let _ = app.update(Message::ToggleEffectsPanel); // start closing
+        assert!(!app.effects_panel.is_open());
+        assert!(app.effects_panel.is_visible());
+        let _ = app.update(Message::EscapePressed);
+        assert_eq!(app.search_query, "bark");
     }
 }

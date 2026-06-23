@@ -53,9 +53,21 @@ impl PanelAnim {
         matches!(self, PanelAnim::Animating { .. })
     }
 
-    /// True when open or opening (target progress > 0).
+    /// True when open or *opening* (target progress > 0). Drives slide direction
+    /// in [`toggle`](Self::toggle)/[`close`](Self::close): a closing panel reads
+    /// `false` so a tab press reverses it back open. For "is the drawer drawn on
+    /// screen right now" (e.g. should Escape dismiss it), use
+    /// [`is_visible`](Self::is_visible) instead — it stays `true` mid-close.
     pub fn is_open(&self) -> bool {
         self.target() > 0.0
+    }
+
+    /// True whenever the drawer occupies the screen — open, opening, *or* closing
+    /// (only fully `Settled(0.0)` reads `false`). Use this to decide whether the
+    /// panel should absorb a dismiss (Escape) rather than [`is_open`](Self::is_open),
+    /// which is `false` during the close slide.
+    pub fn is_visible(&self) -> bool {
+        !matches!(self, PanelAnim::Settled(v) if *v == 0.0)
     }
 
     /// Reverses or begins a slide toward the opposite end, continuous from the
@@ -181,6 +193,26 @@ mod tests {
             "snapped: {before} -> {after}"
         );
         assert!(!a.is_open());
+    }
+
+    #[test]
+    fn is_visible_stays_true_through_close_slide() {
+        // Regression: is_open() is target-based and reads false during the close
+        // slide; is_visible() must stay true so a dismiss (Escape) is absorbed by
+        // the still-on-screen drawer instead of falling through to other handlers.
+        let t0 = Instant::now();
+        let mut a = PanelAnim::default();
+        assert!(!a.is_visible());
+        a.toggle(t0); // opening
+        assert!(a.is_visible());
+        a.tick(t0 + SLIDE_DURATION); // settled open
+        assert!(a.is_visible());
+        let t1 = t0 + SLIDE_DURATION;
+        a.toggle(t1); // closing
+        assert!(!a.is_open(), "closing reads not-open (target-based)");
+        assert!(a.is_visible(), "but is still on screen mid-close");
+        a.tick(t1 + SLIDE_DURATION); // settled closed
+        assert!(!a.is_visible());
     }
 
     #[test]
