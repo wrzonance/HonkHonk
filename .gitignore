@@ -71,3 +71,6 @@ packaging/aur/*/src/
 # User sound library (never commit user audio)
 sounds/
 .worktrees/
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
