@@ -13,6 +13,7 @@ use crate::state::{AppConfig, SlotMap, SoundEntry, SoundMeta, SoundMetaStore};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::effects_panel::{self, EffectsUiState, PresetId};
 use crate::ui::effects_panel_view;
+use crate::ui::side_panel::PanelAnim;
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
@@ -103,6 +104,10 @@ pub enum Message {
         param: &'static str,
         value: f32,
     },
+    /// Toggle the effects side panel open/closed (pull tab).
+    ToggleEffectsPanel,
+    /// Close the effects side panel (scrim / ✕ / Escape).
+    CloseEffectsPanel,
     /// Carries the command sender from the portal stream.
     /// Two `ShortcutHandle` messages are never meaningfully equal — treated as always-unequal.
     ShortcutHandle(crate::shortcuts::PortalCmdSender),
@@ -175,6 +180,12 @@ pub struct HonkHonk {
     editor_draft_volume: f32,
     /// User-facing voice-effects state (preset, bypass, wet/dry, params).
     effects_ui: EffectsUiState,
+    /// Open/close animation state for the effects side panel (#143). Logic lives
+    /// in `ui::side_panel`.
+    effects_panel: PanelAnim,
+    /// Eased panel progress (0=closed..1=open) fed to the view; refreshed each
+    /// frame by `effects_panel.tick`.
+    panel_progress: f32,
     /// Persistent now-playing waveform cache owner (#131). App holds it but all
     /// cache-lifecycle logic lives in `ui::now_playing::NowPlaying`.
     now_playing: crate::ui::now_playing::NowPlaying,
@@ -346,6 +357,8 @@ impl HonkHonk {
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
             effects_ui: EffectsUiState::default(),
+            effects_panel: PanelAnim::default(),
+            panel_progress: 0.0,
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             playhead: None,
             display_progress: 0.0,
@@ -392,6 +405,8 @@ impl HonkHonk {
             editor_draft_name: String::new(),
             editor_draft_volume: 1.0,
             effects_ui: EffectsUiState::default(),
+            effects_panel: PanelAnim::default(),
+            panel_progress: 0.0,
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             playhead: None,
             display_progress: 0.0,
@@ -661,6 +676,13 @@ impl HonkHonk {
                     self.editor_sound_id = None;
                     self.editor_draft_name = String::new();
                     self.editor_draft_volume = 1.0;
+                } else if self.effects_panel.is_visible() {
+                    // Drawer absorbs Escape whenever it is on screen — including
+                    // mid-close — so a second Escape never falls through to clear
+                    // the search query. `close` is a no-op if already closing.
+                    let now = Instant::now();
+                    self.effects_panel.close(now);
+                    self.panel_progress = self.effects_panel.progress(now);
                 } else if self.search_had_focus {
                     // First Esc: treat as blur — Iced already handled unfocus.
                     self.search_had_focus = false;
@@ -769,6 +791,7 @@ impl HonkHonk {
                 if let Some(ref clock) = self.playhead {
                     self.display_progress = clock.display(now);
                 }
+                self.panel_progress = self.effects_panel.tick(now);
                 Task::none()
             }
             Message::ShowSlots => {
@@ -963,6 +986,18 @@ impl HonkHonk {
             Message::SetEffectParamUi { slot, param, value } => {
                 let cmds = effects_panel::edit_param(&mut self.effects_ui, slot, param, value);
                 self.send_audio_commands(cmds);
+                Task::none()
+            }
+            Message::ToggleEffectsPanel => {
+                let now = Instant::now();
+                self.effects_panel.toggle(now);
+                self.panel_progress = self.effects_panel.progress(now);
+                Task::none()
+            }
+            Message::CloseEffectsPanel => {
+                let now = Instant::now();
+                self.effects_panel.close(now);
+                self.panel_progress = self.effects_panel.progress(now);
                 Task::none()
             }
             Message::ShortcutHandle(crate::shortcuts::PortalCmdSender(sender)) => {
@@ -1288,7 +1323,7 @@ impl HonkHonk {
         // an idle tray app never repaints. `window::frames()` yields one `Instant`
         // per refresh; subscriptions are re-evaluated each update, so this drops
         // out automatically when playback ends. No fps cap (let it fly at refresh).
-        if self.playing.is_some() {
+        if self.playing.is_some() || self.effects_panel.is_animating() {
             subs.push(iced::window::frames().map(Message::Frame));
         }
 
@@ -1364,8 +1399,6 @@ impl HonkHonk {
             envelope,
         );
 
-        let effects = effects_panel_view::view_effects_panel(&self.effects_ui, t);
-
         // The banner shares one stable column slot with the header: inserting
         // it as its own top-level slot would shift every later sibling during
         // tree diffing when it appears/dismisses, wiping the grid scrollable's
@@ -1376,20 +1409,32 @@ impl HonkHonk {
         }
         let top = top.push(header);
 
-        let items: Vec<Element<'_, Message>> = vec![
-            top.into(),
-            chips,
-            scrollable(grid).height(Length::Fill).into(),
-            effects,
-            now_playing,
-        ];
+        // Inset the grid from the overlay scrollbar (10px, drawn over content) so
+        // the last tile column is never clipped by it.
+        let grid_scroll = scrollable(container(grid).width(Length::Fill).padding(iced::Padding {
+            top: 0.0,
+            right: theme::space::LG,
+            bottom: 0.0,
+            left: 0.0,
+        }))
+        .height(Length::Fill);
+
+        let items: Vec<Element<'_, Message>> =
+            vec![top.into(), chips, grid_scroll.into(), now_playing];
 
         let content = iced::widget::Column::with_children(items).spacing(theme::space::MD);
 
         let base = container(content)
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(theme::space::XL)
+            // Larger right padding reserves a clean gutter for the closed side-panel
+            // handle (#143, ~28px) so it never overlaps the grid or its scrollbar.
+            .padding(iced::Padding {
+                top: theme::space::XL,
+                right: theme::space::XL + theme::space::SM,
+                bottom: theme::space::XL,
+                left: theme::space::XL,
+            })
             .style(move |_theme| container::Style {
                 background: Some(theme::bg_color(t.bg())),
                 ..Default::default()
@@ -1403,6 +1448,15 @@ impl HonkHonk {
         // append/remove child 1, so the base subtree (and its scroll position)
         // survives the diff.
         let mut layers: Vec<Element<'_, Message>> = vec![base.into()];
+
+        // Effects side panel (#143): pull tab always visible; scrim + body slide
+        // in when open. Pushed below the context-menu/editor modals so those stack
+        // on top. All drawer assembly + logic lives in `ui` modules, not here.
+        layers.push(effects_panel_view::effects_side_panel_layer(
+            &self.effects_ui,
+            self.panel_progress,
+            t,
+        ));
 
         // Overlay context menu at window level so cursor coords map exactly.
         if let (Some(ref sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
@@ -2774,5 +2828,61 @@ mod tests {
                 .len(),
             crate::ui::waveform::WAVEFORM_BARS
         );
+    }
+
+    #[test]
+    fn toggle_effects_panel_opens_then_closes() {
+        let mut app = HonkHonk::new_for_test();
+        assert!(!app.effects_panel.is_open());
+        let _ = app.update(Message::ToggleEffectsPanel);
+        assert!(app.effects_panel.is_open());
+        assert!(app.effects_panel.is_animating());
+        let _ = app.update(Message::ToggleEffectsPanel);
+        assert!(!app.effects_panel.is_open());
+    }
+
+    #[test]
+    fn close_effects_panel_closes_open_panel() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ToggleEffectsPanel);
+        assert!(app.effects_panel.is_open());
+        let _ = app.update(Message::CloseEffectsPanel);
+        assert!(!app.effects_panel.is_open());
+    }
+
+    #[test]
+    fn escape_closes_open_effects_panel() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ToggleEffectsPanel);
+        assert!(app.effects_panel.is_open());
+        let _ = app.update(Message::EscapePressed);
+        assert!(!app.effects_panel.is_open());
+    }
+
+    #[test]
+    fn frame_settles_panel_progress_after_slide() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::ToggleEffectsPanel); // opening
+        let later = Instant::now() + crate::ui::side_panel::SLIDE_DURATION;
+        let _ = app.update(Message::Frame(later));
+        assert_eq!(app.panel_progress, 1.0);
+        assert!(!app.effects_panel.is_animating());
+    }
+
+    #[test]
+    fn escape_during_close_does_not_clear_search() {
+        // Regression: while the drawer is mid-close, is_open() is false but the
+        // panel is still on screen. Escape must be absorbed by the drawer, not
+        // fall through and wipe the search query.
+        let mut app = HonkHonk::new_for_test();
+        app.search_query = "bark".to_owned();
+        let _ = app.update(Message::ToggleEffectsPanel); // opening
+        let open = Instant::now() + crate::ui::side_panel::SLIDE_DURATION;
+        let _ = app.update(Message::Frame(open)); // settled open
+        let _ = app.update(Message::ToggleEffectsPanel); // start closing
+        assert!(!app.effects_panel.is_open());
+        assert!(app.effects_panel.is_visible());
+        let _ = app.update(Message::EscapePressed);
+        assert_eq!(app.search_query, "bark");
     }
 }

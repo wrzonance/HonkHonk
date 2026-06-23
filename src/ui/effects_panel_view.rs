@@ -5,12 +5,13 @@
 
 use std::ops::RangeInclusive;
 
-use iced::widget::{button, column, container, row, slider, text, Column, Row, Space};
+use iced::widget::{button, column, container, row, slider, text, Column, Space};
 use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message;
 use crate::audio::effects::EffectSlot;
 use crate::ui::effects_panel::{EffectsUiState, PresetId};
+use crate::ui::side_panel::{self, SidePanelConfig};
 use crate::ui::theme::{self, Hh, Theme};
 
 // Slider geometry shared by the parameter controls.
@@ -51,6 +52,24 @@ pub fn view_effects_panel(state: &EffectsUiState, t: Theme) -> Element<'static, 
         .into()
 }
 
+/// Assembles the effects controls into the reusable side-panel drawer (#143).
+/// Owns the drawer's config + body wiring so `app.rs::view_main` only pushes the
+/// returned layer — keeping the effects-specific glue out of the god file.
+pub fn effects_side_panel_layer(
+    state: &EffectsUiState,
+    panel_progress: f32,
+    t: Theme,
+) -> Element<'static, Message> {
+    let cfg = SidePanelConfig {
+        panel_w: 400.0,
+        tab_w: 28.0,
+        title: "Voice Effects",
+        on_toggle: Message::ToggleEffectsPanel,
+        on_close: Message::CloseEffectsPanel,
+    };
+    side_panel::view_side_panel(cfg, panel_progress, view_effects_panel(state, t), t)
+}
+
 /// Master row: chain bypass toggle + wet/dry mix slider.
 fn view_master_row(state: &EffectsUiState, t: Theme) -> Element<'static, Message> {
     let active = !state.chain_bypass;
@@ -84,8 +103,10 @@ fn view_master_row(state: &EffectsUiState, t: Theme) -> Element<'static, Message
 }
 
 /// Preset chip bar. The active preset is highlighted with the accent tone.
+/// Chips are stacked vertically so each description line is readable at any
+/// panel width.
 fn view_preset_chips(active: PresetId, t: Theme) -> Element<'static, Message> {
-    let mut chips = Row::new().spacing(theme::space::SM);
+    let mut chips = Column::new().spacing(theme::space::SM);
     for p in PresetId::ALL {
         let selected = p == active;
         let chip = button(
@@ -101,6 +122,7 @@ fn view_preset_chips(active: PresetId, t: Theme) -> Element<'static, Message> {
         )
         .on_press(Message::SelectEffectPreset(p))
         .padding([theme::space::XS, theme::space::MD])
+        .width(Length::Fill)
         .style(move |_th, _s| chip_style(t, selected));
         chips = chips.push(chip);
     }

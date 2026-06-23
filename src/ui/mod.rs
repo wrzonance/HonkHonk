@@ -4,6 +4,7 @@ pub mod now_playing;
 pub mod playhead;
 pub mod search_bar;
 pub mod settings;
+pub mod side_panel;
 pub mod slot_manager;
 pub mod sound_editor;
 pub mod sound_grid;
