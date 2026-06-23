@@ -2,6 +2,20 @@
 
 **Status:** Approved 2026-06-23. Supersedes the always-visible effects panel landed in #135.
 
+> **Revision 2026-06-23 (as-built).** Three details below describe the design at
+> approval; the implementation refined them (all reviewed and intentional):
+> - `PanelAnim` ships as a 2-variant enum (`Settled(f32)` / `Animating { from, to,
+>   start }`), functionally equivalent to and simpler than the 4-variant sketch
+>   below.
+> - `SidePanelConfig` drops the static `tab_glyph` field; the chevron is derived
+>   from `progress` in the view so it reflects slide direction (a static glyph
+>   could not). The animated goose-wing chevron remains future #144 work.
+> - `is_open()` is target-based (open/opening) and drives slide direction;
+>   a separate `is_visible()` (true through the close slide) decides dismissal, so
+>   a mid-close Escape is absorbed rather than leaking to search state.
+> - `view_side_panel` takes no window size — the `Float` slide is window-agnostic;
+>   #144 derives its feather origin from `panel_geometry` at its own call site.
+
 ## Goal
 
 Change the visual language of the voice-effects panel from an always-present
