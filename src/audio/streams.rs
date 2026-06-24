@@ -239,7 +239,7 @@ fn bind_and_track_node(
     let node: pipewire::node::Node = match registry.bind(global) {
         Ok(n) => n,
         Err(e) => {
-            eprintln!("honkhonk: failed to bind stream node {}: {e}", global.id);
+            tracing::warn!(node = global.id, error = %e, "failed to bind stream node");
             return;
         }
     };

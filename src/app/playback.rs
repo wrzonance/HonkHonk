@@ -81,7 +81,13 @@ impl HonkHonk {
                 self.start_playback(&id, pcm, volume, generation);
             }
             Err(e) => {
-                eprintln!("honkhonk: decode error: {e}");
+                let file = self
+                    .sounds
+                    .iter()
+                    .find(|s| s.id == id)
+                    .map(|s| s.path.display().to_string())
+                    .unwrap_or_else(|| id.clone()); // fall back to id if rescanned away
+                tracing::error!(file = %file, error = %e, "decode failed");
                 self.clear_playback_state();
             }
         }

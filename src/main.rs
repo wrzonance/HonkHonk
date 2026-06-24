@@ -9,10 +9,12 @@ fn effective_renderer(env_val: Option<&str>, config_pref: Renderer) -> Renderer 
 }
 
 fn main() -> iced::Result {
+    honkhonk::logging::init();
+
     let config = match honkhonk::state::AppConfig::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("warning: failed to load config, using defaults: {e}");
+            tracing::warn!(error = %e, "failed to load config; using defaults");
             honkhonk::state::AppConfig::default()
         }
     };
@@ -40,14 +42,14 @@ fn main() -> iced::Result {
     pipewire::init();
 
     if let Err(e) = gtk::init() {
-        eprintln!("fatal: failed to initialize GTK (required for system tray): {e}");
+        tracing::error!(error = %e, "failed to initialize GTK (required for system tray); exiting");
         std::process::exit(1);
     }
 
     let sounds = match honkhonk::state::Library::scan(&config.sound_directories) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("warning: failed to scan sound library: {e}");
+            tracing::warn!(error = %e, "failed to scan sound library");
             Vec::new()
         }
     };
@@ -57,7 +59,7 @@ fn main() -> iced::Result {
     let tray_handle = match honkhonk::tray::build_tray() {
         Ok(handle) => handle,
         Err(e) => {
-            eprintln!("fatal: failed to initialize system tray: {e}");
+            tracing::error!(error = %e, "failed to initialize system tray; exiting");
             std::process::exit(1);
         }
     };
@@ -69,7 +71,7 @@ fn main() -> iced::Result {
     ) {
         Ok(handle) => handle,
         Err(e) => {
-            eprintln!("fatal: failed to start audio engine: {e}");
+            tracing::error!(error = %e, "failed to start audio engine; exiting");
             std::process::exit(1);
         }
     };

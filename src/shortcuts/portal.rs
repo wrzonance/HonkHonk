@@ -284,7 +284,7 @@ pub fn shortcut_stream(_window_id: Option<WindowIdentifier>) -> impl Stream<Item
                         PortalCommand::ConfigureShortcuts => {
                             if configure_available {
                                 if let Err(e) = configure_shortcuts_raw(&conn, &session_path).await {
-                                    eprintln!("honkhonk: configure_shortcuts failed: {e}");
+                                    tracing::warn!(error = %e, "configure_shortcuts failed");
                                 }
                             }
                         }

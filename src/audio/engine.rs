@@ -411,7 +411,7 @@ fn run_engine(
             .name("honkhonk-router-drain".into())
             .spawn(move || {
                 for event in router_evt_rx {
-                    eprintln!("honkhonk router: {event:?}");
+                    tracing::debug!(?event, "router event");
                 }
             })
             .map_err(AudioError::ThreadSpawn)?;

@@ -63,7 +63,7 @@ fn try_create_mic_links(
                 links.push(link);
             }
             Err(e) => {
-                eprintln!("honkhonk: failed to create mic passthrough link: {e}");
+                tracing::warn!(error = %e, "failed to create mic passthrough link");
             }
         }
     }
@@ -104,7 +104,7 @@ fn try_create_monitor_links(
                 links.push(link);
             }
             Err(e) => {
-                eprintln!("honkhonk: failed to create monitor→source link: {e}");
+                tracing::warn!(error = %e, "failed to create monitor->source link");
             }
         }
     }
