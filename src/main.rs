@@ -19,9 +19,9 @@ fn main() -> iced::Result {
         }
     };
 
-    // Set ICED_BACKEND before any subsystem init — pipewire::init() and
-    // gtk::init() do not document that they avoid spawning background threads,
-    // so set_var must run before them to satisfy its SAFETY requirement.
+    // Set ICED_BACKEND before any subsystem init — pipewire::init() does not
+    // document that it avoids spawning background threads, so set_var must run
+    // before it to satisfy its SAFETY requirement.
     let renderer = effective_renderer(
         std::env::var("HONKHONK_RENDERER").ok().as_deref(),
         config.renderer,
@@ -40,11 +40,6 @@ fn main() -> iced::Result {
     }
 
     pipewire::init();
-
-    if let Err(e) = gtk::init() {
-        tracing::error!(error = %e, "failed to initialize GTK (required for system tray); exiting");
-        std::process::exit(1);
-    }
 
     let sounds = match honkhonk::state::Library::scan(&config.sound_directories) {
         Ok(s) => s,

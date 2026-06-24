@@ -568,10 +568,6 @@ impl HonkHonk {
                 self.update(msg)
             }
             Message::TrayPoll => {
-                while gtk::events_pending() {
-                    gtk::main_iteration_do(false);
-                }
-
                 let event = self.tray_rx.lock().ok().and_then(|rx| rx.try_recv().ok());
                 if let Some(e) = event {
                     let msg = Message::from_tray_event(e);

@@ -11,19 +11,6 @@ targets = [
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
-    # gtk-rs GTK3 crates are unmaintained; they are transitive deps pulled in
-    # by tray-icon → libappindicator. No patched version exists. Tracked for
-    # replacement when tray-icon drops the GTK3 dependency.
-    { id = "RUSTSEC-2024-0412", reason = "transitive via tray-icon/libappindicator, no fix available" },
-    { id = "RUSTSEC-2024-0413", reason = "transitive via tray-icon/libappindicator, no fix available" },
-    { id = "RUSTSEC-2024-0415", reason = "transitive via tray-icon/libappindicator, no fix available" },
-    { id = "RUSTSEC-2024-0416", reason = "transitive via tray-icon/libappindicator, no fix available" },
-    { id = "RUSTSEC-2024-0418", reason = "transitive via tray-icon/libappindicator, no fix available" },
-    { id = "RUSTSEC-2024-0419", reason = "transitive via tray-icon/libappindicator, no fix available" },
-    { id = "RUSTSEC-2024-0420", reason = "transitive via tray-icon/libappindicator, no fix available" },
-    # proc-macro-error is unmaintained; transitive dep, no patched alternative
-    # in use by our direct dependencies yet.
-    { id = "RUSTSEC-2024-0370", reason = "transitive dep, no patched version available upstream" },
     # paste is unmaintained; transitive dep via lofty. No fix available without
     # lofty dropping its paste dependency upstream.
     { id = "RUSTSEC-2024-0436", reason = "transitive via lofty, no patched version available upstream" },

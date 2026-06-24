@@ -9,16 +9,12 @@ pkgdesc="Wayland-native Linux soundboard — Iced GUI + PipeWire audio (binary r
 arch=('x86_64')
 url="https://github.com/wrzonance/HonkHonk"
 license=('MIT')
-# NOTE: as of 0.1.0 the released binary no longer links libxdo.so (tray-icon/
-# muda built with default-features=false), so `xdotool` is not a dependency —
-# this also ends the Debian libxdo.so.3 vs Arch libxdo.so.4 soname mismatch
-# that blocked earlier versions of this package.
+# The tray backend is pure Rust SNI over D-Bus, so the release binary does not
+# link GTK, appindicator, or xdotool.
 depends=(
     'pipewire'
     'wayland'
     'libxkbcommon'
-    'gtk3'
-    'libayatana-appindicator'
     'xdg-desktop-portal'
 )
 provides=('honkhonk')
