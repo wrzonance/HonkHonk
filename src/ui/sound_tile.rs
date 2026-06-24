@@ -6,6 +6,8 @@ use crate::app::Message;
 use crate::ui::theme::{self, Hh, Theme, Tone};
 
 pub const PLACEHOLDER_GRAPHIC: &str = "\u{1f50a}";
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundTileData {
@@ -30,9 +32,23 @@ impl SoundTileData {
 }
 
 pub fn seed_from_sound_id(id: &str) -> u64 {
-    id.get(..16)
+    if let Some(seed) = id
+        .get(..16)
         .and_then(|hex| u64::from_str_radix(hex, 16).ok())
-        .unwrap_or(0)
+        .filter(|seed| *seed != 0)
+    {
+        return seed;
+    }
+
+    let seed = id.bytes().fold(FNV_OFFSET_BASIS, |acc, byte| {
+        (acc ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+    });
+
+    if seed == 0 {
+        FNV_OFFSET_BASIS
+    } else {
+        seed
+    }
 }
 
 pub fn rotation_degrees(seed: u64) -> f32 {
@@ -303,6 +319,17 @@ mod tests {
                 "rotation {first} was outside the +/-3 degree range"
             );
         }
+    }
+
+    #[test]
+    fn seed_from_sound_id_uses_stable_fallback_for_non_hex_ids() {
+        let airhorn = seed_from_sound_id("airhorn");
+        let honk = seed_from_sound_id("honk");
+
+        assert_ne!(airhorn, 0);
+        assert_ne!(honk, 0);
+        assert_eq!(airhorn, seed_from_sound_id("airhorn"));
+        assert_ne!(airhorn, honk);
     }
 
     #[test]
