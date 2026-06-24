@@ -202,13 +202,15 @@ pub struct HonkHonk {
     /// Frame-interpolated playhead position fed to the now-playing view and the
     /// waveform cache-sync. Distinct from `progress` (the raw 10 Hz anchor).
     display_progress: f32,
-    /// Monotonic counter bumped on every play dispatch. Stamped onto the `Play`
-    /// command and echoed back on `PlaybackFinished`, so the app can tell the
-    /// genuine end of the current voice from the stale `Finished` emitted for a
-    /// voice that was superseded by re-pressing the same sound (#149).
+    /// Monotonic counter bumped on every play dispatch and on StopAll. Stamped
+    /// onto the `Play` command and echoed back on `PlaybackFinished` to tell a
+    /// genuine end from the stale `Finished` of a re-pressed voice (#149), and
+    /// onto each off-thread decode so a `Message::Decoded` whose generation no
+    /// longer matches (a superseded press, or a StopAll mid-decode) is dropped
+    /// rather than (re)started (#151).
     play_generation: u64,
     /// Hot-path caches: byte-capped decoded-PCM LRU + waveform envelope map
-    /// (#151). Subsumes the former `waveform_cache`.
+    /// (#151).
     audio_store: crate::audio::AudioStore,
 }
 
@@ -685,6 +687,12 @@ impl HonkHonk {
                     audio.send(AudioCommand::Stop);
                 }
                 self.clear_playback_state();
+                // Invalidate any decode still in flight for a just-pressed sound
+                // so a cold-cache play cancelled mid-decode is not resurrected
+                // when its `Message::Decoded` lands (#151). The genuine-end and
+                // decode-error teardowns have no in-flight decode for the current
+                // generation, so only the explicit Stop bumps here.
+                self.play_generation = self.play_generation.wrapping_add(1);
                 Task::none()
             }
             Message::SelectCategory(cat) => {
@@ -1159,7 +1167,8 @@ impl HonkHonk {
 
     /// Clears all now-playing state together so the highlight, raw progress
     /// anchor, playhead clock, and smooth display position never drift apart.
-    /// The single teardown path for both StopAll and the PlaybackFinished end.
+    /// The single teardown path for StopAll, the genuine PlaybackFinished end,
+    /// and a failed decode.
     fn clear_playback_state(&mut self) {
         self.playing = None;
         self.progress = 0.0;
@@ -3108,6 +3117,56 @@ mod tests {
         assert!(
             app.audio_store.get_pcm("snd").is_some(),
             "decode result must be cached for instant re-fire"
+        );
+    }
+
+    #[test]
+    fn stopall_mid_decode_does_not_resurrect_playback() {
+        // A cold-cache press dispatches an off-thread decode but sends no engine
+        // Play yet. If the user hits StopAll before the decode lands, the stale
+        // `Decoded` must be dropped — not resurrect the stopped sound (#151).
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("honk.wav");
+        write_test_wav(&wav_path);
+        app.sounds = vec![SoundEntry {
+            id: "wav1".into(),
+            name: "Honk".into(),
+            path: wav_path,
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: Some(100),
+            category: "Test".into(),
+        }];
+
+        // Cold press → generation bumped, decode Task in flight (ignored here).
+        let sound = app.sounds[0].clone();
+        let _ = app.request_play(&sound, false);
+        let in_flight_gen = app.play_generation;
+        assert_eq!(app.playing(), Some("wav1"));
+
+        // StopAll tears down playback and must invalidate the in-flight decode.
+        let _ = app.update(Message::StopAll);
+        assert_eq!(app.playing(), None);
+
+        // The decode lands carrying the now-stale generation.
+        let _ = app.update(Message::Decoded {
+            generation: in_flight_gen,
+            id: "wav1".into(),
+            result: Ok(crate::audio::CachedPcm {
+                samples: std::sync::Arc::new(vec![0.0_f32; 8]),
+                sample_rate: 48_000,
+                channels: 2,
+                duration: std::time::Duration::from_secs(1),
+            }),
+        });
+
+        assert_eq!(app.playing(), None, "StopAll must win — no resurrection");
+        assert!(
+            app.playhead.is_none(),
+            "no playhead after a stopped, stale decode"
         );
     }
 }

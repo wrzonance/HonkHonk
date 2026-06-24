@@ -83,6 +83,11 @@ impl AudioStore {
     /// Evicts least-recently-used entries until at or below the cap. A single
     /// entry larger than the cap is kept (evicting it would free nothing useful
     /// and stop a legitimately-requested sound from playing).
+    ///
+    /// Each victim is found with an O(n) `min_by_key` scan; eviction is a rare
+    /// cold-path event (only on insert past the cap) and `n` is bounded by the
+    /// cap, so this is left simple. If a burst ever makes O(n·k) eviction show
+    /// up, switch to a `BTreeMap<tick, id>` LRU sidecar.
     fn evict_to_cap(&mut self) -> Vec<String> {
         let mut evicted = Vec::new();
         while self.bytes > self.cap_bytes && self.pcm.len() > 1 {
