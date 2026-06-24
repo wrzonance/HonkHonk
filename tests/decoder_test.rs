@@ -228,3 +228,24 @@ fn decode_all_formats_produce_similar_sample_counts() {
         );
     }
 }
+
+#[test]
+fn decode_stereo_m4a_backfills_channels_from_first_frame() {
+    // AAC-in-MP4 (.m4a) reports sample_rate but NOT channels in the container
+    // header — the count lives in the AudioSpecificConfig and is only resolved
+    // by the decoder on the first frame. decode() must backfill it rather than
+    // failing with MissingCodecParams (#153, the "Directed by" music-video rip).
+    // Stereo proves the real count is read, not defaulted to mono.
+    let audio = decode(Path::new("tests/fixtures/sine_stereo.m4a")).expect("decode stereo m4a");
+    assert_eq!(audio.sample_rate, 48000);
+    assert_eq!(audio.channels, 2);
+    assert!(!audio.samples.is_empty(), "samples should not be empty");
+}
+
+#[test]
+fn decode_mono_m4a_succeeds() {
+    let audio = decode(Path::new("tests/fixtures/sine_mono.m4a")).expect("decode mono m4a");
+    assert_eq!(audio.sample_rate, 48000);
+    assert_eq!(audio.channels, 1);
+    assert!(!audio.samples.is_empty(), "samples should not be empty");
+}
