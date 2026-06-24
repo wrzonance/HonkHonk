@@ -7,6 +7,7 @@ use pw::spa;
 use pw::spa::pod::Pod;
 
 use super::error::AudioError;
+use super::voices::{MixScratch, MixTarget, VoicePool};
 
 const FRAME_SIZE: usize = std::mem::size_of::<f32>();
 
@@ -58,24 +59,22 @@ fn build_audio_params(rate: u32, channels: u32) -> Vec<u8> {
     .into_inner()
 }
 
-fn make_process_closure(
-    state: Rc<RefCell<PlaybackState>>,
+fn make_mix_process_closure(
+    voices: Rc<RefCell<VoicePool>>,
+    target: MixTarget,
+    sample_rate: u32,
     channels: u16,
 ) -> impl FnMut(&pw::stream::Stream, &mut ()) + 'static {
+    let mut scratch = MixScratch::default();
     move |stream, _| {
         if let Some(mut buffer) = stream.dequeue_buffer() {
             let datas = buffer.datas_mut();
             if let Some(data) = datas.first_mut() {
-                // Obtain byte slice, fill it, then record its length — all
-                // before releasing the borrow on `data` so we can call
-                // `chunk_mut()` separately (they both take `&mut self`).
                 let total_bytes = if let Some(slice) = data.data() {
                     let float_slice = cast_bytes_to_f32_mut(slice);
-                    let mut ps = state.borrow_mut();
-                    let wrote = ps.fill_buffer(float_slice);
-                    for s in float_slice[wrote..].iter_mut() {
-                        *s = 0.0;
-                    }
+                    voices
+                        .borrow_mut()
+                        .mix(target, float_slice, &mut scratch, sample_rate);
                     slice.len()
                 } else {
                     0
@@ -92,9 +91,9 @@ fn make_process_closure(
     }
 }
 
-pub fn create_sink_stream(
+pub fn create_sink_mix_stream(
     core: pw::core::CoreRc,
-    state: Rc<RefCell<PlaybackState>>,
+    voices: Rc<RefCell<VoicePool>>,
     target_name: &str,
     sample_rate: u32,
     channels: u16,
@@ -115,7 +114,12 @@ pub fn create_sink_stream(
 
     let listener = stream
         .add_local_listener_with_user_data(())
-        .process(make_process_closure(state, channels))
+        .process(make_mix_process_closure(
+            voices,
+            MixTarget::Sink,
+            sample_rate,
+            channels,
+        ))
         .register()
         .map_err(|e| AudioError::StreamCreation(format!("sink listener: {e}")))?;
 
@@ -179,7 +183,7 @@ fn open_monitor_stream(
 /// and `NODE_DONT_RECONNECT` prevents PipeWire from overriding the target.
 pub fn create_monitor_stream(
     core: pw::core::CoreRc,
-    state: Rc<RefCell<PlaybackState>>,
+    voices: Rc<RefCell<VoicePool>>,
     sample_rate: u32,
     channels: u16,
     target: Option<&str>,
@@ -188,7 +192,12 @@ pub fn create_monitor_stream(
 
     let listener = stream
         .add_local_listener_with_user_data(())
-        .process(make_process_closure(state, channels))
+        .process(make_mix_process_closure(
+            voices,
+            MixTarget::Monitor,
+            sample_rate,
+            channels,
+        ))
         .register()
         .map_err(|e| AudioError::StreamCreation(format!("monitor listener: {e}")))?;
 

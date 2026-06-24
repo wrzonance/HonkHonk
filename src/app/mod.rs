@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -6,9 +7,9 @@ use iced::widget::{button, container, row, scrollable, space, text};
 use iced::{Element, Length, Point, Subscription, Task, Theme};
 
 use crate::audio::effects::EffectSlot;
-use crate::audio::{AudioCommand, AudioEvent, AudioHandle};
+use crate::audio::{AudioCommand, AudioEvent, AudioHandle, PlayMode};
 use crate::shortcuts::ShortcutsStatus;
-use crate::state::config::Density;
+use crate::state::config::{Density, OverlapMode};
 use crate::state::{AppConfig, SlotMap, SoundEntry, SoundMeta, SoundMetaStore};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::effects_panel::{self, EffectsUiState, PresetId};
@@ -97,6 +98,7 @@ pub enum Message {
     // Audio
     MicPassthroughChanged(bool),
     MicPassthroughLevelChanged(f32),
+    OverlapModeChanged(OverlapMode),
     MonitorDeviceChanged(Option<String>),
     InputDeviceChanged(Option<String>),
     // Voice effects
@@ -130,8 +132,12 @@ pub enum Message {
     /// only if still the current generation (#149/#151).
     Decoded {
         generation: u64,
+        voice_id: u64,
         id: String,
         result: Result<crate::audio::CachedPcm, String>,
+        gain: f32,
+        effects: crate::audio::effects::EffectSettings,
+        mode: PlayMode,
     },
 }
 
@@ -209,6 +215,7 @@ pub struct HonkHonk {
     play_generation: u64,
     /// Hot-path decoded-PCM cache (#151).
     audio_store: crate::audio::AudioStore,
+    pending_play_ids: HashSet<u64>,
 }
 
 fn shortcuts_stream_sub(
@@ -373,6 +380,7 @@ impl HonkHonk {
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
+            pending_play_ids: HashSet::new(),
         }
     }
 
@@ -420,6 +428,7 @@ impl HonkHonk {
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
+            pending_play_ids: HashSet::new(),
         }
     }
 
@@ -585,6 +594,7 @@ impl HonkHonk {
                         }
                     }
                     AudioEvent::PlaybackFinished {
+                        voice_id: _,
                         sound_id,
                         generation,
                     } => {
@@ -679,6 +689,7 @@ impl HonkHonk {
                 // gates on `playing == Some(id)`, so any decode still in flight
                 // for the stopped sound is dropped on arrival rather than
                 // resurrecting it (#151).
+                self.pending_play_ids.clear();
                 self.clear_playback_state();
                 Task::none()
             }
@@ -949,6 +960,19 @@ impl HonkHonk {
                 }
                 Task::none()
             }
+            Message::OverlapModeChanged(overlap_mode) => {
+                if self.config.overlap_mode != overlap_mode {
+                    let config = AppConfig {
+                        overlap_mode,
+                        ..self.config.clone()
+                    };
+                    if let Err(e) = config.save() {
+                        tracing::warn!(error = %e, "failed to save config");
+                    }
+                    self.config = config;
+                }
+                Task::none()
+            }
             Message::MonitorDeviceChanged(target) => {
                 if self.config.monitor_device == target {
                     return Task::none();
@@ -1098,9 +1122,23 @@ impl HonkHonk {
             }
             Message::Decoded {
                 generation,
+                voice_id,
                 id,
                 result,
-            } => self.handle_decoded(generation, id, result),
+                gain,
+                effects,
+                mode,
+            } => self.handle_decoded(
+                id,
+                result,
+                playback::PlaybackDispatch {
+                    generation,
+                    voice_id,
+                    gain,
+                    effects,
+                    mode,
+                },
+            ),
         };
         task
     }
@@ -1611,6 +1649,7 @@ mod tests {
             sound_id: "abc123".into(),
         }));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            voice_id: 0,
             sound_id: "abc123".into(),
             generation: 0,
         }));
@@ -1687,6 +1726,7 @@ mod tests {
         // A Finished event for an already-replaced sound must not blank the
         // highlight of the sound that superseded it (issue #111).
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            voice_id: 0,
             sound_id: "older".into(),
             generation: 0,
         }));
@@ -1732,6 +1772,7 @@ mod tests {
                 sound_id: "a".into(),
             },
             AudioEvent::PlaybackFinished {
+                voice_id: 0,
                 sound_id: "a".into(),
                 generation: 0,
             },
@@ -1740,6 +1781,7 @@ mod tests {
             },
             AudioEvent::Progress(0.25),
             AudioEvent::PlaybackFinished {
+                voice_id: 0,
                 sound_id: "b".into(),
                 generation: 0,
             },
@@ -1868,6 +1910,7 @@ mod tests {
         });
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            voice_id: 0,
             sound_id: "test".into(),
             generation: 0,
         }));
@@ -1912,8 +1955,12 @@ mod tests {
         };
         let _ = app.update(Message::Decoded {
             generation: app.play_generation,
+            voice_id: app.play_generation,
             id: "wav1".into(),
             result: Ok(to_pcm(&decoded)),
+            gain: 1.0,
+            effects: crate::audio::effects::EffectSettings::default(),
+            mode: PlayMode::Concurrent,
         });
         // Second press re-triggers the same sound. The PCM is now cached, so
         // `request_play` fires synchronously and creates a fresh playhead
@@ -1927,6 +1974,7 @@ mod tests {
         // The displaced first voice's Finished (older generation) arrives on the
         // next drain — it must NOT clear the re-triggered playhead.
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            voice_id: 1,
             sound_id: "wav1".into(),
             generation: 1,
         }));
@@ -1938,6 +1986,7 @@ mod tests {
 
         // The genuine end of the current voice (matching generation) still clears.
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            voice_id: 2,
             sound_id: "wav1".into(),
             generation: 2,
         }));
@@ -1963,6 +2012,7 @@ mod tests {
         }));
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            voice_id: 0,
             sound_id: "test".into(),
             generation: 0,
         }));
@@ -2044,6 +2094,7 @@ mod tests {
         assert!((app.config.volume - 0.15).abs() < f32::EPSILON);
 
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
+            voice_id: 0,
             sound_id: "old".into(),
             generation: 0,
         }));
@@ -2876,6 +2927,7 @@ mod tests {
         let decoded = crate::audio::decode(&sound.path).expect("decode test wav");
         let _ = app.update(Message::Decoded {
             generation: app.play_generation,
+            voice_id: app.play_generation,
             id: "wav1".into(),
             result: Ok(crate::audio::CachedPcm {
                 samples: std::sync::Arc::new(decoded.samples),
@@ -2883,6 +2935,9 @@ mod tests {
                 channels: decoded.channels,
                 duration: decoded.duration,
             }),
+            gain: 1.0,
+            effects: crate::audio::effects::EffectSettings::default(),
+            mode: PlayMode::Concurrent,
         });
         let env = app
             .now_playing
@@ -2968,8 +3023,12 @@ mod tests {
         });
         let _ = app.update(Message::Decoded {
             generation: 4,
+            voice_id: 4,
             id: "older".into(),
             result: Ok((*pcm).clone()),
+            gain: 1.0,
+            effects: crate::audio::effects::EffectSettings::default(),
+            mode: PlayMode::Concurrent,
         });
 
         assert!(
@@ -2986,6 +3045,7 @@ mod tests {
         app.audio = Some(handle);
         app.play_generation = 2;
         app.playing = Some("snd".into());
+        app.pending_play_ids.insert(2);
 
         let pcm = crate::audio::CachedPcm {
             samples: std::sync::Arc::new(vec![0.25_f32; 64]),
@@ -2995,8 +3055,12 @@ mod tests {
         };
         let _ = app.update(Message::Decoded {
             generation: 2,
+            voice_id: 2,
             id: "snd".into(),
             result: Ok(pcm),
+            gain: 1.0,
+            effects: crate::audio::effects::EffectSettings::default(),
+            mode: PlayMode::Concurrent,
         });
 
         assert!(
@@ -3043,6 +3107,7 @@ mod tests {
         // The decode lands carrying the now-stale generation.
         let _ = app.update(Message::Decoded {
             generation: in_flight_gen,
+            voice_id: in_flight_gen,
             id: "wav1".into(),
             result: Ok(crate::audio::CachedPcm {
                 samples: std::sync::Arc::new(vec![0.0_f32; 8]),
@@ -3050,6 +3115,9 @@ mod tests {
                 channels: 2,
                 duration: std::time::Duration::from_secs(1),
             }),
+            gain: 1.0,
+            effects: crate::audio::effects::EffectSettings::default(),
+            mode: PlayMode::Concurrent,
         });
 
         assert_eq!(app.playing(), None, "StopAll must win — no resurrection");

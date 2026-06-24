@@ -3,7 +3,7 @@
 //! the audio thread. The Iced view lives in [`super::effects_panel_view`]; this
 //! module holds only the testable, render-free logic.
 
-use crate::audio::effects::EffectSlot;
+use crate::audio::effects::{EffectSettings, EffectSlot};
 use crate::audio::AudioCommand;
 
 /// A named voice-effect preset.
@@ -80,6 +80,9 @@ pub struct EffectsUiState {
     pub center_hz: f32,
     pub bandwidth_hz: f32,
     pub noise: f32,
+    pub pitch_bypass: bool,
+    pub ring_mod_bypass: bool,
+    pub bandpass_bypass: bool,
 }
 
 impl Default for EffectsUiState {
@@ -93,6 +96,9 @@ impl Default for EffectsUiState {
             center_hz: RADIO_CENTER_HZ,
             bandwidth_hz: RADIO_BANDWIDTH_HZ,
             noise: RADIO_NOISE,
+            pitch_bypass: true,
+            ring_mod_bypass: true,
+            bandpass_bypass: true,
         }
     }
 }
@@ -101,16 +107,50 @@ impl EffectsUiState {
     /// Update the displayed parameter values to match `preset`.
     pub fn apply_preset(&mut self, preset: PresetId) {
         self.preset = preset;
+        self.pitch_bypass = true;
+        self.ring_mod_bypass = true;
+        self.bandpass_bypass = true;
         match preset {
-            PresetId::Robot => self.carrier_hz = ROBOT_CARRIER_HZ,
+            PresetId::Robot => {
+                self.ring_mod_bypass = false;
+                self.carrier_hz = ROBOT_CARRIER_HZ;
+            }
             PresetId::Radio => {
+                self.bandpass_bypass = false;
                 self.center_hz = RADIO_CENTER_HZ;
                 self.bandwidth_hz = RADIO_BANDWIDTH_HZ;
                 self.noise = RADIO_NOISE;
             }
-            PresetId::Deep => self.pitch_semitones = DEEP_SEMITONES,
-            PresetId::Chipmunk => self.pitch_semitones = CHIPMUNK_SEMITONES,
+            PresetId::Deep => {
+                self.pitch_bypass = false;
+                self.pitch_semitones = DEEP_SEMITONES;
+            }
+            PresetId::Chipmunk => {
+                self.pitch_bypass = false;
+                self.pitch_semitones = CHIPMUNK_SEMITONES;
+            }
             PresetId::Custom => {}
+        }
+    }
+
+    pub fn to_effect_settings(self) -> EffectSettings {
+        EffectSettings {
+            chain_bypass: self.chain_bypass,
+            wet_dry: self.wet_dry,
+            pitch: crate::audio::effects::PitchEffectSettings {
+                bypass: self.pitch_bypass,
+                semitones: self.pitch_semitones,
+            },
+            ring_mod: crate::audio::effects::RingModEffectSettings {
+                bypass: self.ring_mod_bypass,
+                carrier_hz: self.carrier_hz,
+            },
+            bandpass: crate::audio::effects::BandpassEffectSettings {
+                bypass: self.bandpass_bypass,
+                center_hz: self.center_hz,
+                bandwidth_hz: self.bandwidth_hz,
+                noise: self.noise,
+            },
         }
     }
 }
@@ -134,11 +174,26 @@ fn bypass_command(slot: EffectSlot, bypass: bool) -> AudioCommand {
 /// Store an edited parameter value into the UI state mirror.
 pub fn store_effect_param(state: &mut EffectsUiState, slot: EffectSlot, param: &str, value: f32) {
     match (slot, param) {
-        (EffectSlot::Pitch, "semitones") => state.pitch_semitones = value,
-        (EffectSlot::RingMod, "carrier") => state.carrier_hz = value,
-        (EffectSlot::Bandpass, "center") => state.center_hz = value,
-        (EffectSlot::Bandpass, "bandwidth") => state.bandwidth_hz = value,
-        (EffectSlot::Bandpass, "noise") => state.noise = value,
+        (EffectSlot::Pitch, "semitones") => {
+            state.pitch_bypass = false;
+            state.pitch_semitones = value;
+        }
+        (EffectSlot::RingMod, "carrier") => {
+            state.ring_mod_bypass = false;
+            state.carrier_hz = value;
+        }
+        (EffectSlot::Bandpass, "center") => {
+            state.bandpass_bypass = false;
+            state.center_hz = value;
+        }
+        (EffectSlot::Bandpass, "bandwidth") => {
+            state.bandpass_bypass = false;
+            state.bandwidth_hz = value;
+        }
+        (EffectSlot::Bandpass, "noise") => {
+            state.bandpass_bypass = false;
+            state.noise = value;
+        }
         _ => {}
     }
 }
@@ -396,5 +451,18 @@ mod tests {
             param_value(&cmds, EffectSlot::Pitch, "semitones"),
             Some(-2.0)
         );
+    }
+
+    #[test]
+    fn effect_snapshot_preserves_custom_edited_slot() {
+        let mut state = EffectsUiState::default();
+        let _ = edit_param(&mut state, EffectSlot::Pitch, "semitones", -4.0);
+
+        let settings = state.to_effect_settings();
+
+        assert!(!settings.pitch.bypass);
+        assert_eq!(settings.pitch.semitones, -4.0);
+        assert!(settings.ring_mod.bypass);
+        assert!(settings.bandpass.bypass);
     }
 }

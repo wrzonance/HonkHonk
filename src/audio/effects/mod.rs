@@ -11,6 +11,7 @@ pub mod modulation;
 pub mod pitch;
 pub mod preset;
 pub mod reverb;
+pub mod settings;
 
 use crate::audio::error::EffectsError;
 pub use chain::EffectChain;
@@ -25,6 +26,9 @@ pub use modulation::RingModEffect;
 pub use pitch::PitchShiftEffect;
 pub use preset::PitchPreset;
 pub use reverb::Reverb;
+pub use settings::{
+    BandpassEffectSettings, EffectSettings, PitchEffectSettings, RingModEffectSettings,
+};
 
 /// A real-time audio processing unit. All methods that run inside the PipeWire
 /// process callback MUST be real-time safe: no allocation, no locks, no syscalls.
