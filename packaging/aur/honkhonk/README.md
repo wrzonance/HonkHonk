@@ -28,19 +28,24 @@ offline against that freshly-pinned lockfile.
 
 ## Per-dependency justification
 
-Every entry in `depends=()` is dynamically linked or dlopened by the binary. The
-set was audited against issue #98 — anything not actually linked was dropped.
+Every entry in `depends=()` is dynamically linked or dlopened by the tagged
+binary this package builds. The current `pkgver=0.1.0` tag still uses the old
+GTK3 tray backend; drop the GTK/appindicator entries when `_pkgtag` points at a
+release that contains the pure-Rust `ksni` tray backend.
 
 | Dependency                  | Why it is required (binary links / dlopens it)                          | Arch | Fedora | Ubuntu/Debian |
 |-----------------------------|-------------------------------------------------------------------------|------|--------|---------------|
 | `pipewire`                  | `libpipewire-0.3.so` — audio engine (via the `pipewire` crate / -sys)   | extra | Everything | main |
+| `gtk3`                      | `libgtk-3.so` / `libgdk-3.so` — tray menu in the 0.1.0 tag              | extra | Everything | main |
+| `libayatana-appindicator`   | `libayatana-appindicator3.so` — SNI tray in the 0.1.0 tag               | extra | Everything | main |
 | `wayland`                   | `libwayland-client.so` — Iced/winit Wayland backend (dlopened)         | extra | Everything | main |
 | `libxkbcommon`              | `libxkbcommon.so` — keyboard mapping (winit, dlopened)                 | extra | Everything | main |
 | `xdg-desktop-portal`        | D-Bus service for file chooser + global shortcuts (`ashpd`, no link)    | extra | Everything | main |
 
-The tray backend uses `ksni` (StatusNotifierItem over zbus). It does not link
-GTK, libayatana-appindicator, or xdotool/libxdo. Re-verify package bumps with
-`namcap` and `cargo tree`.
+The current development branch uses `ksni` (StatusNotifierItem over zbus), so
+future release bumps should re-audit this table with `namcap` and `cargo tree`
+and remove the GTK/appindicator entries once the package no longer builds the
+0.1.0 tag.
 
 ## Per-release bump runbook
 

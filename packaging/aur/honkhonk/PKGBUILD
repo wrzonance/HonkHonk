@@ -12,10 +12,13 @@ license=('MIT')
 # Runtime deps — each is dynamically linked or dlopened by the binary.
 # See README.md in this directory for the full per-dependency justification.
 #
-# The tray backend is pure Rust SNI over D-Bus, so there are no GTK,
-# appindicator, or xdotool runtime dependencies.
+# This stable package still builds the 0.1.0 tag, whose tray backend uses GTK3
+# and libayatana-appindicator. Drop these when _pkgtag points at a release that
+# includes the pure-Rust ksni tray backend.
 depends=(
     'pipewire'                # libpipewire-0.3.so — audio engine (pipewire-sys)
+    'gtk3'                    # libgtk-3.so / libgdk-3.so — tray menu (muda gtk feature)
+    'libayatana-appindicator' # libayatana-appindicator3.so — SNI tray (dlopened)
     'wayland'                 # libwayland-client.so — Iced/winit Wayland backend (dlopened)
     'libxkbcommon'            # libxkbcommon.so — keyboard mapping (winit, dlopened)
     'xdg-desktop-portal'      # D-Bus portal: file chooser + global shortcuts (ashpd)
@@ -27,7 +30,7 @@ makedepends=(
     'clang'   # libclang.so — pipewire-sys runs bindgen at build time
     # NOTE: pipewire headers are needed at build time but pipewire is already a
     # runtime dep (depends=), so it is present during makepkg — listing it here
-    # too would be redundant (namcap warns). Same for wayland/libxkbcommon:
+    # too would be redundant (namcap warns). Same for gtk3/wayland/libxkbcommon:
     # on Arch the runtime packages ship their own headers + .pc files.
 )
 provides=('honkhonk')
