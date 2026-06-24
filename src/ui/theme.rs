@@ -145,6 +145,16 @@ impl Tone {
             hsl_to_color(h, s / 100.0, l / 100.0)
         }
     }
+
+    pub fn sticker(self, dark: bool) -> Color {
+        let (h, s, l) = self.hsl();
+        let lightness = if dark {
+            (l - 2.0).max(0.0) / 100.0
+        } else {
+            (l + 5.0).min(100.0) / 100.0
+        };
+        hsl_to_color(h, s / 100.0, lightness)
+    }
 }
 
 pub trait Hh {

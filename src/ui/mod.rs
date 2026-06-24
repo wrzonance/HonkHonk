@@ -8,6 +8,7 @@ pub mod side_panel;
 pub mod slot_manager;
 pub mod sound_editor;
 pub mod sound_grid;
+pub mod sound_tile;
 pub mod theme;
 pub mod volume;
 pub mod waveform;
