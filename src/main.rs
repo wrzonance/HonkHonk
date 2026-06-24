@@ -9,6 +9,8 @@ fn effective_renderer(env_val: Option<&str>, config_pref: Renderer) -> Renderer 
 }
 
 fn main() -> iced::Result {
+    honkhonk::logging::init();
+
     let config = match honkhonk::state::AppConfig::load() {
         Ok(c) => c,
         Err(e) => {
