@@ -19,7 +19,7 @@ Wayland-native Linux soundboard. Pure Rust — Iced 0.14 GUI (Elm/MVU) + PipeWir
 - Iced 0.14 GUI (Elm/MVU); no other frontend framework — UI is `Element<Message>` functions.
 - PipeWire via pipewire-rs: one persistent virtual sink, no per-sound node churn.
 - Global shortcuts via ashpd (xdg-desktop-portal GlobalShortcuts v2) — Phase 2.
-- Tray via tray-icon (StatusNotifierItem; cross-DE). Audio decode via symphonia (pure Rust).
+- Tray via ksni (StatusNotifierItem over zbus; cross-DE). Audio decode via symphonia (pure Rust).
 - Renderer: wgpu default, tiny-skia software fallback (`HONKHONK_RENDERER=software`).
 - **Wayland-native only — no X11. PipeWire only — no direct PulseAudio.**
 
@@ -63,8 +63,7 @@ specific APIs. One binary must work on KDE, GNOME, Hyprland, Sway:
   `org.freedesktop.portal.FileChooser` · Notifications `org.freedesktop.portal.Notification` ·
   Autostart `org.freedesktop.portal.Background`.
 
-Tray uses StatusNotifierItem (SNI) via tray-icon — no XEmbed. The `libayatana-appindicator`
-deprecation warning on stderr is upstream and harmless — ignore it.
+Tray uses StatusNotifierItem (SNI) via ksni — no XEmbed, no GTK/appindicator tray stack.
 
 ## Packaging / XDG
 

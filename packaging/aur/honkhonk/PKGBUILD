@@ -12,9 +12,9 @@ license=('MIT')
 # Runtime deps — each is dynamically linked or dlopened by the binary.
 # See README.md in this directory for the full per-dependency justification.
 #
-# NOTE: as of tag 0.1.0 the libxdo X11 linkage is gone (Cargo.toml:
-# tray-icon/muda default-features=false), so `xdotool` is no longer a
-# dependency. Verify on bumps with `namcap honkhonk-*.pkg.tar.zst`.
+# This stable package still builds the 0.1.0 tag, whose tray backend uses GTK3
+# and libayatana-appindicator. Drop these when _pkgtag points at a release that
+# includes the pure-Rust ksni tray backend.
 depends=(
     'pipewire'                # libpipewire-0.3.so — audio engine (pipewire-sys)
     'gtk3'                    # libgtk-3.so / libgdk-3.so — tray menu (muda gtk feature)

@@ -33,21 +33,6 @@ finish-args:
   - --filesystem=xdg-data/honkhonk:create
 
 modules:
-  # muda (tray-icon menu library) links libxdo unconditionally on Linux.
-  # Not in the freedesktop SDK — build from source.
-  - name: xdotool
-    buildsystem: simple
-    build-options:
-      env:
-        PREFIX: /app
-    build-commands:
-      - make
-      - make install PREFIX=/app
-    sources:
-      - type: archive
-        url: https://github.com/jordansissel/xdotool/archive/refs/tags/v3.20211022.1.tar.gz
-        sha256: 82b15a944a5e82fee15e0f6116bd9f642bc3d0bb6989fc0ca5ad9dfe35de0847
-
   - name: honkhonk
     buildsystem: simple
     build-commands:

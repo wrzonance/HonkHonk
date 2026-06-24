@@ -10,8 +10,6 @@ url="https://github.com/wrzonance/HonkHonk"
 license=('MIT')
 depends=(
     'pipewire'                # libpipewire-0.3.so — audio engine (pipewire-sys)
-    'gtk3'                    # libgtk-3.so / libgdk-3.so — tray menu (muda gtk feature)
-    'libayatana-appindicator' # libayatana-appindicator3.so — SNI tray (dlopened)
     'wayland'                 # libwayland-client.so — Iced/winit Wayland backend (dlopened)
     'libxkbcommon'            # libxkbcommon.so — keyboard mapping (winit, dlopened)
     'xdg-desktop-portal'      # D-Bus portal: file chooser + global shortcuts (ashpd)

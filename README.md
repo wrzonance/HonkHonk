@@ -25,7 +25,7 @@ HonkHonk is built from the ground up for the modern Linux desktop:
 | GUI | Iced (Rust, Elm architecture, wgpu) |
 | Audio | pipewire-rs |
 | Shortcuts | ashpd (xdg-desktop-portal) |
-| System Tray | tray-icon (StatusNotifierItem) |
+| System Tray | ksni (StatusNotifierItem over zbus) |
 | Audio Decode | symphonia |
 
 ## Status

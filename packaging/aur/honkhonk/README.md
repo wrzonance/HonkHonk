@@ -7,7 +7,7 @@ Alternatives live alongside this directory:
 
 - `honkhonk-bin` — re-extracts the upstream `.deb` from GitHub Releases. Kept as
   a convenience for users who want a fast install, but it is built on a Debian
-  base (see the libxdo note below for why source is preferred).
+  base, so the source package remains the Arch-native default.
 - `honkhonk-git` — VCS variant tracking `main`.
 
 ## Source
@@ -28,47 +28,24 @@ offline against that freshly-pinned lockfile.
 
 ## Per-dependency justification
 
-Every entry in `depends=()` is dynamically linked or dlopened by the binary. The
-set was audited against issue #98 — anything not actually linked was dropped.
+Every entry in `depends=()` is dynamically linked or dlopened by the tagged
+binary this package builds. The current `pkgver=0.1.0` tag still uses the old
+GTK3 tray backend; drop the GTK/appindicator entries when `_pkgtag` points at a
+release that contains the pure-Rust `ksni` tray backend.
 
 | Dependency                  | Why it is required (binary links / dlopens it)                          | Arch | Fedora | Ubuntu/Debian |
 |-----------------------------|-------------------------------------------------------------------------|------|--------|---------------|
 | `pipewire`                  | `libpipewire-0.3.so` — audio engine (via the `pipewire` crate / -sys)   | extra | Everything | main |
-| `gtk3`                      | `libgtk-3.so` / `libgdk-3.so` — tray menu (`muda`/`tray-icon` `gtk`)    | extra | Everything | main |
-| `xdotool`                   | `libxdo.so` — `muda` `libxdo` feature (released tag only — see below)    | extra | Everything | main/universe |
-| `libayatana-appindicator`   | `libayatana-appindicator3.so` — SNI tray (dlopened via `libappindicator`)| extra | Everything | universe |
+| `gtk3`                      | `libgtk-3.so` / `libgdk-3.so` — tray menu in the 0.1.0 tag              | extra | Everything | main |
+| `libayatana-appindicator`   | `libayatana-appindicator3.so` — SNI tray in the 0.1.0 tag               | extra | Everything | main |
 | `wayland`                   | `libwayland-client.so` — Iced/winit Wayland backend (dlopened)         | extra | Everything | main |
 | `libxkbcommon`              | `libxkbcommon.so` — keyboard mapping (winit, dlopened)                 | extra | Everything | main |
 | `xdg-desktop-portal`        | D-Bus service for file chooser + global shortcuts (`ashpd`, no link)    | extra | Everything | main |
 
-`pipewire` and `gtk3` pull `glib2` / `gdk-pixbuf2` transitively (namcap reports
-those as implicitly satisfied), so they are not listed explicitly.
-
-### The `xdotool` / `libxdo` situation
-
-`tray-icon`'s and `muda`'s default Cargo features enable `libxdo`, which links
-`libxdo.so` to synthesize X11 keystrokes for the predefined Copy/Cut/Paste/SelectAll
-menu items. HonkHonk uses none of those (its tray menu is custom `MenuItem`s plus a
-separator) and is Wayland-only per `CLAUDE.md`, so the X11 path is dead weight.
-
-The fix on `main` disables those features:
-
-```toml
-tray-icon = { version = "0.24", default-features = false, features = ["gtk"] }
-muda     = { version = "0.19", default-features = false, features = ["gtk"] }
-```
-
-Both edges must opt out — HonkHonk depends on `muda` directly *and* transitively
-(via `tray-icon`), and Cargo feature unification means `muda`'s default features
-(which include `libxdo`) win if *either* edge requests them. With both disabled,
-`cargo tree -i libxdo` is empty and `readelf -d` shows no `libxdo.so` in `NEEDED`.
-
-**This package builds the released tag (`$_pkgtag`), not `main`.** As of tag
-`0.1.0` the libxdo fix is included, so the built binary has no `libxdo.so` in
-`NEEDED` and `xdotool` was dropped from `depends`. This also ended the
-Debian-vs-Arch `libxdo.so.3` / `libxdo.so.4` soname mismatch that blocked
-`honkhonk-bin` on a clean Arch base for the alpha. Re-verify on each bump with
-`namcap` on the built package.
+The current development branch uses `ksni` (StatusNotifierItem over zbus), so
+future release bumps should re-audit this table with `namcap` and `cargo tree`
+and remove the GTK/appindicator entries once the package no longer builds the
+0.1.0 tag.
 
 ## Per-release bump runbook
 

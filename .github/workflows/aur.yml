@@ -34,7 +34,9 @@ jobs:
       fail-fast: false
       matrix:
         # honkhonk: source build. honkhonk-bin: .deb re-extract.
-        # honkhonk-git: VCS build from main.
+        # honkhonk-git: VCS build from main. PR validation rewrites it to the
+        # candidate head commit below so dependency removals are tested against
+        # the code that will become main.
         pkg: [honkhonk, honkhonk-bin, honkhonk-git]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -58,6 +60,17 @@ jobs:
         run: |
           sudo -u builder makepkg --printsrcinfo > /tmp/.SRCINFO.fresh
           diff -u .SRCINFO /tmp/.SRCINFO.fresh
+
+      - name: Point VCS package at PR head
+        if: github.event_name == 'pull_request' && matrix.pkg == 'honkhonk-git'
+        working-directory: packaging/aur/${{ matrix.pkg }}
+        env:
+          PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          sed -i \
+            "s|^source=.*|source=(\"git+https://github.com/${PR_REPO}.git#commit=${PR_HEAD}\")|" \
+            PKGBUILD
 
       - name: Wait for release artifacts (tag push only)
         if: startsWith(github.ref, 'refs/tags/') && matrix.pkg != 'honkhonk-git'
