@@ -18,6 +18,10 @@ use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
 
+/// Play-dispatch coordination (`request_play` / `handle_decoded` /
+/// `start_playback`), extracted to keep this file from growing (#151).
+mod playback;
+
 /// Virtual category name used for the Favorites filtered tab.
 pub const FAVORITES_TAB: &str = "\u{2605} Favorites";
 
@@ -122,6 +126,13 @@ pub enum Message {
     SoundEditorNameChanged(String),
     SoundEditorVolumeChanged(String, f32),
     SaveSoundMeta(String),
+    /// A background decode completed for play generation `generation`. Applied
+    /// only if still the current generation (#149/#151).
+    Decoded {
+        generation: u64,
+        id: String,
+        result: Result<crate::audio::CachedPcm, String>,
+    },
 }
 
 impl Message {
@@ -196,13 +207,15 @@ pub struct HonkHonk {
     /// waveform cache-sync. Distinct from `progress` (the raw 10 Hz anchor).
     display_progress: f32,
     /// Monotonic counter bumped on every play dispatch. Stamped onto the `Play`
-    /// command and echoed back on `PlaybackFinished`, so the app can tell the
-    /// genuine end of the current voice from the stale `Finished` emitted for a
-    /// voice that was superseded by re-pressing the same sound (#149).
+    /// command and echoed back on `PlaybackFinished` to tell a genuine end from
+    /// the stale `Finished` of a re-pressed voice (#149), and onto each
+    /// off-thread decode so a `Message::Decoded` from a superseded press is
+    /// dropped on arrival (#151). A decode for a play that was *cancelled*
+    /// (StopAll) is caught by `handle_decoded`'s `playing` check instead.
     play_generation: u64,
-    /// Per-sound peak-amplitude envelopes for the now-playing waveform, computed
-    /// once at decode and reused across frames (#138, PR-B). Session-lifetime.
-    waveform_cache: std::collections::HashMap<String, std::sync::Arc<crate::audio::Envelope>>,
+    /// Hot-path caches: byte-capped decoded-PCM LRU + waveform envelope map
+    /// (#151).
+    audio_store: crate::audio::AudioStore,
 }
 
 fn shortcuts_stream_sub(
@@ -368,7 +381,7 @@ impl HonkHonk {
             playhead: None,
             display_progress: 0.0,
             play_generation: 0,
-            waveform_cache: std::collections::HashMap::new(),
+            audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
         }
     }
 
@@ -417,7 +430,7 @@ impl HonkHonk {
             playhead: None,
             display_progress: 0.0,
             play_generation: 0,
-            waveform_cache: std::collections::HashMap::new(),
+            audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
         }
     }
 
@@ -668,14 +681,19 @@ impl HonkHonk {
             }
             Message::PlaySound(sound_id) => {
                 if let Some(sound) = self.sounds.iter().find(|s| s.id == sound_id).cloned() {
-                    self.play_sound_entry(&sound, false);
+                    self.request_play(&sound, false)
+                } else {
+                    Task::none()
                 }
-                Task::none()
             }
             Message::StopAll => {
                 if let Some(ref audio) = self.audio {
                     audio.send(AudioCommand::Stop);
                 }
+                // `clear_playback_state` sets `playing = None`; `handle_decoded`
+                // gates on `playing == Some(id)`, so any decode still in flight
+                // for the stopped sound is dropped on arrival rather than
+                // resurrecting it (#151).
                 self.clear_playback_state();
                 Task::none()
             }
@@ -742,7 +760,7 @@ impl HonkHonk {
             Message::ShortcutActivated(idx) => {
                 if let Some(path) = self.slots.get(idx).cloned() {
                     if let Some(sound) = self.sounds.iter().find(|s| s.path == path).cloned() {
-                        self.play_sound_entry(&sound, true);
+                        return self.request_play(&sound, true);
                     } else {
                         // Path no longer in library (file deleted/moved) — clear stale slot
                         eprintln!(
@@ -1098,6 +1116,11 @@ impl HonkHonk {
                 self.editor_draft_volume = 1.0;
                 Task::none()
             }
+            Message::Decoded {
+                generation,
+                id,
+                result,
+            } => self.handle_decoded(generation, id, result),
         };
         // Keep the now-playing waveform cache in step with playback state.
         // Single delegating call — all lifecycle logic lives in NowPlaying.
@@ -1128,71 +1151,13 @@ impl HonkHonk {
 
     /// Clears all now-playing state together so the highlight, raw progress
     /// anchor, playhead clock, and smooth display position never drift apart.
-    /// The single teardown path for both StopAll and the PlaybackFinished end.
+    /// The single teardown path for StopAll, the genuine PlaybackFinished end,
+    /// and a failed decode.
     fn clear_playback_state(&mut self) {
         self.playing = None;
         self.progress = 0.0;
         self.playhead = None;
         self.display_progress = 0.0;
-    }
-
-    fn play_sound_entry(&mut self, sound: &SoundEntry, stop_before: bool) {
-        let decoded = match crate::audio::decode(&sound.path) {
-            Ok(d) => d,
-            Err(e) => {
-                eprintln!("honkhonk: decode error: {e}");
-                return;
-            }
-        };
-        // Bump the play generation so this dispatch is distinguishable from any
-        // voice it supersedes. The matching `PlaybackFinished` echoes it back; a
-        // stale `Finished` for a re-pressed (superseded) voice carries an older
-        // generation and must not tear down this fresh playhead (#149).
-        self.play_generation = self.play_generation.wrapping_add(1);
-        let generation = self.play_generation;
-        // Start the smooth-playhead clock; duration is exact from the decoded
-        // PCM (avoids depending on the lazy duration scan). PR-B inserts the
-        // waveform envelope here too, from `decoded.samples` before per-vol.
-        self.playhead = Some(crate::ui::playhead::PlayheadClock::new(
-            decoded.duration,
-            Instant::now(),
-        ));
-        self.display_progress = 0.0;
-        // Real waveform envelope from the PRE-volume PCM (waveform must not shift
-        // with the volume slider). Computed once; reused across frames.
-        self.waveform_cache
-            .entry(sound.id.clone())
-            .or_insert_with(|| {
-                std::sync::Arc::new(crate::audio::Envelope::from_samples(
-                    &decoded.samples,
-                    decoded.channels,
-                    crate::audio::ENVELOPE_BUCKETS,
-                ))
-            });
-        if let Some(ref audio) = self.audio {
-            if stop_before {
-                audio.send(AudioCommand::Stop);
-            }
-            // Apply per-sound volume multiplier to the samples at decode time.
-            // This avoids changing master volume and allows per-sound loudness control.
-            let per_vol = self.sound_meta.volume_for(&sound.id);
-            let samples = if (per_vol - 1.0).abs() < f32::EPSILON {
-                Arc::new(decoded.samples)
-            } else {
-                Arc::new(decoded.samples.into_iter().map(|s| s * per_vol).collect())
-            };
-            audio.send(AudioCommand::Play {
-                sound_id: sound.id.clone(),
-                samples,
-                sample_rate: decoded.sample_rate,
-                channels: decoded.channels,
-                generation,
-            });
-            // Highlight the tile immediately rather than waiting for the
-            // engine's PlaybackStarted to round-trip through the event
-            // queue — keeps the UI in lockstep with the press (#111).
-            self.playing = Some(sound.id.clone());
-        }
     }
 
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
@@ -1413,14 +1378,13 @@ impl HonkHonk {
         let envelope = self
             .playing
             .as_deref()
-            .and_then(|id| self.waveform_cache.get(id))
-            .map(|arc| arc.as_ref());
+            .and_then(|id| self.audio_store.envelope(id));
         let now_playing = now_playing::view_now_playing(
             &self.now_playing,
             playing_sound,
             self.display_progress,
             self.config.volume,
-            envelope,
+            envelope.as_deref(),
         );
 
         // The banner shares one stable column slot with the header: inserting
@@ -1951,10 +1915,27 @@ mod tests {
             category: "Test".into(),
         }];
 
-        // First press → playhead created for the first voice (generation 1).
-        let _ = app.update(Message::PlaySound("wav1".into()));
-        // Second press re-triggers the same sound → a fresh playhead (generation 2).
-        let _ = app.update(Message::PlaySound("wav1".into()));
+        // First press → decode dispatched; the playhead is created when its
+        // `Decoded` (generation 1) lands. Decode is off-thread now, so we feed
+        // the matching `Decoded` directly.
+        let sound = app.sounds[0].clone();
+        let _ = app.request_play(&sound, false);
+        let decoded = crate::audio::decode(&sound.path).expect("decode test wav");
+        let to_pcm = |d: &crate::audio::DecodedAudio| crate::audio::CachedPcm {
+            samples: std::sync::Arc::new(d.samples.clone()),
+            sample_rate: d.sample_rate,
+            channels: d.channels,
+            duration: d.duration,
+        };
+        let _ = app.update(Message::Decoded {
+            generation: app.play_generation,
+            id: "wav1".into(),
+            result: Ok(to_pcm(&decoded)),
+        });
+        // Second press re-triggers the same sound. The PCM is now cached, so
+        // `request_play` fires synchronously and creates a fresh playhead
+        // (generation 2) without another decode.
+        let _ = app.request_play(&sound, false);
         assert!(
             app.playhead.is_some(),
             "re-press should create a fresh playhead"
@@ -2901,15 +2882,28 @@ mod tests {
             category: "Test".into(),
         }];
 
-        let _ = app.update(Message::PlaySound("wav1".into()));
-        assert!(
-            app.waveform_cache.contains_key("wav1"),
-            "envelope should be cached after play"
-        );
+        // Drive playback through the async path: `request_play` bumps the
+        // generation and (on a cold cache) returns a decode `Task`; we feed the
+        // matching `Decoded` directly, since the engine decode is off-thread now.
+        let sound = app.sounds[0].clone();
+        let _ = app.request_play(&sound, false);
+        let decoded = crate::audio::decode(&sound.path).expect("decode test wav");
+        let _ = app.update(Message::Decoded {
+            generation: app.play_generation,
+            id: "wav1".into(),
+            result: Ok(crate::audio::CachedPcm {
+                samples: std::sync::Arc::new(decoded.samples),
+                sample_rate: decoded.sample_rate,
+                channels: decoded.channels,
+                duration: decoded.duration,
+            }),
+        });
+        let env = app
+            .audio_store
+            .envelope("wav1")
+            .expect("envelope should be cached after play");
         assert_eq!(
-            app.waveform_cache["wav1"]
-                .bars(crate::ui::waveform::WAVEFORM_BARS)
-                .len(),
+            env.bars(crate::ui::waveform::WAVEFORM_BARS).len(),
             crate::ui::waveform::WAVEFORM_BARS
         );
     }
@@ -2968,5 +2962,114 @@ mod tests {
         assert!(app.effects_panel.is_visible());
         let _ = app.update(Message::EscapePressed);
         assert_eq!(app.search_query, "bark");
+    }
+
+    #[test]
+    fn stale_decoded_is_dropped() {
+        // A Decoded carrying an older generation than the current play must not
+        // start a playhead or change `playing` (a newer press superseded it, #149/#151).
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+        app.play_generation = 5;
+        app.playing = Some("newer".into());
+
+        let pcm = std::sync::Arc::new(crate::audio::CachedPcm {
+            samples: std::sync::Arc::new(vec![0.0_f32; 8]),
+            sample_rate: 48_000,
+            channels: 2,
+            duration: std::time::Duration::from_secs(1),
+        });
+        let _ = app.update(Message::Decoded {
+            generation: 4,
+            id: "older".into(),
+            result: Ok((*pcm).clone()),
+        });
+
+        assert!(
+            app.playhead.is_none(),
+            "stale decode must not start a playhead"
+        );
+        assert_eq!(app.playing(), Some("newer"));
+    }
+
+    #[test]
+    fn current_decoded_starts_playhead_and_caches_pcm() {
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+        app.play_generation = 2;
+        app.playing = Some("snd".into());
+
+        let pcm = crate::audio::CachedPcm {
+            samples: std::sync::Arc::new(vec![0.25_f32; 64]),
+            sample_rate: 48_000,
+            channels: 2,
+            duration: std::time::Duration::from_secs(3),
+        };
+        let _ = app.update(Message::Decoded {
+            generation: 2,
+            id: "snd".into(),
+            result: Ok(pcm),
+        });
+
+        assert!(
+            app.playhead.is_some(),
+            "current decode must start the playhead"
+        );
+        assert!(
+            app.audio_store.get_pcm("snd").is_some(),
+            "decode result must be cached for instant re-fire"
+        );
+    }
+
+    #[test]
+    fn stopall_mid_decode_does_not_resurrect_playback() {
+        // A cold-cache press dispatches an off-thread decode but sends no engine
+        // Play yet. If the user hits StopAll before the decode lands, the stale
+        // `Decoded` must be dropped — not resurrect the stopped sound (#151).
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let wav_path = dir.path().join("honk.wav");
+        write_test_wav(&wav_path);
+        app.sounds = vec![SoundEntry {
+            id: "wav1".into(),
+            name: "Honk".into(),
+            path: wav_path,
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: Some(100),
+            category: "Test".into(),
+        }];
+
+        // Cold press → generation bumped, decode Task in flight (ignored here).
+        let sound = app.sounds[0].clone();
+        let _ = app.request_play(&sound, false);
+        let in_flight_gen = app.play_generation;
+        assert_eq!(app.playing(), Some("wav1"));
+
+        // StopAll tears down playback and must invalidate the in-flight decode.
+        let _ = app.update(Message::StopAll);
+        assert_eq!(app.playing(), None);
+
+        // The decode lands carrying the now-stale generation.
+        let _ = app.update(Message::Decoded {
+            generation: in_flight_gen,
+            id: "wav1".into(),
+            result: Ok(crate::audio::CachedPcm {
+                samples: std::sync::Arc::new(vec![0.0_f32; 8]),
+                sample_rate: 48_000,
+                channels: 2,
+                duration: std::time::Duration::from_secs(1),
+            }),
+        });
+
+        assert_eq!(app.playing(), None, "StopAll must win — no resurrection");
+        assert!(
+            app.playhead.is_none(),
+            "no playhead after a stopped, stale decode"
+        );
     }
 }
