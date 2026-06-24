@@ -63,7 +63,13 @@ impl HonkHonk {
         id: String,
         result: Result<crate::audio::CachedPcm, String>,
     ) -> Task<Message> {
-        if generation != self.play_generation {
+        // Drop the decode unless it is still the wanted play: the generation
+        // rules out a superseded press, and `playing == Some(id)` rules out a
+        // play torn down while the decode was in flight (StopAll, a genuine end).
+        // The `playing` check is what stops a StopAll mid-decode from
+        // resurrecting a stopped sound — without bumping the generation, which
+        // would desync the #149 Started/Finished reconciliation (#151).
+        if generation != self.play_generation || self.playing.as_deref() != Some(id.as_str()) {
             return Task::none();
         }
         match result {

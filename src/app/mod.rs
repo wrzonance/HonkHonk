@@ -206,12 +206,12 @@ pub struct HonkHonk {
     /// Frame-interpolated playhead position fed to the now-playing view and the
     /// waveform cache-sync. Distinct from `progress` (the raw 10 Hz anchor).
     display_progress: f32,
-    /// Monotonic counter bumped on every play dispatch and on StopAll. Stamped
-    /// onto the `Play` command and echoed back on `PlaybackFinished` to tell a
-    /// genuine end from the stale `Finished` of a re-pressed voice (#149), and
-    /// onto each off-thread decode so a `Message::Decoded` whose generation no
-    /// longer matches (a superseded press, or a StopAll mid-decode) is dropped
-    /// rather than (re)started (#151).
+    /// Monotonic counter bumped on every play dispatch. Stamped onto the `Play`
+    /// command and echoed back on `PlaybackFinished` to tell a genuine end from
+    /// the stale `Finished` of a re-pressed voice (#149), and onto each
+    /// off-thread decode so a `Message::Decoded` from a superseded press is
+    /// dropped on arrival (#151). A decode for a play that was *cancelled*
+    /// (StopAll) is caught by `handle_decoded`'s `playing` check instead.
     play_generation: u64,
     /// Hot-path caches: byte-capped decoded-PCM LRU + waveform envelope map
     /// (#151).
@@ -690,13 +690,11 @@ impl HonkHonk {
                 if let Some(ref audio) = self.audio {
                     audio.send(AudioCommand::Stop);
                 }
+                // `clear_playback_state` sets `playing = None`; `handle_decoded`
+                // gates on `playing == Some(id)`, so any decode still in flight
+                // for the stopped sound is dropped on arrival rather than
+                // resurrecting it (#151).
                 self.clear_playback_state();
-                // Invalidate any decode still in flight for a just-pressed sound
-                // so a cold-cache play cancelled mid-decode is not resurrected
-                // when its `Message::Decoded` lands (#151). The genuine-end and
-                // decode-error teardowns have no in-flight decode for the current
-                // generation, so only the explicit Stop bumps here.
-                self.play_generation = self.play_generation.wrapping_add(1);
                 Task::none()
             }
             Message::SelectCategory(cat) => {
