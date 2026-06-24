@@ -131,7 +131,7 @@ fn expect_finished(handle: &honkhonk::audio::AudioHandle, expected: &str, timeou
         handle,
         timeout,
         &label,
-        |event| matches!(event, honkhonk::audio::AudioEvent::PlaybackFinished { sound_id } if sound_id == expected),
+        |event| matches!(event, honkhonk::audio::AudioEvent::PlaybackFinished { sound_id, .. } if sound_id == expected),
     );
 }
 
@@ -249,6 +249,7 @@ fn sink_stream_reaches_virtual_sink() {
         samples,
         sample_rate: 48000,
         channels: 2,
+        generation: 1,
     });
 
     expect_started(&handle, "routing-test");
@@ -280,6 +281,7 @@ fn audio_pipeline_end_to_end() {
         samples,
         sample_rate: 48000,
         channels: 2,
+        generation: 1,
     });
 
     expect_started(&handle, "e2e-test");
@@ -344,6 +346,7 @@ fn play_sound_emits_started_and_finished_events() {
         samples,
         sample_rate: decoded.sample_rate,
         channels: decoded.channels,
+        generation: 1,
     });
 
     expect_started(&handle, "test-sine");
@@ -369,6 +372,7 @@ fn stop_command_halts_playback() {
         samples,
         sample_rate: 48000,
         channels: 2,
+        generation: 1,
     });
 
     expect_started(&handle, "long-sound");
@@ -378,6 +382,7 @@ fn stop_command_halts_playback() {
         samples: replacement,
         sample_rate: 48000,
         channels: 2,
+        generation: 2,
     });
 
     expect_finished(&handle, "long-sound", Duration::from_secs(5));
