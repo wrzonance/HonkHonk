@@ -18,6 +18,10 @@ use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
 
+/// Play-dispatch coordination (`request_play` / `handle_decoded` /
+/// `start_playback`), extracted to keep this file from growing (#151).
+mod playback;
+
 /// Virtual category name used for the Favorites filtered tab.
 pub const FAVORITES_TAB: &str = "\u{2605} Favorites";
 
@@ -1118,25 +1122,7 @@ impl HonkHonk {
                 generation,
                 id,
                 result,
-            } => {
-                if generation != self.play_generation {
-                    return Task::none();
-                }
-                match result {
-                    Ok(pcm) => {
-                        let volume = self.sound_meta.volume_for(&id);
-                        let pcm = std::sync::Arc::new(pcm);
-                        self.audio_store
-                            .insert_pcm(id.clone(), std::sync::Arc::clone(&pcm));
-                        self.start_playback(&id, pcm, volume, generation);
-                    }
-                    Err(e) => {
-                        eprintln!("honkhonk: decode error: {e}");
-                        self.clear_playback_state();
-                    }
-                }
-                Task::none()
-            }
+            } => self.handle_decoded(generation, id, result),
         };
         // Keep the now-playing waveform cache in step with playback state.
         // Single delegating call — all lifecycle logic lives in NowPlaying.
@@ -1174,87 +1160,6 @@ impl HonkHonk {
         self.progress = 0.0;
         self.playhead = None;
         self.display_progress = 0.0;
-    }
-
-    /// Begins playing `sound`. A warm PCM cache hit fires synchronously; a miss
-    /// returns a `Task` that decodes off the UI thread and yields
-    /// `Message::Decoded`. The play generation is bumped here so a stale decode
-    /// (superseded by a newer press) is dropped on arrival (#149/#151).
-    fn request_play(&mut self, sound: &SoundEntry, stop_before: bool) -> Task<Message> {
-        self.play_generation = self.play_generation.wrapping_add(1);
-        let generation = self.play_generation;
-        self.playing = Some(sound.id.clone());
-        if stop_before {
-            if let Some(ref audio) = self.audio {
-                audio.send(AudioCommand::Stop);
-            }
-        }
-        if let Some(pcm) = self.audio_store.get_pcm(&sound.id) {
-            self.start_playback(
-                &sound.id,
-                pcm,
-                self.sound_meta.volume_for(&sound.id),
-                generation,
-            );
-            return Task::none();
-        }
-        let id = sound.id.clone();
-        let path = sound.path.clone();
-        Task::perform(
-            async move {
-                tokio::task::spawn_blocking(move || crate::audio::decode(&path))
-                    .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r.map_err(|e| e.to_string()))
-                    .map(|d| crate::audio::CachedPcm {
-                        samples: std::sync::Arc::new(d.samples),
-                        sample_rate: d.sample_rate,
-                        channels: d.channels,
-                        duration: d.duration,
-                    })
-            },
-            move |result| Message::Decoded {
-                generation,
-                id: id.clone(),
-                result,
-            },
-        )
-    }
-
-    /// Starts the playhead from the decoded duration, ensures the waveform
-    /// envelope is cached, and dispatches the engine `Play`. Shared by the warm
-    /// cache-hit path and the `Decoded` handler.
-    fn start_playback(
-        &mut self,
-        id: &str,
-        pcm: std::sync::Arc<crate::audio::CachedPcm>,
-        volume: f32,
-        generation: u64,
-    ) {
-        self.playhead = Some(crate::ui::playhead::PlayheadClock::new(
-            pcm.duration,
-            Instant::now(),
-        ));
-        self.display_progress = 0.0;
-        if self.audio_store.envelope(id).is_none() {
-            let env = std::sync::Arc::new(crate::audio::Envelope::from_samples(
-                &pcm.samples,
-                pcm.channels,
-                crate::audio::ENVELOPE_BUCKETS,
-            ));
-            self.audio_store.insert_envelope(id.to_string(), env);
-        }
-        if let Some(ref audio) = self.audio {
-            audio.send(AudioCommand::Play {
-                sound_id: id.to_string(),
-                samples: std::sync::Arc::clone(&pcm.samples),
-                sample_rate: pcm.sample_rate,
-                channels: pcm.channels,
-                generation,
-                volume,
-            });
-            self.playing = Some(id.to_string());
-        }
     }
 
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
