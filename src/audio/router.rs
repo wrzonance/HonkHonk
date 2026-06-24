@@ -841,6 +841,6 @@ mod tests {
         // Implementation deferred — requires PipeWire test harness setup (#27 scope).
         // This stub ensures the test infrastructure compiles and the feature gate works.
         let _is_integration_test = true;
-        eprintln!("SKIP: pipewire-test integration not yet implemented");
+        println!("SKIP: pipewire-test integration not yet implemented");
     }
 }

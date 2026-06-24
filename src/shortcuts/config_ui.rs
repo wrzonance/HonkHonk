@@ -72,43 +72,36 @@ impl ShortcutConfigService {
         if self.portal_v2_available {
             if let Some(tx) = &self.portal_cmd_tx {
                 if let Err(e) = tx.try_send(PortalCommand::ConfigureShortcuts) {
-                    eprintln!("honkhonk: configure_shortcuts command dropped: {e}");
+                    tracing::warn!(error = %e, "configure_shortcuts command dropped");
                 }
                 return;
             }
             // v2 flagged but sender not yet received — fall through to DE fallback
             // so KDE/GNOME users still get a response via kcmshell6/gnome-control-center.
-            eprintln!(
-                "honkhonk: configure_shortcuts: portal v2 flagged but handle not yet received"
-            );
+            tracing::warn!("configure_shortcuts: portal v2 flagged but handle not yet received");
         }
         match &self.desktop_env {
             DesktopEnv::Kde => {
                 if let Err(e) = Command::new("kcmshell6").arg("kcm_keys").spawn() {
-                    eprintln!("honkhonk: failed to open KDE shortcuts: {e}");
+                    tracing::warn!(error = %e, "failed to open KDE shortcuts");
                 }
             }
             DesktopEnv::Gnome => {
                 if let Err(e) = Command::new("gnome-control-center").arg("keyboard").spawn() {
-                    eprintln!("honkhonk: failed to open GNOME keyboard settings: {e}");
+                    tracing::warn!(error = %e, "failed to open GNOME keyboard settings");
                 }
             }
             DesktopEnv::Hyprland => {
-                eprintln!(
-                    "honkhonk: configure_shortcuts requires portal v2 on Hyprland (not available)"
+                tracing::warn!(
+                    "configure_shortcuts requires portal v2 on Hyprland (not available)"
                 );
             }
             DesktopEnv::Sway => {
-                eprintln!(
-                    "honkhonk: configure_shortcuts requires portal v2 on Sway (not available)"
-                );
+                tracing::warn!("configure_shortcuts requires portal v2 on Sway (not available)");
             }
             DesktopEnv::Windows | DesktopEnv::MacOs => {}
             DesktopEnv::Unknown(de) => {
-                eprintln!(
-                    "honkhonk: no shortcut config path for DE '{de}'; \
-                     install xdg-desktop-portal v2"
-                );
+                tracing::warn!(de = %de, "no shortcut config path for this DE; install xdg-desktop-portal v2");
             }
         }
     }

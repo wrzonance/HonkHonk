@@ -583,7 +583,7 @@ impl HonkHonk {
             Message::AudioEvent(event) => {
                 match event {
                     AudioEvent::Ready => {
-                        eprintln!("honkhonk: audio engine ready");
+                        tracing::info!("audio engine ready");
                         if let Some(ref audio) = self.audio {
                             audio.send(AudioCommand::SetVolume(self.config.volume));
                         }
@@ -626,11 +626,11 @@ impl HonkHonk {
                         self.progress = p;
                     }
                     AudioEvent::Error(e) => {
-                        eprintln!("honkhonk: audio error: {e}");
+                        tracing::error!(error = %e, "audio error");
                     }
                     AudioEvent::SourceFirstRun { confd_written } => {
                         let notice = source_first_run_notice(confd_written);
-                        eprintln!("honkhonk: {notice}");
+                        tracing::info!(message = %notice, "source first-run notice");
                         self.source_notice = Some(notice);
                     }
                     AudioEvent::OutputDevicesChanged(devices) => {
@@ -643,7 +643,7 @@ impl HonkHonk {
                                     ..self.config.clone()
                                 };
                                 if let Err(e) = config.save() {
-                                    eprintln!("honkhonk: failed to save config: {e}");
+                                    tracing::warn!(error = %e, "failed to save config");
                                 }
                                 self.config = config;
                                 if let Some(ref audio) = self.audio {
@@ -663,7 +663,7 @@ impl HonkHonk {
                                     ..self.config.clone()
                                 };
                                 if let Err(e) = config.save() {
-                                    eprintln!("honkhonk: failed to save config: {e}");
+                                    tracing::warn!(error = %e, "failed to save config");
                                 }
                                 self.config = config;
                                 if let Some(ref audio) = self.audio {
@@ -741,7 +741,7 @@ impl HonkHonk {
             }
             Message::VolumeSaveRequested => {
                 if let Err(e) = self.config.save() {
-                    eprintln!("honkhonk: config save error: {e}");
+                    tracing::warn!(error = %e, "config save error");
                 }
                 Task::none()
             }
@@ -763,14 +763,14 @@ impl HonkHonk {
                         return self.request_play(&sound, true);
                     } else {
                         // Path no longer in library (file deleted/moved) — clear stale slot
-                        eprintln!(
-                            "honkhonk: slot {} points to missing file {:?}, clearing",
-                            idx + 1,
-                            path
+                        tracing::warn!(
+                            slot = idx + 1,
+                            ?path,
+                            "slot points to missing file; clearing stale slot"
                         );
                         self.slots.clear(idx);
                         if let Err(e) = self.slots.save() {
-                            eprintln!("honkhonk: slots save error: {e}");
+                            tracing::warn!(error = %e, "slots save error");
                         }
                     }
                 }
@@ -793,14 +793,14 @@ impl HonkHonk {
             Message::AssignSlot(idx, path) => {
                 self.slots.set(idx, path);
                 if let Err(e) = self.slots.save() {
-                    eprintln!("honkhonk: slots save error: {e}");
+                    tracing::warn!(error = %e, "slots save error");
                 }
                 Task::none()
             }
             Message::ClearSlot(idx) => {
                 self.slots.clear(idx);
                 if let Err(e) = self.slots.save() {
-                    eprintln!("honkhonk: slots save error: {e}");
+                    tracing::warn!(error = %e, "slots save error");
                 }
                 Task::none()
             }
@@ -856,10 +856,7 @@ impl HonkHonk {
                 let new_sounds = match crate::state::Library::scan(&self.config.sound_directories) {
                     Ok(sounds) => sounds,
                     Err(e) => {
-                        eprintln!(
-                            "honkhonk: library rescan failed for {:?}: {e}",
-                            self.config.sound_directories
-                        );
+                        tracing::warn!(dirs = ?self.config.sound_directories, error = %e, "library rescan failed");
                         return Task::none();
                     }
                 };
@@ -877,7 +874,7 @@ impl HonkHonk {
                     match pick_directory().await {
                         Ok(opt) => opt,
                         Err(e) => {
-                            eprintln!("honkhonk: directory picker error: {e:#}");
+                            tracing::warn!(error = ?e, "directory picker error");
                             None
                         }
                     }
@@ -888,7 +885,7 @@ impl HonkHonk {
                 if !self.config.sound_directories.contains(&path) {
                     self.config.sound_directories.push(path);
                     if let Err(e) = self.config.save() {
-                        eprintln!("honkhonk: config save error: {e}");
+                        tracing::warn!(error = %e, "config save error");
                     }
                     self.update(Message::RescanLibrary)
                 } else {
@@ -899,7 +896,7 @@ impl HonkHonk {
             Message::RemoveSoundDirectory(path) => {
                 self.config.sound_directories.retain(|p| p != &path);
                 if let Err(e) = self.config.save() {
-                    eprintln!("honkhonk: config save error: {e}");
+                    tracing::warn!(error = %e, "config save error");
                 }
                 self.update(Message::RescanLibrary)
             }
@@ -910,7 +907,7 @@ impl HonkHonk {
                         ..self.config.clone()
                     };
                     if let Err(e) = self.config.save() {
-                        eprintln!("honkhonk: config save error: {e}");
+                        tracing::warn!(error = %e, "config save error");
                     }
                 }
                 Task::none()
@@ -922,7 +919,7 @@ impl HonkHonk {
                         ..self.config.clone()
                     };
                     if let Err(e) = self.config.save() {
-                        eprintln!("honkhonk: config save error: {e}");
+                        tracing::warn!(error = %e, "config save error");
                     }
                 }
                 Task::none()
@@ -934,7 +931,7 @@ impl HonkHonk {
                         ..self.config.clone()
                     };
                     if let Err(e) = self.config.save() {
-                        eprintln!("honkhonk: config save error: {e}");
+                        tracing::warn!(error = %e, "config save error");
                     }
                 }
                 Task::none()
@@ -945,7 +942,7 @@ impl HonkHonk {
                     ..self.config.clone()
                 };
                 if let Err(e) = config.save() {
-                    eprintln!("honkhonk: failed to save config: {e}");
+                    tracing::warn!(error = %e, "failed to save config");
                 }
                 self.config = config;
                 if let Some(ref audio) = self.audio {
@@ -959,7 +956,7 @@ impl HonkHonk {
                     ..self.config.clone()
                 };
                 if let Err(e) = config.save() {
-                    eprintln!("honkhonk: failed to save config: {e}");
+                    tracing::warn!(error = %e, "failed to save config");
                 }
                 self.config = config;
                 if let Some(ref audio) = self.audio {
@@ -978,7 +975,7 @@ impl HonkHonk {
                     ..self.config.clone()
                 };
                 if let Err(e) = config.save() {
-                    eprintln!("honkhonk: failed to save config: {e}");
+                    tracing::warn!(error = %e, "failed to save config");
                 }
                 self.config = config;
                 if let Some(ref audio) = self.audio {
@@ -995,7 +992,7 @@ impl HonkHonk {
                     ..self.config.clone()
                 };
                 if let Err(e) = config.save() {
-                    eprintln!("honkhonk: failed to save config: {e}");
+                    tracing::warn!(error = %e, "failed to save config");
                 }
                 self.config = config;
                 if let Some(ref audio) = self.audio {
@@ -1051,7 +1048,7 @@ impl HonkHonk {
                 let is_favorite = self.sound_meta.toggle_favorite(&sound_id);
                 if self.persist_sound_meta {
                     if let Err(e) = self.sound_meta.save() {
-                        eprintln!("honkhonk: sound meta save error: {e}");
+                        tracing::warn!(error = %e, "sound meta save error");
                     }
                 }
                 // If the user just unstarred the last favorite while on the
@@ -1108,7 +1105,7 @@ impl HonkHonk {
                 self.sound_meta.set(sound_id, meta);
                 if self.persist_sound_meta {
                     if let Err(e) = self.sound_meta.save() {
-                        eprintln!("honkhonk: sound meta save error: {e}");
+                        tracing::warn!(error = %e, "sound meta save error");
                     }
                 }
                 self.editor_sound_id = None;
