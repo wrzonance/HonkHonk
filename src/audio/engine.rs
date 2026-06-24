@@ -27,6 +27,10 @@ pub enum AudioCommand {
         /// stale `Finished` emitted for a voice that was immediately superseded by
         /// a re-press of the same sound (#149).
         generation: u64,
+        /// Per-sound volume multiplier, applied alongside the master volume in
+        /// `PlaybackState`. Lets the app send the canonical (pre-volume) PCM Arc
+        /// without an O(n) copy per play (#151).
+        volume: f32,
     },
     Stop,
     SetVolume(f32),
@@ -504,6 +508,7 @@ fn run_engine(
             sample_rate,
             channels,
             generation,
+            volume,
         } => {
             handle_play(
                 &ctx,
@@ -513,6 +518,7 @@ fn run_engine(
                     sample_rate,
                     channels,
                     generation,
+                    volume,
                 },
             );
         }
@@ -647,6 +653,7 @@ struct PlayRequest {
     sample_rate: u32,
     channels: u16,
     generation: u64,
+    volume: f32,
 }
 
 fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
@@ -656,6 +663,7 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
         sample_rate,
         channels,
         generation,
+        volume,
     } = req;
     if ctx.registry_sink_id.get().is_none() {
         let _ = ctx.evt_tx.send(AudioEvent::Error(
@@ -685,14 +693,18 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
 
     let vol = ctx.engine_volume.get();
     let sink_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
-    sink_state
-        .borrow_mut()
-        .start(sound_id.clone(), samples.clone(), sample_rate, channels);
+    sink_state.borrow_mut().start(
+        sound_id.clone(),
+        samples.clone(),
+        sample_rate,
+        channels,
+        volume,
+    );
 
     let mon_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
     mon_state
         .borrow_mut()
-        .start(sound_id.clone(), samples, sample_rate, channels);
+        .start(sound_id.clone(), samples, sample_rate, channels, volume);
 
     let target = ctx.monitor_target.borrow().clone();
     let sink_stream = playback::create_sink_stream(

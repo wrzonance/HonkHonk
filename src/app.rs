@@ -1187,6 +1187,10 @@ impl HonkHonk {
                 sample_rate: decoded.sample_rate,
                 channels: decoded.channels,
                 generation,
+                // Per-sound volume is still baked into `samples` above; the engine
+                // gain stays neutral here. Task 3 (#151) moves the multiplier into
+                // the engine and sends the canonical pre-volume PCM instead.
+                volume: 1.0,
             });
             // Highlight the tile immediately rather than waiting for the
             // engine's PlaybackStarted to round-trip through the event

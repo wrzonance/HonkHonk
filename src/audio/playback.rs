@@ -223,6 +223,7 @@ pub struct PlaybackState {
     samples: Option<Arc<Vec<f32>>>,
     cursor: usize,
     volume: f32,
+    gain: f32,
     sample_rate: u32,
     channels: u16,
     active: bool,
@@ -235,6 +236,7 @@ impl PlaybackState {
             samples: None,
             cursor: 0,
             volume: 1.0,
+            gain: 1.0,
             sample_rate: 48000,
             channels: 2,
             active: false,
@@ -248,16 +250,24 @@ impl PlaybackState {
         }
     }
 
+    // Six args (one over the `too-many-arguments-threshold = 5`) is the
+    // canonical playback descriptor: identity, buffer, format (rate + channels),
+    // and the per-sound gain. They are not separable into a meaningful sub-struct
+    // here, and the engine + app both call `start` positionally with exactly
+    // these (#151).
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &mut self,
         sound_id: String,
         samples: Arc<Vec<f32>>,
         sample_rate: u32,
         channels: u16,
+        gain: f32,
     ) {
         self.sound_id = Some(sound_id);
         self.samples = Some(samples);
         self.cursor = 0;
+        self.gain = gain.clamp(0.0, 1.0);
         self.sample_rate = sample_rate;
         self.channels = channels;
         self.active = true;
@@ -316,8 +326,9 @@ impl PlaybackState {
         }
 
         let src = &samples[self.cursor..self.cursor + to_write];
+        let g = self.volume * self.gain;
         for (dst, &sample) in buf[..to_write].iter_mut().zip(src.iter()) {
-            *dst = sample * self.volume;
+            *dst = sample * g;
         }
 
         self.cursor += to_write;
@@ -344,7 +355,7 @@ mod tests {
     fn progress_at_start_is_zero() {
         let samples = Arc::new(vec![0.0_f32; 20]);
         let mut state = PlaybackState::new();
-        state.start("test".into(), samples, 48000, 2);
+        state.start("test".into(), samples, 48000, 2, 1.0);
         assert_eq!(state.progress(), 0.0);
     }
 
@@ -352,7 +363,7 @@ mod tests {
     fn progress_at_midpoint() {
         let samples = Arc::new(vec![0.0_f32; 20]);
         let mut state = PlaybackState::new();
-        state.start("test".into(), samples, 48000, 2);
+        state.start("test".into(), samples, 48000, 2, 1.0);
         let mut buf = vec![0.0_f32; 10];
         state.fill_buffer(&mut buf);
         let p = state.progress();
@@ -363,7 +374,7 @@ mod tests {
     fn progress_at_end_is_one() {
         let samples = Arc::new(vec![0.0_f32; 20]);
         let mut state = PlaybackState::new();
-        state.start("test".into(), samples, 48000, 2);
+        state.start("test".into(), samples, 48000, 2, 1.0);
         let mut buf = vec![0.0_f32; 20];
         state.fill_buffer(&mut buf);
         assert_eq!(state.progress(), 1.0);
@@ -398,7 +409,7 @@ mod tests {
     fn fill_buffer_respects_initial_volume() {
         let samples = Arc::new(vec![1.0_f32; 100]);
         let mut state = PlaybackState::with_volume(0.5);
-        state.start("test".into(), samples, 48000, 1);
+        state.start("test".into(), samples, 48000, 1, 1.0);
 
         let mut buf = vec![0.0_f32; 10];
         let wrote = state.fill_buffer(&mut buf);
@@ -409,6 +420,22 @@ mod tests {
                 (s - 0.5).abs() < f32::EPSILON,
                 "expected 0.5 (1.0 * 0.5 volume), got {s}"
             );
+        }
+    }
+
+    #[test]
+    fn fill_buffer_multiplies_master_and_per_sound_gain() {
+        // master 0.5 (with_volume) * per-sound gain 0.5 = 0.25 effective.
+        let samples = Arc::new(vec![1.0_f32; 100]);
+        let mut state = PlaybackState::with_volume(0.5);
+        state.start("test".into(), samples, 48_000, 1, 0.5);
+
+        let mut buf = vec![0.0_f32; 10];
+        let wrote = state.fill_buffer(&mut buf);
+
+        assert_eq!(wrote, 10);
+        for &s in &buf[..wrote] {
+            assert!((s - 0.25).abs() < f32::EPSILON, "expected 0.25, got {s}");
         }
     }
 }

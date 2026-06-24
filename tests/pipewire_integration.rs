@@ -250,6 +250,7 @@ fn sink_stream_reaches_virtual_sink() {
         sample_rate: 48000,
         channels: 2,
         generation: 1,
+        volume: 1.0,
     });
 
     expect_started(&handle, "routing-test");
@@ -282,6 +283,7 @@ fn audio_pipeline_end_to_end() {
         sample_rate: 48000,
         channels: 2,
         generation: 1,
+        volume: 1.0,
     });
 
     expect_started(&handle, "e2e-test");
@@ -347,6 +349,7 @@ fn play_sound_emits_started_and_finished_events() {
         sample_rate: decoded.sample_rate,
         channels: decoded.channels,
         generation: 1,
+        volume: 1.0,
     });
 
     expect_started(&handle, "test-sine");
@@ -373,6 +376,7 @@ fn stop_command_halts_playback() {
         sample_rate: 48000,
         channels: 2,
         generation: 1,
+        volume: 1.0,
     });
 
     expect_started(&handle, "long-sound");
@@ -383,6 +387,7 @@ fn stop_command_halts_playback() {
         sample_rate: 48000,
         channels: 2,
         generation: 2,
+        volume: 1.0,
     });
 
     expect_finished(&handle, "long-sound", Duration::from_secs(5));
