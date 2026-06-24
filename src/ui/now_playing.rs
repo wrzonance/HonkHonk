@@ -14,6 +14,10 @@ use crate::ui::theme::{self, Hh, Theme};
 use crate::ui::volume;
 use crate::ui::waveform::{render_key, RenderKey};
 
+/// Fixed main-column slot height so playback state changes do not resize the
+/// grid scrollable viewport (#147).
+pub const RESERVED_HEIGHT: f32 = theme::component::ARTWORK_SQ + theme::space::MD * 2.0;
+
 /// Owns the persistent waveform `canvas::Cache` and the key describing what is
 /// currently cached. Held in app state across frames; the cache is cleared
 /// **only** when [`NowPlaying::sync`] observes a key change — never rebuilt in
@@ -132,6 +136,10 @@ impl NowPlaying {
     pub(crate) fn has_playhead(&self) -> bool {
         self.playhead.is_some()
     }
+
+    pub(crate) fn reserved_height(&self) -> f32 {
+        RESERVED_HEIGHT
+    }
 }
 
 /// Canvas program for the now-playing waveform. `draw` paints the static bars
@@ -218,7 +226,7 @@ pub fn view_now_playing<'a>(
     let t = Theme::Dark;
 
     let Some(sound) = sound else {
-        return Space::new().into();
+        return empty_reserved_slot();
     };
 
     let content = row![
@@ -233,6 +241,7 @@ pub fn view_now_playing<'a>(
 
     container(content)
         .width(Length::Fill)
+        .height(now_playing.reserved_height())
         .padding([theme::space::MD, theme::space::XL])
         .style(move |_theme| container::Style {
             background: Some(theme::bg_color(t.panel())),
@@ -243,6 +252,13 @@ pub fn view_now_playing<'a>(
             },
             ..Default::default()
         })
+        .into()
+}
+
+fn empty_reserved_slot<'a>() -> Element<'a, Message> {
+    container(Space::new())
+        .width(Length::Fill)
+        .height(RESERVED_HEIGHT)
         .into()
 }
 
