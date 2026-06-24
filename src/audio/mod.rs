@@ -8,6 +8,7 @@ pub mod mixer;
 pub mod playback;
 mod registry;
 mod router;
+mod store;
 pub mod streams;
 
 pub use decoder::{decode, DecodedAudio};
@@ -18,4 +19,5 @@ pub use engine::{spawn, AudioCommand, AudioEvent, AudioHandle};
 pub use envelope::{Envelope, ENVELOPE_BUCKETS};
 pub use error::{AudioError, EffectsError, EngineErrorEvent, RouterError, WatcherError};
 pub use router::{AppIdentity, RouteIntent, Router, RouterCommand, RouterEvent};
+pub use store::{AudioStore, CachedPcm, DEFAULT_PCM_CAP_BYTES};
 pub use streams::{Direction, StreamEvent, StreamWatcher};
