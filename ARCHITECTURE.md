@@ -168,7 +168,7 @@ The complete HTML/JSX mockup lives in the design handoff bundle (exported from c
 | Renderer | **wgpu** (default) / **tiny-skia** (fallback) | GPU-accelerated by default, software renderer via env var for edge cases |
 | PipeWire | **pipewire-rs 0.8** | Official Rust bindings from PipeWire project. Production-proven |
 | Global Shortcuts | **ashpd 0.13** (`global_shortcuts` feature) | Full xdg-desktop-portal GlobalShortcuts API. Async/tokio |
-| System Tray | **tray-icon 0.19** + **muda 0.15** | Actively maintained (Tauri team), standalone SNI, cross-DE |
+| System Tray | **ksni 0.3** | Pure-Rust StatusNotifierItem over zbus, cross-DE |
 | Audio Decode | **symphonia 0.5** | Pure Rust. MP3, WAV, OGG, FLAC, AAC. No C dependencies |
 | Audio Playback | **pipewire-rs** streams | Direct PipeWire playback — no rodio/ALSA intermediary |
 
@@ -225,8 +225,8 @@ Wayland sessions require GPU drivers (compositor needs them), so wgpu works on a
              │ Channels (no IPC serialization)
              ▼
 ┌─────────────────────────────┐    ┌────────────────────┐
-│  AudioEngine (PipeWire      │    │  tray-icon         │
-│  thread)                    │    │  (main thread,     │
+│  AudioEngine (PipeWire      │    │  ksni tray service │
+│  thread)                    │    │  (D-Bus thread,    │
 │  - virtual sink             │    │   channel → sub)   │
 │  - mic passthrough          │    └────────────────────┘
 │  - playback streams         │
@@ -245,11 +245,12 @@ No IPC serialization. Direct Rust channel communication:
 
 1. **UI → Audio (Commands):** Iced `Command::perform` sends `AudioCommand` via `tokio::sync::mpsc` to PipeWire thread.
 2. **Audio → UI (Events):** PipeWire thread sends `AudioEvent` via channel. Iced `Subscription` polls receiver each frame.
-3. **Tray → App:** `tray-icon` sends events via channel → Iced `Subscription`.
+3. **Tray → App:** `ksni` sends SNI events via channel → Iced `Subscription`.
 
 ### Threading Model
 
-- **Main thread:** Iced event loop + tray-icon (both need main thread on Linux)
+- **Main thread:** Iced event loop.
+- **Tray thread:** Blocking ksni D-Bus StatusNotifierItem service.
 - **PipeWire thread:** Dedicated thread running PipeWire's own event loop. Owns `AudioEngine`.
 - **Communication:** Bounded `mpsc` channels. Non-blocking sends from main thread.
 
@@ -363,7 +364,7 @@ honkhonk/
 │   │   └── playback.rs      # Play sound to sink + monitor output
 │   ├── tray/
 │   │   ├── mod.rs
-│   │   └── icon.rs          # tray-icon setup, menu, quit handler
+│   │   └── icon.rs          # ksni SNI setup, menu, quit handler
 │   ├── shortcuts/           # Phase 2
 │   │   ├── mod.rs
 │   │   ├── error.rs         # PortalError enum
@@ -400,7 +401,10 @@ honkhonk/
 │       ├── 002-pipewire-only-no-pulseaudio.md
 │       ├── 003-fixed-slot-hotkey-model.md
 │       ├── 004-persistent-sink-no-per-sound-nodes.md
-│       └── 005-tray-icon-over-ksni.md
+│       ├── 006-fundsp-over-rubberband-soundtouch.md
+│       ├── 007-links-only-routing-over-pw-filter.md
+│       ├── 008-subprocess-fallback-for-shortcut-config-ui.md
+│       └── 009-canvas-sticker-tiles-rejected.md
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml               # Lint, test, build on PR
@@ -422,8 +426,7 @@ iced = { version = "0.14", features = ["tokio", "tiny-skia"] }
 pipewire = "0.8"           # pipewire-rs — official PipeWire Rust bindings
 ashpd = { version = "0.13", features = ["global_shortcuts", "tokio"] }  # Phase 2
 symphonia = { version = "0.5", features = ["mp3", "ogg", "flac", "wav", "pcm", "aac"] }
-tray-icon = "0.19"         # System tray (StatusNotifierItem)
-muda = "0.15"              # Menu for tray-icon
+ksni = { version = "0.3", features = ["blocking"] }  # System tray SNI over zbus
 thiserror = "2"            # Typed error enums at module boundaries
 anyhow = "1"               # Error context chains in glue/app layer
 serde = { version = "1", features = ["derive"] }
@@ -530,13 +533,11 @@ This ensures cross-DE compatibility. KDE, GNOME, and Hyprland each implement the
 
 ### System Tray
 
-StatusNotifierItem (SNI) is the standard. Implementation via `tray-icon` crate:
-1. Initialize on main thread before Iced event loop
-2. Menu via `muda` crate: "Show/Hide", separator, "Quit"
+StatusNotifierItem (SNI) is the standard. Implementation via `ksni`:
+1. Start a blocking SNI D-Bus service from the tray module
+2. Provide icon pixmap plus DBusMenu entries: "Show/Hide", separator, "Quit"
 3. Events communicated to Iced via channel → Subscription
 4. No legacy XEmbed tray support
-
-**Known warning:** `tray-icon` depends on `libappindicator` which loads `libayatana-appindicator` at runtime. This produces a harmless deprecation warning on stderr: `libayatana-appindicator is deprecated. Please use libayatana-appindicator-glib in newly written code.` This is an upstream issue in the `libappindicator` crate — not actionable from our code. Do not suppress it.
 
 ### .desktop File
 

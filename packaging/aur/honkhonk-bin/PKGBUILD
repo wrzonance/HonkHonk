@@ -9,10 +9,12 @@ pkgdesc="Wayland-native Linux soundboard — Iced GUI + PipeWire audio (binary r
 arch=('x86_64')
 url="https://github.com/wrzonance/HonkHonk"
 license=('MIT')
-# The tray backend is pure Rust SNI over D-Bus, so the release binary does not
-# link GTK, appindicator, or xdotool.
+# The current 0.1.0 .deb was built before the ksni tray migration and still
+# links GTK/appindicator. Drop those deps when _pkgtag points at a ksni release.
 depends=(
     'pipewire'
+    'gtk3'
+    'libayatana-appindicator'
     'wayland'
     'libxkbcommon'
     'xdg-desktop-portal'

@@ -939,7 +939,7 @@ pub fn view_about_section(t: Theme) -> Element<'static, Message> {
         text("pipewire-rs — PipeWire project")
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
-        text("tray-icon — tauri-apps")
+        text("ksni — iovxw")
             .size(theme::font::LABEL)
             .color(t.ink_dim()),
     ]

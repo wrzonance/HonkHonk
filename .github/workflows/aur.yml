@@ -64,11 +64,12 @@ jobs:
       - name: Point VCS package at PR head
         if: github.event_name == 'pull_request' && matrix.pkg == 'honkhonk-git'
         working-directory: packaging/aur/${{ matrix.pkg }}
+        env:
+          PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          pr_repo='${{ github.event.pull_request.head.repo.full_name }}'
-          pr_head='${{ github.event.pull_request.head.sha }}'
           sed -i \
-            "s|^source=.*|source=(\"git+https://github.com/${pr_repo}.git#commit=${pr_head}\")|" \
+            "s|^source=.*|source=(\"git+https://github.com/${PR_REPO}.git#commit=${PR_HEAD}\")|" \
             PKGBUILD
 
       - name: Wait for release artifacts (tag push only)
