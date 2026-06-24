@@ -1,12 +1,10 @@
 //! In-memory caches for the playback hot path: a byte-capped LRU of decoded
-//! PCM and the per-sound waveform envelope. Pure — no audio I/O. Eviction never
-//! affects playback (the engine holds its own `Arc`). See spec #151.
+//! PCM. Pure — no audio I/O. Eviction never affects playback (the engine holds
+//! its own `Arc`). See spec #151.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-
-use super::Envelope;
 
 /// Default LRU cap: ~one long stereo song plus many short clips.
 pub const DEFAULT_PCM_CAP_BYTES: usize = 256 * 1024 * 1024;
@@ -35,7 +33,6 @@ struct PcmEntry {
 
 pub struct AudioStore {
     pcm: HashMap<String, PcmEntry>,
-    envelopes: HashMap<String, Arc<Envelope>>,
     bytes: usize,
     cap_bytes: usize,
     tick: u64,
@@ -45,7 +42,6 @@ impl AudioStore {
     pub fn new(cap_bytes: usize) -> Self {
         Self {
             pcm: HashMap::new(),
-            envelopes: HashMap::new(),
             bytes: 0,
             cap_bytes,
             tick: 0,
@@ -105,14 +101,6 @@ impl AudioStore {
             evicted.push(victim);
         }
         evicted
-    }
-
-    pub fn envelope(&self, id: &str) -> Option<Arc<Envelope>> {
-        self.envelopes.get(id).map(Arc::clone)
-    }
-
-    pub fn insert_envelope(&mut self, id: String, env: Arc<Envelope>) {
-        self.envelopes.insert(id, env);
     }
 
     pub fn pcm_bytes(&self) -> usize {
@@ -175,14 +163,5 @@ mod tests {
         store.insert_pcm("a".into(), pcm(8));
         assert_eq!(store.pcm_bytes(), 8 * std::mem::size_of::<f32>());
         assert_eq!(store.get_pcm("a").map(|p| p.samples.len()), Some(8));
-    }
-
-    #[test]
-    fn envelope_round_trips() {
-        let mut store = AudioStore::new(1024);
-        assert!(store.envelope("a").is_none());
-        let env = Arc::new(Envelope::from_samples(&[0.5_f32; 64], 1, 16));
-        store.insert_envelope("a".into(), env.clone());
-        assert_eq!(store.envelope("a"), Some(env));
     }
 }

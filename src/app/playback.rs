@@ -104,19 +104,13 @@ impl HonkHonk {
         volume: f32,
         generation: u64,
     ) {
-        self.playhead = Some(crate::ui::playhead::PlayheadClock::new(
-            pcm.duration,
-            Instant::now(),
-        ));
-        self.display_progress = 0.0;
-        if self.audio_store.envelope(id).is_none() {
-            let env = std::sync::Arc::new(crate::audio::Envelope::from_samples(
-                &pcm.samples,
-                pcm.channels,
-                crate::audio::ENVELOPE_BUCKETS,
-            ));
-            self.audio_store.insert_envelope(id.to_string(), env);
-        }
+        self.now_playing.start(now_playing::PlaybackStart {
+            id,
+            duration: pcm.duration,
+            samples: pcm.samples.as_ref().as_slice(),
+            channels: pcm.channels,
+            now: Instant::now(),
+        });
         if let Some(ref audio) = self.audio {
             audio.send(AudioCommand::Play {
                 sound_id: id.to_string(),

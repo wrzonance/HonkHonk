@@ -197,15 +197,9 @@ pub struct HonkHonk {
     /// Eased panel progress (0=closed..1=open) fed to the view; refreshed each
     /// frame by `effects_panel.tick`.
     panel_progress: f32,
-    /// Persistent now-playing waveform cache owner (#131). App holds it but all
-    /// cache-lifecycle logic lives in `ui::now_playing::NowPlaying`.
+    /// Persistent now-playing playback UI owner (#142): playhead lifecycle,
+    /// display progress, waveform cache key, and per-sound envelopes.
     now_playing: crate::ui::now_playing::NowPlaying,
-    /// Predict-and-correct clock driving the smooth playhead; `Some` while a
-    /// sound plays. Authoritative anchor is the 10 Hz `AudioEvent::Progress`.
-    playhead: Option<crate::ui::playhead::PlayheadClock>,
-    /// Frame-interpolated playhead position fed to the now-playing view and the
-    /// waveform cache-sync. Distinct from `progress` (the raw 10 Hz anchor).
-    display_progress: f32,
     /// Monotonic counter bumped on every play dispatch. Stamped onto the `Play`
     /// command and echoed back on `PlaybackFinished` to tell a genuine end from
     /// the stale `Finished` of a re-pressed voice (#149), and onto each
@@ -213,8 +207,7 @@ pub struct HonkHonk {
     /// dropped on arrival (#151). A decode for a play that was *cancelled*
     /// (StopAll) is caught by `handle_decoded`'s `playing` check instead.
     play_generation: u64,
-    /// Hot-path caches: byte-capped decoded-PCM LRU + waveform envelope map
-    /// (#151).
+    /// Hot-path decoded-PCM cache (#151).
     audio_store: crate::audio::AudioStore,
 }
 
@@ -378,8 +371,6 @@ impl HonkHonk {
             effects_panel: PanelAnim::default(),
             panel_progress: 0.0,
             now_playing: crate::ui::now_playing::NowPlaying::default(),
-            playhead: None,
-            display_progress: 0.0,
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
         }
@@ -427,8 +418,6 @@ impl HonkHonk {
             effects_panel: PanelAnim::default(),
             panel_progress: 0.0,
             now_playing: crate::ui::now_playing::NowPlaying::default(),
-            playhead: None,
-            display_progress: 0.0,
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
         }
@@ -823,9 +812,7 @@ impl HonkHonk {
                 Task::none()
             }
             Message::Frame(now) => {
-                if let Some(ref clock) = self.playhead {
-                    self.display_progress = clock.display(now);
-                }
+                self.now_playing.tick(now);
                 self.panel_progress = self.effects_panel.tick(now);
                 Task::none()
             }
@@ -1119,10 +1106,6 @@ impl HonkHonk {
                 result,
             } => self.handle_decoded(generation, id, result),
         };
-        // Keep the now-playing waveform cache in step with playback state.
-        // Single delegating call — all lifecycle logic lives in NowPlaying.
-        self.now_playing
-            .sync(self.playing.as_deref(), self.display_progress);
         task
     }
 
@@ -1146,15 +1129,14 @@ impl HonkHonk {
         Task::batch(tasks)
     }
 
-    /// Clears all now-playing state together so the highlight, raw progress
-    /// anchor, playhead clock, and smooth display position never drift apart.
+    /// Clears all now-playing state together so the highlight, raw progress, and
+    /// delegated playback UI state never drift apart.
     /// The single teardown path for StopAll, the genuine PlaybackFinished end,
     /// and a failed decode.
     fn clear_playback_state(&mut self) {
         self.playing = None;
         self.progress = 0.0;
-        self.playhead = None;
-        self.display_progress = 0.0;
+        self.now_playing.clear();
     }
 
     fn view_header(&self, t: theme::Theme) -> Element<'_, Message> {
@@ -1375,11 +1357,11 @@ impl HonkHonk {
         let envelope = self
             .playing
             .as_deref()
-            .and_then(|id| self.audio_store.envelope(id));
+            .and_then(|id| self.now_playing.envelope(id));
         let now_playing = now_playing::view_now_playing(
             &self.now_playing,
             playing_sound,
-            self.display_progress,
+            self.now_playing.display_progress(),
             self.config.volume,
             envelope.as_deref(),
         );
@@ -1580,16 +1562,19 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         app.playing = Some("x".into());
         app.progress = 0.7;
-        app.display_progress = 0.7;
-        app.playhead = Some(crate::ui::playhead::PlayheadClock::new(
-            Duration::from_secs(5),
-            Instant::now(),
-        ));
+        let samples = vec![0.25_f32; 64];
+        app.now_playing.start(now_playing::PlaybackStart {
+            id: "x",
+            duration: Duration::from_secs(5),
+            samples: &samples,
+            channels: 1,
+            now: Instant::now(),
+        });
         let _ = app.update(Message::StopAll);
         assert!(app.playing.is_none());
         assert_eq!(app.progress, 0.0);
-        assert_eq!(app.display_progress, 0.0);
-        assert!(app.playhead.is_none());
+        assert_eq!(app.now_playing.display_progress(), 0.0);
+        assert!(!app.now_playing.has_playhead());
     }
 
     #[test]
@@ -1837,16 +1822,17 @@ mod tests {
         use std::time::{Duration, Instant};
         let mut app = HonkHonk::new_for_test();
         let t0 = Instant::now();
-        app.playhead = Some(crate::ui::playhead::PlayheadClock::new(
-            Duration::from_secs(10),
-            t0,
-        ));
+        let samples = vec![0.25_f32; 64];
+        app.now_playing.start(now_playing::PlaybackStart {
+            id: "test",
+            duration: Duration::from_secs(10),
+            samples: &samples,
+            channels: 1,
+            now: t0,
+        });
         let _ = app.update(Message::Frame(t0 + Duration::from_secs(5)));
-        assert!(
-            (app.display_progress - 0.5).abs() < 1e-3,
-            "got {}",
-            app.display_progress
-        );
+        let progress = app.now_playing.display_progress();
+        assert!((progress - 0.5).abs() < 1e-3, "got {}", progress);
     }
 
     #[test]
@@ -1854,7 +1840,7 @@ mod tests {
         use std::time::{Duration, Instant};
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::Frame(Instant::now() + Duration::from_secs(1)));
-        assert_eq!(app.display_progress, 0.0);
+        assert_eq!(app.now_playing.display_progress(), 0.0);
     }
 
     #[test]
@@ -1866,7 +1852,7 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.65)));
         assert!((app.progress() - 0.65).abs() < f32::EPSILON);
-        assert_eq!(app.display_progress, 0.0);
+        assert_eq!(app.now_playing.display_progress(), 0.0);
     }
 
     #[test]
@@ -1876,17 +1862,21 @@ mod tests {
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "test".into(),
         }));
-        app.playhead = Some(crate::ui::playhead::PlayheadClock::new(
-            Duration::from_secs(5),
-            Instant::now(),
-        ));
+        let samples = vec![0.25_f32; 64];
+        app.now_playing.start(now_playing::PlaybackStart {
+            id: "test",
+            duration: Duration::from_secs(5),
+            samples: &samples,
+            channels: 1,
+            now: Instant::now(),
+        });
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             sound_id: "test".into(),
             generation: 0,
         }));
-        assert!(app.playhead.is_none());
-        assert_eq!(app.display_progress, 0.0);
+        assert!(!app.now_playing.has_playhead());
+        assert_eq!(app.now_playing.display_progress(), 0.0);
     }
 
     #[test]
@@ -1934,7 +1924,7 @@ mod tests {
         // (generation 2) without another decode.
         let _ = app.request_play(&sound, false);
         assert!(
-            app.playhead.is_some(),
+            app.now_playing.has_playhead(),
             "re-press should create a fresh playhead"
         );
 
@@ -1945,7 +1935,7 @@ mod tests {
             generation: 1,
         }));
         assert!(
-            app.playhead.is_some(),
+            app.now_playing.has_playhead(),
             "stale displaced Finished must not clear the re-triggered playhead"
         );
         assert_eq!(app.playing(), Some("wav1"));
@@ -1955,7 +1945,10 @@ mod tests {
             sound_id: "wav1".into(),
             generation: 2,
         }));
-        assert!(app.playhead.is_none(), "genuine end clears the playhead");
+        assert!(
+            !app.now_playing.has_playhead(),
+            "genuine end clears the playhead"
+        );
         assert_eq!(app.playing(), None);
     }
 
@@ -2896,7 +2889,7 @@ mod tests {
             }),
         });
         let env = app
-            .audio_store
+            .now_playing
             .envelope("wav1")
             .expect("envelope should be cached after play");
         assert_eq!(
@@ -2984,7 +2977,7 @@ mod tests {
         });
 
         assert!(
-            app.playhead.is_none(),
+            !app.now_playing.has_playhead(),
             "stale decode must not start a playhead"
         );
         assert_eq!(app.playing(), Some("newer"));
@@ -3011,7 +3004,7 @@ mod tests {
         });
 
         assert!(
-            app.playhead.is_some(),
+            app.now_playing.has_playhead(),
             "current decode must start the playhead"
         );
         assert!(
@@ -3065,7 +3058,7 @@ mod tests {
 
         assert_eq!(app.playing(), None, "StopAll must win — no resurrection");
         assert!(
-            app.playhead.is_none(),
+            !app.now_playing.has_playhead(),
             "no playhead after a stopped, stale decode"
         );
     }
