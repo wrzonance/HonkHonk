@@ -630,7 +630,7 @@ impl HonkHonk {
                     }
                     AudioEvent::SourceFirstRun { confd_written } => {
                         let notice = source_first_run_notice(confd_written);
-                        tracing::info!(message = %notice, "source first-run notice");
+                        tracing::info!(notice = %notice, "source first-run notice");
                         self.source_notice = Some(notice);
                     }
                     AudioEvent::OutputDevicesChanged(devices) => {
