@@ -58,6 +58,16 @@ impl NowPlaying {
         self.sync_active();
     }
 
+    /// Switches the UI to a requested sound while decode is still pending. This
+    /// prevents stale waveform geometry from the previous sound from being
+    /// shown under the newly selected title.
+    pub fn pending(&mut self, id: &str) -> bool {
+        self.active_id = Some(id.to_owned());
+        self.playhead = None;
+        self.display_progress = 0.0;
+        self.sync_active()
+    }
+
     /// Advances the frame-interpolated playhead from the owned wall-clock
     /// clock. No-op while idle.
     pub fn tick(&mut self, now: Instant) {
@@ -102,8 +112,15 @@ impl NowPlaying {
     }
 
     fn sync_active(&mut self) -> bool {
-        let active_id = self.active_id.clone();
-        self.sync(active_id.as_deref(), self.display_progress)
+        let playing = self.active_id.as_deref();
+        if let Some(key) = &self.key {
+            if key.matches(playing, self.display_progress) {
+                return false;
+            }
+        }
+        self.cache.clear();
+        self.key = Some(render_key(playing, self.display_progress));
+        true
     }
 
     #[cfg(test)]

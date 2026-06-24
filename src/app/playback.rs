@@ -15,6 +15,7 @@ impl HonkHonk {
         self.play_generation = self.play_generation.wrapping_add(1);
         let generation = self.play_generation;
         self.playing = Some(sound.id.clone());
+        self.now_playing.pending(&sound.id);
         if stop_before {
             if let Some(ref audio) = self.audio {
                 audio.send(AudioCommand::Stop);
@@ -122,5 +123,35 @@ impl HonkHonk {
             });
             self.playing = Some(id.to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cold_play_updates_waveform_cache_key_before_decode_lands() {
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+        app.now_playing.sync(Some("old"), 0.75);
+
+        let sound = SoundEntry {
+            id: "new".into(),
+            name: "New".into(),
+            path: "/tmp/new.wav".into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: Some(100),
+            category: "Test".into(),
+        };
+        let _ = app.request_play(&sound, false);
+
+        assert!(
+            app.now_playing
+                .current_key()
+                .is_some_and(|key| key.matches(Some("new"), 0.0)),
+            "cold play must invalidate stale waveform bars before decode completes"
+        );
     }
 }
