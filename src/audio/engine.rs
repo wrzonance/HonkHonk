@@ -81,6 +81,11 @@ pub enum AudioEvent {
     Ready,
     PlaybackStarted {
         sound_id: String,
+        /// Echoes the `generation` of the `Play` this voice came from, mirroring
+        /// `PlaybackFinished`. Lets the app ignore a late superseded voice's
+        /// Started so it cannot re-highlight an old tile while the UI is idle
+        /// (#149/#164).
+        generation: u64,
     },
     PlaybackFinished {
         voice_id: u64,
@@ -701,7 +706,10 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
         monitor_enabled,
     });
     send_finished_events(&ctx.evt_tx, finished);
-    let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
+    let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted {
+        sound_id,
+        generation,
+    });
 }
 
 #[cfg(test)]

@@ -582,14 +582,24 @@ impl HonkHonk {
                             audio.send(AudioCommand::SetVolume(self.config.volume));
                         }
                     }
-                    AudioEvent::PlaybackStarted { sound_id } => {
+                    AudioEvent::PlaybackStarted {
+                        sound_id,
+                        generation,
+                    } => {
                         // Every play path sets `playing` optimistically at
                         // dispatch, so a Started for a *different* sound can
                         // only be a stale event from an older press still in
                         // the queue — don't let it steal the highlight (#111).
-                        if self.playing.is_none()
-                            || self.playing.as_deref() == Some(sound_id.as_str())
-                        {
+                        // When the UI is idle, only the current generation may
+                        // claim it: a late superseded concurrent voice (older
+                        // generation) finishing its decode after a newer short
+                        // sound already ended would otherwise re-highlight its
+                        // tile, and its stale Finished is ignored, leaving it
+                        // stuck (#149/#164).
+                        let confirms_current = self.playing.as_deref() == Some(sound_id.as_str());
+                        let claims_idle =
+                            self.playing.is_none() && generation == self.play_generation;
+                        if confirms_current || claims_idle {
                             self.playing = Some(sound_id);
                         }
                     }
@@ -1585,6 +1595,7 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "test-id".into(),
+            generation: 0,
         }));
         let _ = app.update(Message::StopAll);
         assert!(app.playing().is_none());
@@ -1638,6 +1649,7 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "abc123".into(),
+            generation: 0,
         }));
         assert_eq!(app.playing(), Some("abc123"));
     }
@@ -1647,6 +1659,7 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "abc123".into(),
+            generation: 0,
         }));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {
             voice_id: 0,
@@ -1710,11 +1723,46 @@ mod tests {
         // highlight back (#111).
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "newer".into(),
+            generation: 0,
         }));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "older".into(),
+            generation: 0,
         }));
         assert_eq!(app.playing(), Some("newer"));
+    }
+
+    #[test]
+    fn late_superseded_started_does_not_highlight_while_idle() {
+        let mut app = HonkHonk::new_for_test();
+        // A newer concurrent press advanced the generation, then that short
+        // sound finished, so the UI is idle (playing == None) at generation 2.
+        app.play_generation = 2;
+        // An older superseded voice (generation 1) finally finishes decoding and
+        // starts in the engine. Its Started must not re-highlight its tile —
+        // otherwise the stale, old-generation Finished is ignored and the tile
+        // stays stuck highlighted (#164).
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "older".into(),
+            generation: 1,
+        }));
+        assert!(
+            app.playing().is_none(),
+            "a late superseded voice's Started must not claim the idle highlight"
+        );
+    }
+
+    #[test]
+    fn current_generation_started_claims_idle_highlight() {
+        let mut app = HonkHonk::new_for_test();
+        app.play_generation = 2;
+        // A Started from the current generation still confirms the highlight
+        // when the optimistic dispatch state was already cleared.
+        let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
+            sound_id: "current".into(),
+            generation: 2,
+        }));
+        assert_eq!(app.playing(), Some("current"));
     }
 
     #[test]
@@ -1722,6 +1770,7 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "newer".into(),
+            generation: 0,
         }));
         // A Finished event for an already-replaced sound must not blank the
         // highlight of the sound that superseded it (issue #111).
@@ -1770,6 +1819,7 @@ mod tests {
         let events = [
             AudioEvent::PlaybackStarted {
                 sound_id: "a".into(),
+                generation: 0,
             },
             AudioEvent::PlaybackFinished {
                 voice_id: 0,
@@ -1778,6 +1828,7 @@ mod tests {
             },
             AudioEvent::PlaybackStarted {
                 sound_id: "b".into(),
+                generation: 0,
             },
             AudioEvent::Progress(0.25),
             AudioEvent::PlaybackFinished {
@@ -1787,6 +1838,7 @@ mod tests {
             },
             AudioEvent::PlaybackStarted {
                 sound_id: "c".into(),
+                generation: 0,
             },
             AudioEvent::Progress(0.5),
         ];
@@ -1899,6 +1951,7 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "test".into(),
+            generation: 0,
         }));
         let samples = vec![0.25_f32; 64];
         app.now_playing.start(now_playing::PlaybackStart {
@@ -2009,6 +2062,7 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackStarted {
             sound_id: "test".into(),
+            generation: 0,
         }));
         let _ = app.update(Message::AudioEvent(AudioEvent::Progress(0.8)));
         let _ = app.update(Message::AudioEvent(AudioEvent::PlaybackFinished {

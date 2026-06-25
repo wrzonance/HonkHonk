@@ -128,7 +128,7 @@ fn expect_started(handle: &honkhonk::audio::AudioHandle, expected: &str) {
         handle,
         Duration::from_secs(5),
         &label,
-        |event| matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { sound_id } if sound_id == expected),
+        |event| matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { sound_id, .. } if sound_id == expected),
     );
 }
 
