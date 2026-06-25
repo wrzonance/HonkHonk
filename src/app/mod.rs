@@ -224,7 +224,7 @@ fn shortcuts_stream_sub(
     use iced::futures::SinkExt;
     use iced::futures::StreamExt;
     iced::stream::channel(16, async move |mut tx| {
-        use crate::shortcuts::{portal, ShortcutEvent};
+        use crate::shortcuts::{ShortcutEvent, portal};
         let stream = portal::shortcut_stream(window_id);
         let mut stream = std::pin::pin!(stream);
         while let Some(ev) = stream.next().await {
@@ -549,7 +549,7 @@ impl HonkHonk {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
-        let task = match message {
+        match message {
             Message::ToggleVisibility => {
                 self.visible = !self.visible;
                 Task::none()
@@ -1149,8 +1149,7 @@ impl HonkHonk {
                     mode,
                 },
             ),
-        };
-        task
+        }
     }
 
     /// Process every audio event queued since the last poll tick.
@@ -1470,7 +1469,7 @@ impl HonkHonk {
         ));
 
         // Overlay context menu at window level so cursor coords map exactly.
-        if let (Some(ref sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
+        if let (Some(sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
             let found = self.sounds.iter().find(|s| s.id == *sound_id);
             layers.push(sound_grid::context_menu_overlay(
                 found,

@@ -21,7 +21,7 @@ use iced_runtime::user_interface::{Cache, UserInterface};
 
 use honkhonk::app::Message;
 use honkhonk::state::{AudioFormat, SlotMap, SoundEntry, SoundMetaStore};
-use honkhonk::ui::sound_grid::{view_grid, GridCtx};
+use honkhonk::ui::sound_grid::{GridCtx, view_grid};
 
 const CATEGORIES: &[&str] = &["Honk", "Memes", "Reactions", "Voicelines", "Music", "SFX"];
 

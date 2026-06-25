@@ -18,8 +18,8 @@
 //! Before the first full block is ready the FIFO underflows and we emit silence —
 //! this is the algorithmic latency reported by [`AudioEffect::latency_samples`].
 
-use super::preset::PitchPreset;
 use super::AudioEffect;
+use super::preset::PitchPreset;
 use crate::audio::error::EffectsError;
 use pitch_shift::{Shifter, TOTAL_F32};
 

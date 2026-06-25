@@ -146,11 +146,7 @@ pub(crate) mod test_signal {
             num += f * mag;
             den += mag;
         }
-        if den > 0.0 {
-            num / den
-        } else {
-            0.0
-        }
+        if den > 0.0 { num / den } else { 0.0 }
     }
 
     /// A two-formant synthetic "vowel": a buzz fundamental with energy

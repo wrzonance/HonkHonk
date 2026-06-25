@@ -223,9 +223,9 @@ mod tests {
             channels: 1,
             duration: std::time::Duration::from_millis(100),
         };
-        let dispatch = |gen: u64| PlaybackDispatch {
-            generation: gen,
-            voice_id: gen,
+        let dispatch = |generation: u64| PlaybackDispatch {
+            generation,
+            voice_id: generation,
             gain: 1.0,
             effects,
             mode: PlayMode::Concurrent,

@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use iced::{
-    widget::{button, column, container, pick_list, row, scrollable, text, Column, Row, Space},
     Alignment, Element, Length,
+    widget::{Column, Row, Space, button, column, container, pick_list, row, scrollable, text},
 };
 
 use crate::app::{HonkHonk, Message, SettingsSection};
@@ -47,7 +47,7 @@ impl std::fmt::Display for InputDeviceOption {
     }
 }
 use crate::settings::{
-    ControlType, SettingCategory, SettingDef, SettingId, SettingValue, SETTINGS_REGISTRY,
+    ControlType, SETTINGS_REGISTRY, SettingCategory, SettingDef, SettingId, SettingValue,
 };
 use crate::ui::theme::{self, Hh, Theme};
 

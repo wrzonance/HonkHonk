@@ -8,7 +8,7 @@
 //! input lands where it is drawn.
 
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{button, column, container, float, mouse_area, row, scrollable, text, Space};
+use iced::widget::{Space, button, column, container, float, mouse_area, row, scrollable, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Vector};
 
 use crate::app::Message;

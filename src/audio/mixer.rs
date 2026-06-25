@@ -9,7 +9,7 @@
 //!
 //! Until then, `process_block` is a transparent passthrough.
 
-use crate::audio::effects::{default_chain, EffectChain};
+use crate::audio::effects::{EffectChain, default_chain};
 use crate::audio::error::EffectsError;
 
 /// Holds the effect chain and applies it to mic audio blocks.

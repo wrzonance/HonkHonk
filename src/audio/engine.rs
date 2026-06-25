@@ -1,20 +1,20 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 
 use super::confd;
 use super::effects::EffectSettings;
 use super::error::{AudioError, EngineErrorEvent};
 mod playback_streams;
 use super::playback;
-use super::registry::{setup_registry_listener, RegistryConfig};
+use super::registry::{RegistryConfig, setup_registry_listener};
 use super::router::{Router, RouterEvent};
 use super::streams;
 use super::voices::{FinishedVoice, VoicePool, VoiceSpec};
 use playback_streams::{
-    active_format_conflict, ensure_playback_streams, monitor_enabled, rebuild_monitor_stream,
-    PlaybackStreams,
+    PlaybackStreams, active_format_conflict, ensure_playback_streams, monitor_enabled,
+    rebuild_monitor_stream,
 };
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";

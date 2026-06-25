@@ -3,8 +3,8 @@
 //! the audio thread. The Iced view lives in [`super::effects_panel_view`]; this
 //! module holds only the testable, render-free logic.
 
-use crate::audio::effects::{EffectSettings, EffectSlot};
 use crate::audio::AudioCommand;
+use crate::audio::effects::{EffectSettings, EffectSlot};
 
 /// A named voice-effect preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -297,7 +297,7 @@ pub fn preset_commands(preset: PresetId) -> Vec<AudioCommand> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::{effects::EffectSlot, AudioCommand};
+    use crate::audio::{AudioCommand, effects::EffectSlot};
 
     fn has_unbypass(cmds: &[AudioCommand], slot: EffectSlot) -> bool {
         cmds.iter().any(|c| {

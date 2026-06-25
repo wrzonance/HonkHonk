@@ -8,5 +8,5 @@ mod geometry;
 mod view;
 
 pub use anim::{PanelAnim, SLIDE_DURATION};
-pub use geometry::{panel_geometry, PanelRect};
-pub use view::{view_side_panel, SidePanelConfig};
+pub use geometry::{PanelRect, panel_geometry};
+pub use view::{SidePanelConfig, view_side_panel};

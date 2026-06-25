@@ -1,5 +1,5 @@
 use iced::widget::{button, column, container, mouse_area, row, text};
-use iced::{mouse, Element, Length};
+use iced::{Element, Length, mouse};
 
 use crate::app::Message;
 use crate::state::{SlotMap, SoundEntry, SoundMetaStore};

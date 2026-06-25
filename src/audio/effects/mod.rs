@@ -21,7 +21,7 @@ pub use filter::BandpassFilterEffect;
 pub use flanger::Flanger;
 pub use formant::FormantPitchEffect;
 pub use formant_preset::FormantPreset;
-pub use layout::{default_chain, EffectSlot};
+pub use layout::{EffectSlot, default_chain};
 pub use modulation::RingModEffect;
 pub use pitch::PitchShiftEffect;
 pub use preset::PitchPreset;

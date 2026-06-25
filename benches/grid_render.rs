@@ -6,10 +6,10 @@
 
 mod support;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 use support::{
-    init_wgpu, make_sounds, render_tiny_skia, self_check, sound_refs, try_render_wgpu, GridFixture,
+    GridFixture, init_wgpu, make_sounds, render_tiny_skia, self_check, sound_refs, try_render_wgpu,
 };
 
 /// Tile counts ADR-009 anchors the baseline against.

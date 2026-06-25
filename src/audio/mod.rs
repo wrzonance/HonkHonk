@@ -12,12 +12,12 @@ mod store;
 pub mod streams;
 pub mod voices;
 
-pub use decoder::{decode, DecodedAudio};
+pub use decoder::{DecodedAudio, decode};
 pub use effects::{AudioEffect, EffectChain, EffectsCommand, EffectsEvent};
 #[cfg(test)]
 pub(crate) use engine::test_handle;
-pub use engine::{spawn, AudioCommand, AudioEvent, AudioHandle, PlayMode};
-pub use envelope::{Envelope, ENVELOPE_BUCKETS};
+pub use engine::{AudioCommand, AudioEvent, AudioHandle, PlayMode, spawn};
+pub use envelope::{ENVELOPE_BUCKETS, Envelope};
 pub use error::{AudioError, EffectsError, EngineErrorEvent, RouterError, WatcherError};
 pub use router::{AppIdentity, RouteIntent, Router, RouterCommand, RouterEvent};
 pub use store::{AudioStore, CachedPcm, DEFAULT_PCM_CAP_BYTES};
