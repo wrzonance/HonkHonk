@@ -94,11 +94,11 @@ pub fn view_grid<'a>(
         })
         .collect();
 
-    let grid = rows
+    let grid_column = rows
         .into_iter()
         .fold(column![].spacing(theme::space::LG), |c, r| c.push(r));
 
-    grid.width(Length::Fill).into()
+    grid_column.width(Length::Fill).into()
 }
 
 fn tile_data(sound: &SoundEntry, ctx: TileCtx<'_>) -> SoundTileData {
@@ -277,6 +277,8 @@ mod tests {
 
     #[test]
     fn incomplete_rows_reserve_all_missing_tile_slots() {
+        // Iced view rendering is intentionally not unit-tested here; this pins
+        // the pure filler-slot contract used by the grid rows above.
         assert_eq!(missing_tile_slots(0, 5), 5);
         assert_eq!(missing_tile_slots(1, 5), 4);
         assert_eq!(missing_tile_slots(2, 5), 3);

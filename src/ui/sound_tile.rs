@@ -9,6 +9,7 @@ use crate::ui::tile_layout;
 pub const PLACEHOLDER_GRAPHIC: &str = "\u{1f50a}";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+const ROTATION_STEPS_PER_DEGREE: u64 = 1_000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundTileData {
@@ -49,8 +50,10 @@ pub fn seed_from_sound_id(id: &str) -> u64 {
 }
 
 pub fn rotation_degrees(seed: u64) -> f32 {
-    let bucket = (seed % 6_001) as f32;
-    bucket / 1_000.0 - 3.0
+    let bucket_count =
+        (tile_layout::MAX_ROTATION_DEGREES * 2.0 * ROTATION_STEPS_PER_DEGREE as f32) as u64 + 1;
+    let bucket = (seed % bucket_count) as f32;
+    bucket / ROTATION_STEPS_PER_DEGREE as f32 - tile_layout::MAX_ROTATION_DEGREES
 }
 
 pub fn tone_from_seed(seed: u64) -> Tone {
@@ -308,10 +311,17 @@ mod tests {
 
             assert_eq!(first, second);
             assert!(
-                (-3.0..=3.0).contains(&first),
-                "rotation {first} was outside the +/-3 degree range"
+                (-tile_layout::MAX_ROTATION_DEGREES..=tile_layout::MAX_ROTATION_DEGREES)
+                    .contains(&first),
+                "rotation {first} exceeded the tile layout clearance"
             );
         }
+    }
+
+    #[test]
+    fn rotation_degrees_uses_tile_layout_clearance_bound() {
+        assert_eq!(rotation_degrees(0), -tile_layout::MAX_ROTATION_DEGREES);
+        assert_eq!(rotation_degrees(6_000), tile_layout::MAX_ROTATION_DEGREES);
     }
 
     #[test]
