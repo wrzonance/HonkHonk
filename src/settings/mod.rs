@@ -10,6 +10,7 @@ pub enum SettingId {
     // Appearance — wired when backends land (issues #69, #70)
     Theme,
     Density,
+    PanelAnimations,
     // Audio — wired when backends land (issues #71, #72)
     MicPassthrough,
     MicPassthroughLevel,
@@ -73,6 +74,13 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
         category: SettingCategory::Appearance,
         label: "GPU acceleration",
         hint: "Disable for VMs or older hardware. Takes effect after restart.",
+        control: ControlType::Toggle,
+    },
+    SettingDef {
+        id: SettingId::PanelAnimations,
+        category: SettingCategory::Appearance,
+        label: "Panel feather puff",
+        hint: "Play the short feather burst when panels open or close.",
         control: ControlType::Toggle,
     },
     SettingDef {
@@ -248,6 +256,9 @@ mod tests {
             .iter()
             .filter(|d| matches!(d.category, SettingCategory::Appearance))
             .count();
-        assert_eq!(count, 3, "Appearance must have Theme + Density + Renderer");
+        assert_eq!(
+            count, 4,
+            "Appearance must have Theme + Density + Renderer + PanelAnimations"
+        );
     }
 }

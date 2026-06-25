@@ -17,6 +17,7 @@ use crate::ui::theme::{self, Hh, Theme};
 // Slider geometry shared by the parameter controls.
 const LABEL_W: f32 = 130.0;
 const MIX_SLIDER_W: f32 = 160.0;
+pub const EFFECTS_PANEL_W: f32 = 400.0;
 
 /// One labeled parameter slider's spec. Grouped into a struct so
 /// [`labeled_slider`] stays within the `too-many-arguments` clippy limit.
@@ -61,7 +62,7 @@ pub fn effects_side_panel_layer(
     t: Theme,
 ) -> Element<'static, Message> {
     let cfg = SidePanelConfig {
-        panel_w: 400.0,
+        panel_w: EFFECTS_PANEL_W,
         tab_w: 28.0,
         title: "Voice Effects",
         on_toggle: Message::ToggleEffectsPanel,

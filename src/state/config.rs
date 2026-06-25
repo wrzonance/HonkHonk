@@ -111,6 +111,8 @@ pub struct AppConfig {
     pub input_device: Option<String>,
     #[serde(default)]
     pub overlap_mode: OverlapMode,
+    #[serde(default = "default_true")]
+    pub panel_animations: bool,
 }
 
 impl Default for AppConfig {
@@ -136,6 +138,7 @@ impl Default for AppConfig {
             monitor_device: None,
             input_device: None,
             overlap_mode: OverlapMode::Concurrent,
+            panel_animations: default_true(),
         }
     }
 }
@@ -298,6 +301,7 @@ mod tests {
             monitor_device: None,
             input_device: None,
             overlap_mode: OverlapMode::Concurrent,
+            panel_animations: true,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -324,6 +328,7 @@ mod tests {
             monitor_device: None,
             input_device: None,
             overlap_mode: OverlapMode::Concurrent,
+            panel_animations: true,
         };
 
         config.save_to(&path).unwrap();
