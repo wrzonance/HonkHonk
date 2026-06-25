@@ -29,6 +29,7 @@ impl Default for HoverAnimation {
 }
 
 impl HoverAnimation {
+    #[cfg(test)]
     pub fn retargeted(from_hovered: bool, to_hovered: bool, now: Instant) -> Self {
         Self {
             progress: f32::from(from_hovered),
@@ -93,17 +94,24 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    fn assert_near(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "expected {expected}, got {actual}"
+        );
+    }
+
     #[test]
     fn hover_rotation_preserves_idle_rotation_at_zero_progress() {
         let seed = 6_000;
 
-        assert_eq!(hover_rotation_degrees(seed, 0.0), 3.0);
+        assert_near(hover_rotation_degrees(seed, 0.0), 3.0);
     }
 
     #[test]
     fn hover_rotation_amplifies_idle_range_to_eight_degrees() {
-        assert_eq!(hover_rotation_degrees(6_000, 1.0), 8.0);
-        assert_eq!(hover_rotation_degrees(0, 1.0), -8.0);
+        assert_near(hover_rotation_degrees(6_000, 1.0), 8.0);
+        assert_near(hover_rotation_degrees(0, 1.0), -8.0);
     }
 
     #[test]
@@ -116,7 +124,7 @@ mod tests {
             mid > 0.5,
             "ease-out should advance past linear midpoint: {mid}"
         );
-        assert_eq!(anim.progress_at(t0 + HOVER_ANIMATION_DURATION), 1.0);
+        assert_near(anim.progress_at(t0 + HOVER_ANIMATION_DURATION), 1.0);
     }
 
     #[test]
@@ -130,6 +138,29 @@ mod tests {
             (exiting.progress_at(mid) - entering.progress_at(mid)).abs() < 1e-6,
             "retargeting should be continuous"
         );
-        assert_eq!(exiting.progress_at(mid + HOVER_ANIMATION_DURATION), 0.0);
+        assert_near(exiting.progress_at(mid + HOVER_ANIMATION_DURATION), 0.0);
+    }
+
+    #[test]
+    fn retarget_if_changed_reports_only_target_changes() {
+        let t0 = Instant::now();
+        let mut anim = HoverAnimation::default();
+
+        assert!(!anim.retarget_if_changed(false, t0));
+        assert!(anim.retarget_if_changed(true, t0));
+        assert!(!anim.retarget_if_changed(true, t0 + Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn tick_settles_hover_entry_and_stops_redraw_loop() {
+        let t0 = Instant::now();
+        let mut anim = HoverAnimation::default();
+
+        assert!(anim.retarget_if_changed(true, t0));
+        assert!(anim.is_animating_at(t0 + Duration::from_millis(75)));
+        assert!(anim.tick(t0 + HOVER_ANIMATION_DURATION));
+        assert!(!anim.is_animating_at(t0 + HOVER_ANIMATION_DURATION));
+        assert_near(anim.progress(), 1.0);
+        assert!(!anim.tick(t0 + HOVER_ANIMATION_DURATION + Duration::from_millis(1)));
     }
 }

@@ -1,5 +1,4 @@
 use iced::mouse;
-use iced::widget::Action;
 use iced::widget::canvas::{self, Path, Stroke, Text};
 use iced::{Color, Element, Length, Pixels, Point, Rectangle, Size, Vector};
 use iced::{Event, window};
@@ -86,7 +85,7 @@ impl<Message> canvas::Program<Message> for SoundTile {
         event: &Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> Option<Action<Message>> {
+    ) -> Option<canvas::Action<Message>> {
         let now = match event {
             Event::Window(window::Event::RedrawRequested(now)) => *now,
             _ => std::time::Instant::now(),
@@ -95,7 +94,7 @@ impl<Message> canvas::Program<Message> for SoundTile {
         let progressed = state.tick(now);
 
         if retargeted || state.is_animating_at(now) || progressed {
-            Some(Action::request_redraw())
+            Some(canvas::Action::request_redraw())
         } else {
             None
         }
