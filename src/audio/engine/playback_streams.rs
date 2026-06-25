@@ -1,4 +1,4 @@
-use super::{playback, AudioEvent, EngineCtx, EngineErrorEvent, SINK_NODE_NAME};
+use super::{AudioEvent, EngineCtx, EngineErrorEvent, SINK_NODE_NAME, playback};
 
 #[derive(Default)]
 pub(super) struct PlaybackStreams {

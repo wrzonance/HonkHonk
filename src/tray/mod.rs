@@ -1,3 +1,3 @@
 mod icon;
 
-pub use icon::{build_tray, TrayEvent, TrayHandle};
+pub use icon::{TrayEvent, TrayHandle, build_tray};

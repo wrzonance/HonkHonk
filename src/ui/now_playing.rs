@@ -3,16 +3,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use iced::widget::canvas;
-use iced::widget::{container, row, space, text, Column, Space};
+use iced::widget::{Column, Space, container, row, space, text};
 use iced::{Border, Element, Length};
 
 use crate::app::Message;
-use crate::audio::{Envelope, ENVELOPE_BUCKETS};
+use crate::audio::{ENVELOPE_BUCKETS, Envelope};
 use crate::state::SoundEntry;
 use crate::ui::playhead::PlayheadClock;
 use crate::ui::theme::{self, Hh, Theme};
 use crate::ui::volume;
-use crate::ui::waveform::{render_key, RenderKey};
+use crate::ui::waveform::{RenderKey, render_key};
 
 /// Fixed main-column slot height so playback state changes do not resize the
 /// grid scrollable viewport (#147).

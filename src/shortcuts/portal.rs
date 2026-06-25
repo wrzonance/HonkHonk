@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use ashpd::desktop::global_shortcuts::NewShortcut;
 use ashpd::WindowIdentifier;
+use ashpd::desktop::global_shortcuts::NewShortcut;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use tokio::sync::mpsc;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 use super::{PortalCommand, ShortcutEvent};
@@ -208,7 +208,7 @@ pub fn shortcut_stream(_window_id: Option<WindowIdentifier>) -> impl Stream<Item
         use ashpd::desktop::global_shortcuts::GlobalShortcuts;
 
         macro_rules! bail {
-            ($ctx:expr, $err:expr) => {{
+            ($ctx:expr_2021, $err:expr_2021) => {{
                 let _ = tx
                     .send(ShortcutEvent::Failed(format!("{}: {}", $ctx, $err)))
                     .await;

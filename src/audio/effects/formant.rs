@@ -20,9 +20,9 @@
 //! allocation, locking, or syscalls. [`AudioEffect::process`] feeds samples one
 //! at a time through the node's `tick`, which is allocation-free.
 
-use super::formant_dsp::{estimate_envelope, read_polar, recombine, Ratios, BINS, ENV_EPS, WINDOW};
-use super::formant_preset::FormantPreset;
 use super::AudioEffect;
+use super::formant_dsp::{BINS, ENV_EPS, Ratios, WINDOW, estimate_envelope, read_polar, recombine};
+use super::formant_preset::FormantPreset;
 use crate::audio::error::EffectsError;
 // `Complex32` is re-exported through `fundsp::prelude32::*` (via `fundsp::math`,
 // which `pub use num_complex::Complex32`), so no direct `num_complex` dependency

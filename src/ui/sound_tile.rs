@@ -44,11 +44,7 @@ pub fn seed_from_sound_id(id: &str) -> u64 {
         (acc ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
     });
 
-    if seed == 0 {
-        FNV_OFFSET_BASIS
-    } else {
-        seed
-    }
+    if seed == 0 { FNV_OFFSET_BASIS } else { seed }
 }
 
 pub fn rotation_degrees(seed: u64) -> f32 {

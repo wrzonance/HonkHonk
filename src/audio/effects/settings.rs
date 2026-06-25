@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{default_chain, EffectChain, EffectSlot};
+use super::{EffectChain, EffectSlot, default_chain};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PitchEffectSettings {

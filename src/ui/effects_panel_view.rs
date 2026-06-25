@@ -5,7 +5,7 @@
 
 use std::ops::RangeInclusive;
 
-use iced::widget::{button, column, container, row, slider, text, Column, Space};
+use iced::widget::{Column, Space, button, column, container, row, slider, text};
 use iced::{Alignment, Border, Element, Length};
 
 use crate::app::Message;

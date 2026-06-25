@@ -116,10 +116,7 @@ fn decode_packets(
         channels.get_or_insert(spec.channels.count() as u16);
         let capacity = decoded.capacity();
 
-        if sample_buf
-            .as_ref()
-            .map_or(true, |b| capacity > b.capacity())
-        {
+        if sample_buf.as_ref().is_none_or(|b| capacity > b.capacity()) {
             sample_buf = Some(SampleBuffer::<f32>::new(capacity as u64, spec));
         }
         let buf = sample_buf.as_mut().expect("buffer just initialized");

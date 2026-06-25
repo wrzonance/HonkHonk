@@ -255,10 +255,12 @@ mod tests {
     #[test]
     fn is_default_detects_all_fields_at_default() {
         assert!(SoundMeta::default().is_default());
-        assert!(!SoundMeta {
-            favorite: true,
-            ..Default::default()
-        }
-        .is_default());
+        assert!(
+            !SoundMeta {
+                favorite: true,
+                ..Default::default()
+            }
+            .is_default()
+        );
     }
 }
