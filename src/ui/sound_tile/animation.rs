@@ -1,0 +1,177 @@
+use std::time::{Duration, Instant};
+
+use crate::ui::tile_layout;
+
+pub const HOVER_ANIMATION_DURATION: Duration = Duration::from_millis(150);
+
+pub fn hover_rotation_degrees(seed: u64, hover_progress: f32) -> f32 {
+    let scale = tile_layout::MAX_ROTATION_DEGREES / tile_layout::IDLE_MAX_ROTATION_DEGREES;
+    let scale = 1.0 + (scale - 1.0) * hover_progress.clamp(0.0, 1.0);
+    super::rotation_degrees(seed) * scale
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HoverAnimation {
+    progress: f32,
+    from: f32,
+    to: f32,
+    started_at: Instant,
+}
+
+impl Default for HoverAnimation {
+    fn default() -> Self {
+        let now = Instant::now();
+        Self {
+            progress: 0.0,
+            from: 0.0,
+            to: 0.0,
+            started_at: now,
+        }
+    }
+}
+
+impl HoverAnimation {
+    #[cfg(test)]
+    pub fn retargeted(from_hovered: bool, to_hovered: bool, now: Instant) -> Self {
+        Self {
+            progress: f32::from(from_hovered),
+            from: f32::from(from_hovered),
+            to: f32::from(to_hovered),
+            started_at: now,
+        }
+    }
+
+    pub fn retarget(self, hovered: bool, now: Instant) -> Self {
+        let progress = self.progress_at(now);
+        Self {
+            progress,
+            from: progress,
+            to: f32::from(hovered),
+            started_at: now,
+        }
+    }
+
+    pub fn retarget_if_changed(&mut self, hovered: bool, now: Instant) -> bool {
+        if (self.to - f32::from(hovered)).abs() < f32::EPSILON {
+            return false;
+        }
+        *self = self.retarget(hovered, now);
+        true
+    }
+
+    pub fn tick(&mut self, now: Instant) -> bool {
+        let next = self.progress_at(now);
+        let changed = (next - self.progress).abs() > f32::EPSILON;
+        self.progress = next;
+        if !self.is_animating_at(now) {
+            self.from = self.to;
+            self.progress = self.to;
+        }
+        changed
+    }
+
+    pub fn progress(&self) -> f32 {
+        self.progress
+    }
+
+    pub fn is_animating_at(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.started_at) < HOVER_ANIMATION_DURATION
+            && (self.from - self.to).abs() > f32::EPSILON
+    }
+
+    pub fn progress_at(&self, now: Instant) -> f32 {
+        let elapsed = now.saturating_duration_since(self.started_at);
+        let progress = elapsed.as_secs_f32() / HOVER_ANIMATION_DURATION.as_secs_f32();
+        self.from + (self.to - self.from) * ease_out(progress)
+    }
+}
+
+fn ease_out(progress: f32) -> f32 {
+    let inverse = 1.0 - progress.clamp(0.0, 1.0);
+    1.0 - inverse * inverse * inverse
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn assert_near(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn hover_rotation_preserves_idle_rotation_at_zero_progress() {
+        let seed = 6_000;
+
+        assert_near(
+            hover_rotation_degrees(seed, 0.0),
+            tile_layout::IDLE_MAX_ROTATION_DEGREES,
+        );
+    }
+
+    #[test]
+    fn hover_rotation_amplifies_idle_range_to_eight_degrees() {
+        assert_near(
+            hover_rotation_degrees(6_000, 1.0),
+            tile_layout::MAX_ROTATION_DEGREES,
+        );
+        assert_near(
+            hover_rotation_degrees(0, 1.0),
+            -tile_layout::MAX_ROTATION_DEGREES,
+        );
+    }
+
+    #[test]
+    fn hover_animation_eases_out_over_150ms() {
+        let t0 = Instant::now();
+        let anim = HoverAnimation::retargeted(false, true, t0);
+        let mid = anim.progress_at(t0 + Duration::from_millis(75));
+
+        assert!(
+            mid > 0.5,
+            "ease-out should advance past linear midpoint: {mid}"
+        );
+        assert_near(anim.progress_at(t0 + HOVER_ANIMATION_DURATION), 1.0);
+    }
+
+    #[test]
+    fn hover_animation_exit_starts_from_current_progress() {
+        let t0 = Instant::now();
+        let entering = HoverAnimation::retargeted(false, true, t0);
+        let mid = t0 + Duration::from_millis(75);
+        let exiting = entering.retarget(false, mid);
+
+        assert!(
+            (exiting.progress_at(mid) - entering.progress_at(mid)).abs() < 1e-6,
+            "retargeting should be continuous"
+        );
+        assert_near(exiting.progress_at(mid + HOVER_ANIMATION_DURATION), 0.0);
+    }
+
+    #[test]
+    fn retarget_if_changed_reports_only_target_changes() {
+        let t0 = Instant::now();
+        let mut anim = HoverAnimation::default();
+
+        assert!(!anim.retarget_if_changed(false, t0));
+        assert!(anim.retarget_if_changed(true, t0));
+        assert!(!anim.retarget_if_changed(true, t0 + Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn tick_settles_hover_entry_and_stops_redraw_loop() {
+        let t0 = Instant::now();
+        let mut anim = HoverAnimation::default();
+
+        assert!(anim.retarget_if_changed(true, t0));
+        assert!(anim.is_animating_at(t0 + Duration::from_millis(75)));
+        assert!(anim.tick(t0 + HOVER_ANIMATION_DURATION));
+        assert!(!anim.is_animating_at(t0 + HOVER_ANIMATION_DURATION));
+        assert_near(anim.progress(), 1.0);
+        assert!(!anim.tick(t0 + HOVER_ANIMATION_DURATION + Duration::from_millis(1)));
+    }
+}

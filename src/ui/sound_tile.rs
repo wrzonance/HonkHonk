@@ -1,10 +1,14 @@
 use iced::mouse;
 use iced::widget::canvas::{self, Path, Stroke, Text};
 use iced::{Color, Element, Length, Pixels, Point, Rectangle, Size, Vector};
+use iced::{Event, window};
 
 use crate::app::Message;
 use crate::ui::theme::{self, Hh, Theme, Tone};
 use crate::ui::tile_layout;
+
+mod animation;
+mod effects;
 
 pub const PLACEHOLDER_GRAPHIC: &str = "\u{1f50a}";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -51,9 +55,10 @@ pub fn seed_from_sound_id(id: &str) -> u64 {
 
 pub fn rotation_degrees(seed: u64) -> f32 {
     let bucket_count =
-        (tile_layout::MAX_ROTATION_DEGREES * 2.0 * ROTATION_STEPS_PER_DEGREE as f32) as u64 + 1;
+        (tile_layout::IDLE_MAX_ROTATION_DEGREES * 2.0 * ROTATION_STEPS_PER_DEGREE as f32) as u64
+            + 1;
     let bucket = (seed % bucket_count) as f32;
-    bucket / ROTATION_STEPS_PER_DEGREE as f32 - tile_layout::MAX_ROTATION_DEGREES
+    bucket / ROTATION_STEPS_PER_DEGREE as f32 - tile_layout::IDLE_MAX_ROTATION_DEGREES
 }
 
 pub fn tone_from_seed(seed: u64) -> Tone {
@@ -77,18 +82,39 @@ impl SoundTile {
 }
 
 impl<Message> canvas::Program<Message> for SoundTile {
-    type State = ();
+    type State = animation::HoverAnimation;
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<canvas::Action<Message>> {
+        let now = match event {
+            Event::Window(window::Event::RedrawRequested(now)) => *now,
+            _ => std::time::Instant::now(),
+        };
+        let retargeted = state.retarget_if_changed(cursor.is_over(bounds), now);
+        let progressed = state.tick(now);
+
+        if retargeted || state.is_animating_at(now) || progressed {
+            Some(canvas::Action::request_redraw())
+        } else {
+            None
+        }
+    }
 
     fn draw(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         renderer: &iced::Renderer,
         _theme: &iced::Theme,
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        self.paint(&mut frame, bounds.size());
+        self.paint(&mut frame, bounds.size(), state.progress());
         vec![frame.into_geometry()]
     }
 }
@@ -101,24 +127,25 @@ pub fn view<'a>(data: SoundTileData, theme: Theme, is_playing: bool) -> Element<
 }
 
 impl SoundTile {
-    fn paint(&self, frame: &mut canvas::Frame, size: Size) {
+    fn paint(&self, frame: &mut canvas::Frame, size: Size, hover_progress: f32) {
         let tile_size = tile_layout::fitted_tile_size(size);
         let center = Point::new(size.width / 2.0, size.height / 2.0);
+        let rotation = animation::hover_rotation_degrees(self.data.seed, hover_progress);
 
         frame.with_save(|frame| {
             frame.translate(Vector::new(center.x, center.y));
-            frame.rotate(self.data.rotation_degrees().to_radians());
+            frame.rotate(rotation.to_radians());
             frame.translate(Vector::new(-tile_size.width / 2.0, -tile_size.height / 2.0));
-            self.paint_rotated(frame, tile_size);
+            self.paint_rotated(frame, tile_size, hover_progress);
         });
     }
 
-    fn paint_rotated(&self, frame: &mut canvas::Frame, size: Size) {
+    fn paint_rotated(&self, frame: &mut canvas::Frame, size: Size, hover_progress: f32) {
         let tile = Path::rounded_rectangle(Point::ORIGIN, size, theme::radius::TILE);
         frame.fill(&tile, self.data.tone.tile_tint(self.theme.is_dark()));
         frame.stroke(&tile, self.tile_stroke());
         self.paint_top_row(frame, size);
-        self.paint_sticker(frame, size);
+        self.paint_sticker(frame, size, hover_progress);
         self.paint_name(frame, size);
         self.paint_footer(frame, size);
     }
@@ -154,13 +181,23 @@ impl SoundTile {
         }
     }
 
-    fn paint_sticker(&self, frame: &mut canvas::Frame, size: Size) {
+    fn paint_sticker(&self, frame: &mut canvas::Frame, size: Size, hover_progress: f32) {
         let center = Point::new(size.width / 2.0, size.height * 0.45);
         let radius = (size.width.min(size.height) * 0.24).clamp(28.0, 40.0);
+        let rotation = animation::hover_rotation_degrees(self.data.seed, hover_progress);
         frame.with_save(|frame| {
             frame.translate(Vector::new(center.x, center.y));
-            frame.rotate((self.data.rotation_degrees() * 1.5).to_radians());
-            draw_sticker_disc(frame, self.data.tone, self.theme, radius);
+            frame.rotate((rotation * 1.5).to_radians());
+            if self.is_playing {
+                effects::draw_sticker_glow(frame, self.data.tone, self.theme, radius);
+            }
+            effects::draw_sticker_disc(frame, self.data.tone, self.theme, radius);
+            if self.is_playing {
+                effects::draw_playing_ring(frame, self.data.tone, self.theme, radius);
+            }
+            if hover_progress > 0.0 {
+                effects::draw_hover_ring(frame, self.theme, radius, hover_progress);
+            }
             frame.fill_text(Text {
                 content: self.data.placeholder_graphic().to_owned(),
                 position: Point::ORIGIN,
@@ -211,31 +248,6 @@ impl SoundTile {
             );
         }
     }
-}
-
-fn draw_sticker_disc(frame: &mut canvas::Frame, tone: Tone, theme: Theme, radius: f32) {
-    let dark = theme.is_dark();
-    let disc = Path::circle(Point::ORIGIN, radius);
-    frame.fill(&disc, tone.sticker(dark));
-    for (scale, alpha) in [(0.78, 0.22), (0.58, 0.22), (0.36, 0.18)] {
-        let gloss = Path::circle(Point::new(-radius * 0.18, -radius * 0.22), radius * scale);
-        frame.fill(
-            &gloss,
-            Color {
-                a: alpha,
-                ..tone.highlight(dark)
-            },
-        );
-    }
-    frame.stroke(
-        &disc,
-        Stroke::default()
-            .with_color(Color {
-                a: 0.18,
-                ..theme.ink()
-            })
-            .with_width(1.0),
-    );
 }
 
 fn draw_hotkey_badge(frame: &mut canvas::Frame, hotkey: &str, center: Point, theme: Theme) {
@@ -311,7 +323,7 @@ mod tests {
 
             assert_eq!(first, second);
             assert!(
-                (-tile_layout::MAX_ROTATION_DEGREES..=tile_layout::MAX_ROTATION_DEGREES)
+                (-tile_layout::IDLE_MAX_ROTATION_DEGREES..=tile_layout::IDLE_MAX_ROTATION_DEGREES)
                     .contains(&first),
                 "rotation {first} exceeded the tile layout clearance"
             );
@@ -320,8 +332,11 @@ mod tests {
 
     #[test]
     fn rotation_degrees_uses_tile_layout_clearance_bound() {
-        assert_eq!(rotation_degrees(0), -tile_layout::MAX_ROTATION_DEGREES);
-        assert_eq!(rotation_degrees(6_000), tile_layout::MAX_ROTATION_DEGREES);
+        assert_eq!(rotation_degrees(0), -tile_layout::IDLE_MAX_ROTATION_DEGREES);
+        assert_eq!(
+            rotation_degrees(6_000),
+            tile_layout::IDLE_MAX_ROTATION_DEGREES
+        );
     }
 
     #[test]

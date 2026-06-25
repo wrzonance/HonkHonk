@@ -4,9 +4,16 @@
 //! in [`geometry`], rendering in [`view`].
 
 mod anim;
+mod flourish;
+mod flourish_view;
 mod geometry;
 mod view;
 
 pub use anim::{PanelAnim, SLIDE_DURATION};
+pub use flourish::{
+    BURST_DURATION, BurstOrigin, BurstSource, FeatherParticle, PanelFlourish, PanelTransition,
+    panel_burst_origin,
+};
+pub use flourish_view::view_panel_flourish;
 pub use geometry::{PanelRect, panel_geometry};
 pub use view::{SidePanelConfig, view_side_panel};

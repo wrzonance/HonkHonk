@@ -6,7 +6,8 @@ const TILE_INSET: f32 = 6.0;
 // Covers a four-column grid near a 2560px-wide window; wider cells shrink the
 // drawn tile instead of increasing row height or drawing into neighboring rows.
 const ROTATION_CLEARANCE_WIDTH: f32 = 600.0;
-pub const MAX_ROTATION_DEGREES: f32 = 3.0;
+pub const IDLE_MAX_ROTATION_DEGREES: f32 = 3.0;
+pub const MAX_ROTATION_DEGREES: f32 = 8.0;
 
 pub fn tile_slot_height() -> f32 {
     theme::component::SOUND_TILE_H.max(
@@ -96,8 +97,15 @@ mod tests {
     }
 
     #[test]
-    fn tile_slot_height_reserves_only_static_rotation_clearance() {
-        assert!(tile_slot_height() < theme::component::SOUND_TILE_H + 24.0);
+    fn tile_slot_height_reserves_hover_rotation_clearance() {
+        let required = rotated_bounds(
+            Size::new(ROTATION_CLEARANCE_WIDTH, visible_tile_height()),
+            MAX_ROTATION_DEGREES,
+        )
+        .height
+        .ceil();
+
+        assert_eq!(tile_slot_height(), required);
     }
 
     #[test]
@@ -127,6 +135,6 @@ mod tests {
         let slot = Size::new(360.0, tile_slot_height());
         let tile = fitted_tile_size(slot);
 
-        assert_eq!(tile.height, visible_tile_height());
+        assert!((tile.height - visible_tile_height()).abs() < EPSILON);
     }
 }

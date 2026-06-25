@@ -276,6 +276,7 @@ pub fn get_setting_value(id: SettingId, state: &HonkHonk) -> SettingValue {
         SettingId::RescanLibrary => SettingValue::None,
         SettingId::Theme => SettingValue::Index(state.config.theme.setting_index()),
         SettingId::Density => SettingValue::Index(state.config.density.setting_index()),
+        SettingId::PanelAnimations => SettingValue::Bool(state.config.panel_animations),
         SettingId::MicPassthrough => SettingValue::Bool(state.config.mic_passthrough),
         SettingId::MicPassthroughLevel => SettingValue::F32(state.config.mic_passthrough_level),
         SettingId::OverlapMode => SettingValue::Index(state.config.overlap_mode.setting_index()),
@@ -295,6 +296,7 @@ pub fn setting_message(id: SettingId, value: SettingValue) -> Message {
         (SettingId::Density, SettingValue::Index(i)) => {
             Message::DensityChanged(crate::state::config::Density::from_setting_index(i))
         }
+        (SettingId::PanelAnimations, SettingValue::Bool(v)) => Message::PanelAnimationsChanged(v),
         (SettingId::MicPassthrough, SettingValue::Bool(v)) => Message::MicPassthroughChanged(v),
         (SettingId::MicPassthroughLevel, SettingValue::F32(v)) => {
             Message::MicPassthroughLevelChanged(v)
