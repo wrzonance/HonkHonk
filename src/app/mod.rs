@@ -241,6 +241,11 @@ pub struct HonkHonk {
     /// Monotonic run counter; a `MacroStepDue`/`MacroStepDecoded` for a run that
     /// is no longer current is ignored (re-fire / Stop All cancellation).
     macro_run_id: u64,
+    /// Per-voice counter for macro steps. Combined with a top-bit flag into a
+    /// voice-id space disjoint from the tile `play_generation`, so a macro firing
+    /// mid-tile-press never advances (and corrupts) the tile's now-playing UI
+    /// ownership (#166).
+    macro_voice_seq: u64,
 }
 
 fn shortcuts_stream_sub(
@@ -409,6 +414,7 @@ impl HonkHonk {
             macros: crate::state::MacroStore::load(),
             macro_playback: None,
             macro_run_id: 0,
+            macro_voice_seq: 0,
         }
     }
 
@@ -460,6 +466,7 @@ impl HonkHonk {
             macros: crate::state::MacroStore::default(),
             macro_playback: None,
             macro_run_id: 0,
+            macro_voice_seq: 0,
         }
     }
 

@@ -19,6 +19,12 @@ use crate::audio::effects::EffectSettings;
 use crate::audio::{AudioCommand, CachedPcm, PlayMode};
 use crate::state::Step;
 
+/// Macro voices live in a disjoint id space (top bit set) so they never collide
+/// with — or advance — the tile `play_generation` that drives now-playing UI
+/// ownership (#149). A macro firing mid-tile-press must not break the tile's
+/// playhead/highlight by making the tile's own decode/finish look stale.
+const MACRO_VOICE_FLAG: u64 = 1 << 63;
+
 /// Per-voice parameters for one macro-step dispatch. Bundled so the dispatch
 /// helpers and the `MacroStepDecoded` message stay within the arg-count lint.
 #[derive(Debug, Clone, PartialEq)]
@@ -35,15 +41,19 @@ impl HonkHonk {
     /// one delayed [`Message::MacroStepDue`] per step. A no-op for an unknown or
     /// empty macro.
     pub(crate) fn play_macro(&mut self, id: &str) -> Task<Message> {
+        // Validate before cancelling: a no-op request (unknown or empty macro)
+        // must not stop a macro that is currently running.
+        let plan = {
+            let Some(macro_def) = self.macros.get(id) else {
+                return Task::none();
+            };
+            if macro_def.steps.is_empty() {
+                return Task::none();
+            }
+            schedule(macro_def)
+        };
         self.cancel_macro();
         let run_id = self.macro_run_id;
-        let Some(macro_def) = self.macros.get(id) else {
-            return Task::none();
-        };
-        if macro_def.steps.is_empty() {
-            return Task::none();
-        }
-        let plan = schedule(macro_def);
         self.macro_playback = Some(MacroPlayback::new(run_id, id.to_string(), plan.len()));
         let tasks = plan.into_iter().map(|scheduled| {
             let (delay, step) = (scheduled.delay, scheduled.step);
@@ -137,6 +147,13 @@ impl HonkHonk {
         self.macro_playback.as_ref().map(|p| p.run_id)
     }
 
+    /// Next macro voice id, in the top-bit-flagged space disjoint from the tile
+    /// `play_generation`.
+    fn next_macro_voice_id(&mut self) -> u64 {
+        self.macro_voice_seq = self.macro_voice_seq.wrapping_add(1);
+        MACRO_VOICE_FLAG | self.macro_voice_seq
+    }
+
     /// Resolves the step against the library (macros reference sounds by path),
     /// assigns a fresh voice/generation, and fires it — warm PCM now, else via
     /// an off-thread decode. A step whose sound is gone resolves as failed.
@@ -146,10 +163,10 @@ impl HonkHonk {
             return Task::none();
         };
         let path = entry.path.clone();
-        self.play_generation = self.play_generation.wrapping_add(1);
+        let sound_id = entry.id.clone();
         let voice = MacroVoice {
-            voice_id: self.play_generation,
-            sound_id: entry.id.clone(),
+            voice_id: self.next_macro_voice_id(),
+            sound_id,
             gain: step.gain,
             effects: step.effects,
         };
@@ -185,9 +202,9 @@ impl HonkHonk {
     }
 
     /// Sends a concurrent `Play`. A macro voice's `generation` equals its
-    /// `voice_id`, which is always behind `play_generation` by the time it lands,
-    /// so it never claims the now-playing highlight (that stays with tile
-    /// presses).
+    /// top-bit-flagged `voice_id`, which can never equal the tile
+    /// `play_generation`, so its `PlaybackStarted`/`Finished` never claim or
+    /// clear the now-playing highlight (that stays with tile presses).
     fn send_macro_play(&self, voice: &MacroVoice, pcm: &Arc<CachedPcm>) {
         if let Some(audio) = &self.audio {
             audio.send(AudioCommand::Play {
@@ -221,148 +238,4 @@ impl HonkHonk {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::audio::CachedPcm;
-    use crate::state::{AudioFormat, SoundEntry, Step};
-    use std::path::PathBuf;
-    use std::time::Duration;
-
-    fn sound(id: &str, path: &str) -> SoundEntry {
-        SoundEntry {
-            id: id.into(),
-            name: id.to_uppercase(),
-            path: path.into(),
-            format: AudioFormat::Wav,
-            duration_ms: Some(100),
-            category: "Test".into(),
-        }
-    }
-
-    fn warm_pcm() -> Arc<CachedPcm> {
-        Arc::new(CachedPcm {
-            samples: Arc::new(vec![0.0_f32; 16]),
-            sample_rate: 48_000,
-            channels: 1,
-            duration: Duration::from_millis(100),
-        })
-    }
-
-    /// App pre-loaded with one library sound (warm-cached) and a macro that
-    /// fires it once at t=0.
-    fn app_with_warm_macro() -> (HonkHonk, String) {
-        let mut app = HonkHonk::new_for_test();
-        app.sounds = vec![sound("s1", "/s/a.wav")];
-        app.audio_store.insert_pcm("s1".into(), warm_pcm());
-        let id = app.macros.add("m").id.clone();
-        app.macros
-            .replace_steps(&id, vec![Step::new(PathBuf::from("/s/a.wav"), 0)]);
-        (app, id)
-    }
-
-    #[test]
-    fn play_macro_starts_a_run_and_refire_restarts_it() {
-        let (mut app, id) = app_with_warm_macro();
-        let _ = app.play_macro(&id);
-        let first = app.macro_playback.as_ref().expect("run started");
-        assert_eq!(first.macro_id, id);
-        let run1 = first.run_id;
-
-        // Re-firing the same macro cancels and restarts (new run id).
-        let _ = app.play_macro(&id);
-        let run2 = app.macro_playback.as_ref().unwrap().run_id;
-        assert_ne!(run1, run2, "re-fire must start a fresh run");
-    }
-
-    #[test]
-    fn playing_another_macro_replaces_the_first() {
-        let (mut app, a) = app_with_warm_macro();
-        let b = app.macros.add("other").id.clone();
-        app.macros
-            .replace_steps(&b, vec![Step::new(PathBuf::from("/s/a.wav"), 0)]);
-
-        let _ = app.play_macro(&a);
-        let _ = app.play_macro(&b);
-        assert_eq!(
-            app.macro_playback.as_ref().unwrap().macro_id,
-            b,
-            "one macro at a time: B replaces A"
-        );
-    }
-
-    #[test]
-    fn empty_or_unknown_macro_starts_no_run() {
-        let mut app = HonkHonk::new_for_test();
-        let empty = app.macros.add("empty").id.clone();
-        let _ = app.play_macro(&empty);
-        assert!(app.macro_playback.is_none(), "empty macro: no run");
-        let _ = app.play_macro("does-not-exist");
-        assert!(app.macro_playback.is_none(), "unknown macro: no run");
-    }
-
-    #[test]
-    fn stale_step_due_after_cancel_is_ignored() {
-        let (mut app, id) = app_with_warm_macro();
-        let _ = app.play_macro(&id);
-        let run_id = app.macro_playback.as_ref().unwrap().run_id;
-        app.cancel_macro(); // run no longer current
-        let _ = app.on_macro_step_due(run_id, 0);
-        assert!(
-            app.macro_playback.is_none(),
-            "a due-message from a cancelled run must not dispatch"
-        );
-    }
-
-    #[test]
-    fn step_due_for_superseded_run_does_not_dispatch_into_new_run() {
-        let (mut app, a) = app_with_warm_macro();
-        let _ = app.play_macro(&a);
-        let stale_run = app.macro_playback.as_ref().unwrap().run_id;
-        // A second macro supersedes the first; the old run's timer fires late.
-        let _ = app.play_macro(&a);
-        let _ = app.on_macro_step_due(stale_run, 0);
-        assert!(
-            app.macro_playback
-                .as_ref()
-                .unwrap()
-                .active_voices()
-                .is_empty(),
-            "a stale run's step must not fire a voice into the current run"
-        );
-    }
-
-    #[test]
-    fn warm_step_dispatches_then_finish_clears_the_run() {
-        let (mut app, id) = app_with_warm_macro();
-        let _ = app.play_macro(&id);
-        let run_id = app.macro_playback.as_ref().unwrap().run_id;
-
-        let _ = app.on_macro_step_due(run_id, 0);
-        let voice_id = app
-            .macro_playback
-            .as_ref()
-            .expect("run still active mid-playback")
-            .active_voices()[0];
-
-        // The voice's PlaybackFinished completes the single-step run exactly once.
-        app.note_macro_voice_finished(voice_id);
-        assert!(
-            app.macro_playback.is_none(),
-            "run clears once its last voice finishes"
-        );
-    }
-
-    #[test]
-    fn foreign_finished_voice_does_not_clear_run() {
-        let (mut app, id) = app_with_warm_macro();
-        let _ = app.play_macro(&id);
-        let run_id = app.macro_playback.as_ref().unwrap().run_id;
-        let _ = app.on_macro_step_due(run_id, 0);
-
-        app.note_macro_voice_finished(999_999); // a tile press, not ours
-        assert!(
-            app.macro_playback.is_some(),
-            "an unrelated voice finishing must not clear the macro run"
-        );
-    }
-}
+mod tests;
