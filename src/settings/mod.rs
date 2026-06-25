@@ -202,6 +202,19 @@ mod tests {
     }
 
     #[test]
+    fn overlap_mode_control_matches_setting_indices() {
+        let def = SETTINGS_REGISTRY
+            .iter()
+            .find(|d| matches!(d.id, SettingId::OverlapMode))
+            .expect("OverlapMode must be in SETTINGS_REGISTRY");
+
+        let ControlType::Radio(options) = def.control else {
+            panic!("OverlapMode must be a Radio control");
+        };
+        assert_eq!(options, &["Concurrent", "Interrupt"]);
+    }
+
+    #[test]
     fn theme_entry_exists_in_appearance_category() {
         let def = SETTINGS_REGISTRY
             .iter()
