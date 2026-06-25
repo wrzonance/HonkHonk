@@ -10,6 +10,7 @@ pub mod sound_editor;
 pub mod sound_grid;
 pub mod sound_tile;
 pub mod theme;
+pub mod tile_layout;
 pub mod volume;
 pub mod waveform;
 

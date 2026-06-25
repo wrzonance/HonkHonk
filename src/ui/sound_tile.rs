@@ -4,6 +4,7 @@ use iced::{Color, Element, Length, Pixels, Point, Rectangle, Size, Vector};
 
 use crate::app::Message;
 use crate::ui::theme::{self, Hh, Theme, Tone};
+use crate::ui::tile_layout;
 
 pub const PLACEHOLDER_GRAPHIC: &str = "\u{1f50a}";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -92,17 +93,13 @@ impl<Message> canvas::Program<Message> for SoundTile {
 pub fn view<'a>(data: SoundTileData, theme: Theme, is_playing: bool) -> Element<'a, Message> {
     canvas::Canvas::new(SoundTile::new(data, theme, is_playing))
         .width(Length::Fill)
-        .height(theme::component::SOUND_TILE_H)
+        .height(tile_layout::tile_slot_height())
         .into()
 }
 
 impl SoundTile {
     fn paint(&self, frame: &mut canvas::Frame, size: Size) {
-        let inset = 6.0;
-        let tile_size = Size::new(
-            (size.width - inset * 2.0).max(0.0),
-            (size.height - inset * 2.0).max(0.0),
-        );
+        let tile_size = tile_layout::fitted_tile_size(size);
         let center = Point::new(size.width / 2.0, size.height / 2.0);
 
         frame.with_save(|frame| {

@@ -5,6 +5,7 @@ use crate::app::Message;
 use crate::state::{SlotMap, SoundEntry, SoundMetaStore};
 use crate::ui::sound_tile::{self, SoundTileData};
 use crate::ui::theme::{self, Hh, Theme};
+use crate::ui::tile_layout;
 
 #[derive(Clone, Copy)]
 pub struct SlotCtx<'a> {
@@ -80,7 +81,7 @@ pub fn view_grid<'a>(
             tiles.extend((0..missing_tile_slots(chunk.len(), columns)).map(|_| {
                 Space::new()
                     .width(Length::Fill)
-                    .height(theme::component::SOUND_TILE_H)
+                    .height(tile_layout::tile_slot_height())
                     .into()
             }));
 
