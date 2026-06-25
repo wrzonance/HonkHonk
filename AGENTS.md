@@ -12,6 +12,8 @@ Wayland-native Linux soundboard. Pure Rust — Iced 0.14 GUI (Elm/MVU) + PipeWir
 - **File size: 400 lines max** (stricter than the global default) — split before adding.
   Functions <=50 lines.
 - **Coverage: 80% target** via `cargo tarpaulin` every CI run (diagnostic globally; a target here).
+- **GitHub PRs created by Claude or Codex must be drafts.** Use `gh pr create --draft` or connector
+  `draft: true`; do not create ready-for-review PRs directly.
 - **Known violation:** `src/app.rs` is 2,491 lines. Do NOT add to it — split first.
 
 ## Architecture
