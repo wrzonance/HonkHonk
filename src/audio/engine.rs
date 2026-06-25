@@ -546,8 +546,9 @@ fn run_engine(
             send_finished_events(&ctx.evt_tx, finished);
         }
         AudioCommand::SetVolume(v) => {
-            ctx.engine_volume.set(v.clamp(0.0, 1.0));
-            ctx.voices.borrow_mut().set_master_volume(v);
+            let volume = v.clamp(0.0, 1.0);
+            ctx.engine_volume.set(volume);
+            ctx.voices.borrow_mut().set_master_volume(volume);
         }
         AudioCommand::SetMicPassthrough(v) => {
             registry_guard.apply_passthrough(v);

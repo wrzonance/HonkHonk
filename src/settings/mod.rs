@@ -97,7 +97,7 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
         id: SettingId::OverlapMode,
         category: SettingCategory::Audio,
         label: "Overlap mode",
-        hint: "Whether tile presses layer sounds or interrupt the current voice.",
+        hint: "Whether tile presses layer sounds or stop all active voices before the new sound.",
         control: ControlType::Radio(&["Concurrent", "Interrupt"]),
     },
     SettingDef {

@@ -115,19 +115,28 @@ impl HonkHonk {
     /// Starts the playhead from the decoded duration, ensures the waveform
     /// envelope is cached, and dispatches the engine `Play`. Shared by the warm
     /// cache-hit path and `handle_decoded`.
+    ///
+    /// In concurrent mode superseded presses stay pending (`pending_play_ids` is
+    /// only cleared on Interrupt), so an older press that finishes decoding last
+    /// still lands here. Its audio must start, but only the current generation
+    /// may own the highlight/playhead — otherwise a late out-of-order decode
+    /// retakes the now-playing UI from the newer press.
     fn start_playback(
         &mut self,
         id: &str,
         pcm: std::sync::Arc<crate::audio::CachedPcm>,
         dispatch: PlaybackDispatch,
     ) {
-        self.now_playing.start(now_playing::PlaybackStart {
-            id,
-            duration: pcm.duration,
-            samples: pcm.samples.as_ref().as_slice(),
-            channels: pcm.channels,
-            now: Instant::now(),
-        });
+        let owns_ui = dispatch.generation == self.play_generation;
+        if owns_ui {
+            self.now_playing.start(now_playing::PlaybackStart {
+                id,
+                duration: pcm.duration,
+                samples: pcm.samples.as_ref().as_slice(),
+                channels: pcm.channels,
+                now: Instant::now(),
+            });
+        }
         if let Some(ref audio) = self.audio {
             audio.send(AudioCommand::Play {
                 voice_id: dispatch.voice_id,
@@ -140,7 +149,9 @@ impl HonkHonk {
                 effects: dispatch.effects,
                 mode: dispatch.mode,
             });
-            self.playing = Some(id.to_string());
+            if owns_ui {
+                self.playing = Some(id.to_string());
+            }
         }
     }
 
@@ -181,6 +192,67 @@ mod tests {
                 .current_key()
                 .is_some_and(|key| key.matches(Some("new"), 0.0)),
             "cold play must invalidate stale waveform bars before decode completes"
+        );
+    }
+
+    #[test]
+    fn late_concurrent_decode_keeps_newest_in_now_playing() {
+        let mut app = HonkHonk::new_for_test();
+        let (handle, _evt_tx) = crate::audio::test_handle();
+        app.audio = Some(handle);
+        // Default overlap mode is Concurrent, so superseded presses stay pending.
+
+        let sound = |id: &str| SoundEntry {
+            id: id.into(),
+            name: id.to_uppercase(),
+            path: format!("/tmp/{id}.wav").into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: Some(100),
+            category: "Test".into(),
+        };
+
+        // Two cold presses: each bumps the generation (A=1, B=2) and, in
+        // concurrent mode, both stay pending awaiting their decode.
+        let _ = app.request_play(&sound("a"), false);
+        let _ = app.request_play(&sound("b"), false);
+
+        let effects = app.effects_ui.to_effect_settings();
+        let pcm = || crate::audio::CachedPcm {
+            samples: std::sync::Arc::new(vec![0.0_f32; 16]),
+            sample_rate: 48_000,
+            channels: 1,
+            duration: std::time::Duration::from_millis(100),
+        };
+        let dispatch = |gen: u64| PlaybackDispatch {
+            generation: gen,
+            voice_id: gen,
+            gain: 1.0,
+            effects,
+            mode: PlayMode::Concurrent,
+        };
+
+        // Decodes land out of order: the newest press (B) finishes first, then
+        // the older press (A).
+        let _ = app.handle_decoded("b".into(), Ok(pcm()), dispatch(2));
+        let _ = app.handle_decoded("a".into(), Ok(pcm()), dispatch(1));
+
+        // The older decode must still start its audio (cached + accepted, not
+        // dropped as stale)...
+        assert!(
+            app.audio_store.get_pcm("a").is_some(),
+            "older concurrent decode must still start playing"
+        );
+        // ...but the newest press keeps ownership of the highlight/playhead.
+        assert_eq!(
+            app.playing.as_deref(),
+            Some("b"),
+            "a late older decode must not retake `playing` from the newer press"
+        );
+        assert!(
+            app.now_playing
+                .current_key()
+                .is_some_and(|key| key.matches(Some("b"), 0.0)),
+            "a late older decode must not retake the now-playing highlight"
         );
     }
 }
