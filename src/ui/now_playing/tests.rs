@@ -98,6 +98,34 @@ fn clear_resets_playback_without_dropping_cached_envelope() {
 }
 
 #[test]
+fn reserved_height_is_stable_across_playback_state_changes() {
+    use std::time::{Duration, Instant};
+
+    let mut np = NowPlaying::default();
+    let idle_height = np.reserved_height();
+
+    assert!(np.pending("s1"));
+    assert_eq!(np.reserved_height(), idle_height);
+
+    let t0 = Instant::now();
+    let samples = vec![0.25_f32; 128];
+    np.start(PlaybackStart {
+        id: "s1",
+        duration: Duration::from_secs(10),
+        samples: &samples,
+        channels: 1,
+        now: t0,
+    });
+    assert_eq!(np.reserved_height(), idle_height);
+
+    np.tick(t0 + Duration::from_secs(5));
+    assert_eq!(np.reserved_height(), idle_height);
+
+    np.clear();
+    assert_eq!(np.reserved_height(), idle_height);
+}
+
+#[test]
 fn same_state_reuses_cache() {
     let mut np = NowPlaying::default();
     np.sync(Some("s1"), 0.5);
