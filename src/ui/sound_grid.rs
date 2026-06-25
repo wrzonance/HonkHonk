@@ -1,10 +1,11 @@
-use iced::widget::{button, column, container, mouse_area, row, text};
+use iced::widget::{Space, button, column, container, mouse_area, row, text};
 use iced::{Element, Length, mouse};
 
 use crate::app::Message;
 use crate::state::{SlotMap, SoundEntry, SoundMetaStore};
 use crate::ui::sound_tile::{self, SoundTileData};
 use crate::ui::theme::{self, Hh, Theme};
+use crate::ui::tile_layout;
 
 #[derive(Clone, Copy)]
 pub struct SlotCtx<'a> {
@@ -26,6 +27,10 @@ struct TileCtx<'a> {
     slot_ctx: SlotCtx<'a>,
     shortcuts_active: bool,
     sound_meta: &'a SoundMetaStore,
+}
+
+fn missing_tile_slots(tiles_in_row: usize, columns: usize) -> usize {
+    columns.saturating_sub(tiles_in_row)
 }
 
 pub fn view_grid<'a>(
@@ -54,11 +59,13 @@ pub fn view_grid<'a>(
         shortcuts_active: grid.shortcuts_active,
         sound_meta: grid.sound_meta,
     };
+    // Keep invalid callers from reaching slice::chunks(0).
+    let columns = grid.columns.max(1);
 
     let rows: Vec<Element<'a, Message>> = sounds
-        .chunks(grid.columns)
+        .chunks(columns)
         .map(|chunk| {
-            let tiles: Vec<Element<'a, Message>> = chunk
+            let mut tiles: Vec<Element<'a, Message>> = chunk
                 .iter()
                 .map(|sound| {
                     let is_playing = playing == Some(sound.id.as_str());
@@ -71,19 +78,27 @@ pub fn view_grid<'a>(
                 })
                 .collect();
 
+            tiles.extend((0..missing_tile_slots(chunk.len(), columns)).map(|_| {
+                Space::new()
+                    .width(Length::Fill)
+                    .height(tile_layout::tile_slot_height())
+                    .into()
+            }));
+
             let r = tiles
                 .into_iter()
-                .fold(row![].spacing(theme::space::LG), |r, t| r.push(t));
+                .fold(row![].spacing(theme::space::LG), |r, t| r.push(t))
+                .width(Length::Fill);
 
             r.into()
         })
         .collect();
 
-    let grid = rows
+    let grid_column = rows
         .into_iter()
         .fold(column![].spacing(theme::space::LG), |c, r| c.push(r));
 
-    grid.width(Length::Fill).into()
+    grid_column.width(Length::Fill).into()
 }
 
 fn tile_data(sound: &SoundEntry, ctx: TileCtx<'_>) -> SoundTileData {
@@ -254,4 +269,20 @@ pub fn context_menu_overlay<'a>(
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incomplete_rows_reserve_all_missing_tile_slots() {
+        // Iced view rendering is intentionally not unit-tested here; this pins
+        // the pure filler-slot contract used by the grid rows above.
+        assert_eq!(missing_tile_slots(0, 5), 5);
+        assert_eq!(missing_tile_slots(1, 5), 4);
+        assert_eq!(missing_tile_slots(2, 5), 3);
+        assert_eq!(missing_tile_slots(5, 5), 0);
+        assert_eq!(missing_tile_slots(6, 5), 0);
+    }
 }

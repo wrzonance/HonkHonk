@@ -1,10 +1,12 @@
 use std::time::{Duration, Instant};
 
+use crate::ui::tile_layout;
+
 pub const HOVER_ANIMATION_DURATION: Duration = Duration::from_millis(150);
-const HOVER_ROTATION_SCALE: f32 = 8.0 / 3.0;
 
 pub fn hover_rotation_degrees(seed: u64, hover_progress: f32) -> f32 {
-    let scale = 1.0 + (HOVER_ROTATION_SCALE - 1.0) * hover_progress.clamp(0.0, 1.0);
+    let scale = tile_layout::MAX_ROTATION_DEGREES / tile_layout::IDLE_MAX_ROTATION_DEGREES;
+    let scale = 1.0 + (scale - 1.0) * hover_progress.clamp(0.0, 1.0);
     super::rotation_degrees(seed) * scale
 }
 
@@ -105,13 +107,22 @@ mod tests {
     fn hover_rotation_preserves_idle_rotation_at_zero_progress() {
         let seed = 6_000;
 
-        assert_near(hover_rotation_degrees(seed, 0.0), 3.0);
+        assert_near(
+            hover_rotation_degrees(seed, 0.0),
+            tile_layout::IDLE_MAX_ROTATION_DEGREES,
+        );
     }
 
     #[test]
     fn hover_rotation_amplifies_idle_range_to_eight_degrees() {
-        assert_near(hover_rotation_degrees(6_000, 1.0), 8.0);
-        assert_near(hover_rotation_degrees(0, 1.0), -8.0);
+        assert_near(
+            hover_rotation_degrees(6_000, 1.0),
+            tile_layout::MAX_ROTATION_DEGREES,
+        );
+        assert_near(
+            hover_rotation_degrees(0, 1.0),
+            -tile_layout::MAX_ROTATION_DEGREES,
+        );
     }
 
     #[test]

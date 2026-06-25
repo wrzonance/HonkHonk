@@ -5,6 +5,7 @@ use iced::{Event, window};
 
 use crate::app::Message;
 use crate::ui::theme::{self, Hh, Theme, Tone};
+use crate::ui::tile_layout;
 
 mod animation;
 mod effects;
@@ -12,6 +13,7 @@ mod effects;
 pub const PLACEHOLDER_GRAPHIC: &str = "\u{1f50a}";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+const ROTATION_STEPS_PER_DEGREE: u64 = 1_000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundTileData {
@@ -52,8 +54,11 @@ pub fn seed_from_sound_id(id: &str) -> u64 {
 }
 
 pub fn rotation_degrees(seed: u64) -> f32 {
-    let bucket = (seed % 6_001) as f32;
-    bucket / 1_000.0 - 3.0
+    let bucket_count =
+        (tile_layout::IDLE_MAX_ROTATION_DEGREES * 2.0 * ROTATION_STEPS_PER_DEGREE as f32) as u64
+            + 1;
+    let bucket = (seed % bucket_count) as f32;
+    bucket / ROTATION_STEPS_PER_DEGREE as f32 - tile_layout::IDLE_MAX_ROTATION_DEGREES
 }
 
 pub fn tone_from_seed(seed: u64) -> Tone {
@@ -117,17 +122,13 @@ impl<Message> canvas::Program<Message> for SoundTile {
 pub fn view<'a>(data: SoundTileData, theme: Theme, is_playing: bool) -> Element<'a, Message> {
     canvas::Canvas::new(SoundTile::new(data, theme, is_playing))
         .width(Length::Fill)
-        .height(theme::component::SOUND_TILE_H)
+        .height(tile_layout::tile_slot_height())
         .into()
 }
 
 impl SoundTile {
     fn paint(&self, frame: &mut canvas::Frame, size: Size, hover_progress: f32) {
-        let inset = 6.0;
-        let tile_size = Size::new(
-            (size.width - inset * 2.0).max(0.0),
-            (size.height - inset * 2.0).max(0.0),
-        );
+        let tile_size = tile_layout::fitted_tile_size(size);
         let center = Point::new(size.width / 2.0, size.height / 2.0);
         let rotation = animation::hover_rotation_degrees(self.data.seed, hover_progress);
 
@@ -322,10 +323,20 @@ mod tests {
 
             assert_eq!(first, second);
             assert!(
-                (-3.0..=3.0).contains(&first),
-                "rotation {first} was outside the +/-3 degree range"
+                (-tile_layout::IDLE_MAX_ROTATION_DEGREES..=tile_layout::IDLE_MAX_ROTATION_DEGREES)
+                    .contains(&first),
+                "rotation {first} exceeded the tile layout clearance"
             );
         }
+    }
+
+    #[test]
+    fn rotation_degrees_uses_tile_layout_clearance_bound() {
+        assert_eq!(rotation_degrees(0), -tile_layout::IDLE_MAX_ROTATION_DEGREES);
+        assert_eq!(
+            rotation_degrees(6_000),
+            tile_layout::IDLE_MAX_ROTATION_DEGREES
+        );
     }
 
     #[test]
