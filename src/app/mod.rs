@@ -14,7 +14,7 @@ use crate::state::{AppConfig, SlotMap, SoundEntry, SoundMeta, SoundMetaStore};
 use crate::tray::{TrayEvent, TrayHandle};
 use crate::ui::effects_panel::{self, EffectsUiState, PresetId};
 use crate::ui::effects_panel_view;
-use crate::ui::side_panel::PanelAnim;
+use crate::ui::side_panel::{PanelAnim, PanelFlourish, PanelTransition, panel_geometry};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
@@ -94,6 +94,7 @@ pub enum Message {
     // Appearance
     ThemeChanged(theme::Theme),
     DensityChanged(Density),
+    PanelAnimationsChanged(bool),
     RendererChanged(crate::state::Renderer),
     // Audio
     MicPassthroughChanged(bool),
@@ -200,6 +201,8 @@ pub struct HonkHonk {
     /// Open/close animation state for the effects side panel (#143). Logic lives
     /// in `ui::side_panel`.
     effects_panel: PanelAnim,
+    /// Reusable panel open/close feather burst overlay (#144).
+    panel_flourish: PanelFlourish,
     /// Eased panel progress (0=closed..1=open) fed to the view; refreshed each
     /// frame by `effects_panel.tick`.
     panel_progress: f32,
@@ -376,6 +379,7 @@ impl HonkHonk {
             editor_draft_volume: 1.0,
             effects_ui: EffectsUiState::default(),
             effects_panel: PanelAnim::default(),
+            panel_flourish: PanelFlourish::default(),
             panel_progress: 0.0,
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             play_generation: 0,
@@ -424,6 +428,7 @@ impl HonkHonk {
             editor_draft_volume: 1.0,
             effects_ui: EffectsUiState::default(),
             effects_panel: PanelAnim::default(),
+            panel_flourish: PanelFlourish::default(),
             panel_progress: 0.0,
             now_playing: crate::ui::now_playing::NowPlaying::default(),
             play_generation: 0,
@@ -455,6 +460,15 @@ impl HonkHonk {
                 audio.send(cmd);
             }
         }
+    }
+
+    fn emit_effects_panel_flourish(&mut self, transition: PanelTransition, now: Instant) {
+        if !self.visible || !self.config.panel_animations {
+            return;
+        }
+        let panel = panel_geometry(self.window_size, effects_panel_view::EFFECTS_PANEL_W);
+        self.panel_flourish
+            .emit(panel, self.window_size, transition, now);
     }
 
     #[cfg(test)]
@@ -552,6 +566,9 @@ impl HonkHonk {
         match message {
             Message::ToggleVisibility => {
                 self.visible = !self.visible;
+                if !self.visible {
+                    self.panel_flourish.clear();
+                }
                 Task::none()
             }
             Message::Quit => {
@@ -722,7 +739,11 @@ impl HonkHonk {
                     // mid-close — so a second Escape never falls through to clear
                     // the search query. `close` is a no-op if already closing.
                     let now = Instant::now();
+                    let should_emit = self.effects_panel.is_open();
                     self.effects_panel.close(now);
+                    if should_emit {
+                        self.emit_effects_panel_flourish(PanelTransition::Close, now);
+                    }
                     self.panel_progress = self.effects_panel.progress(now);
                 } else if self.search_had_focus {
                     // First Esc: treat as blur — Iced already handled unfocus.
@@ -831,6 +852,7 @@ impl HonkHonk {
             Message::Frame(now) => {
                 self.now_playing.tick(now);
                 self.panel_progress = self.effects_panel.tick(now);
+                self.panel_flourish.tick(now, Some(self.cursor_pos));
                 Task::none()
             }
             Message::ShowSlots => {
@@ -925,6 +947,21 @@ impl HonkHonk {
                     if let Err(e) = self.config.save() {
                         tracing::warn!(error = %e, "config save error");
                     }
+                }
+                Task::none()
+            }
+            Message::PanelAnimationsChanged(enabled) => {
+                if self.config.panel_animations != enabled {
+                    self.config = AppConfig {
+                        panel_animations: enabled,
+                        ..self.config.clone()
+                    };
+                    if let Err(e) = self.config.save() {
+                        tracing::warn!(error = %e, "config save error");
+                    }
+                }
+                if !enabled {
+                    self.panel_flourish.clear();
                 }
                 Task::none()
             }
@@ -1040,12 +1077,22 @@ impl HonkHonk {
             Message::ToggleEffectsPanel => {
                 let now = Instant::now();
                 self.effects_panel.toggle(now);
+                let transition = if self.effects_panel.is_open() {
+                    PanelTransition::Open
+                } else {
+                    PanelTransition::Close
+                };
+                self.emit_effects_panel_flourish(transition, now);
                 self.panel_progress = self.effects_panel.progress(now);
                 Task::none()
             }
             Message::CloseEffectsPanel => {
                 let now = Instant::now();
+                let was_visible = self.effects_panel.is_visible();
                 self.effects_panel.close(now);
+                if was_visible {
+                    self.emit_effects_panel_flourish(PanelTransition::Close, now);
+                }
                 self.panel_progress = self.effects_panel.progress(now);
                 Task::none()
             }
@@ -1334,7 +1381,10 @@ impl HonkHonk {
         // an idle tray app never repaints. `window::frames()` yields one `Instant`
         // per refresh; subscriptions are re-evaluated each update, so this drops
         // out automatically when playback ends. No fps cap (let it fly at refresh).
-        if self.playing.is_some() || self.effects_panel.is_animating() {
+        let frame_needed = self.playing.is_some()
+            || self.effects_panel.is_animating()
+            || self.panel_flourish.is_animating();
+        if self.visible && frame_needed {
             subs.push(iced::window::frames().map(Message::Frame));
         }
 
@@ -1467,6 +1517,9 @@ impl HonkHonk {
             self.panel_progress,
             t,
         ));
+        if let Some(layer) = crate::ui::side_panel::view_panel_flourish(&self.panel_flourish) {
+            layers.push(layer);
+        }
 
         // Overlay context menu at window level so cursor coords map exactly.
         if let (Some(sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
