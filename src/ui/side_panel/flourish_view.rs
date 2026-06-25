@@ -1,24 +1,22 @@
 //! Renderer-neutral canvas overlay for [`PanelFlourish`](super::PanelFlourish).
 
-use iced::widget::canvas;
+use iced::widget::{Space, canvas};
 use iced::{Color, Element, Length, Point, Vector};
 
 use crate::app::Message;
 
 use super::{FeatherParticle, PanelFlourish};
 
-pub fn view_panel_flourish(flourish: &PanelFlourish) -> Option<Element<'_, Message>> {
+pub fn view_panel_flourish(flourish: &PanelFlourish) -> Element<'_, Message> {
     if !flourish.is_animating() {
-        return None;
+        return Space::new().width(Length::Fill).height(Length::Fill).into();
     }
-    Some(
-        canvas::Canvas::new(FeatherProgram {
-            particles: flourish.particles(),
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into(),
-    )
+    canvas::Canvas::new(FeatherProgram {
+        particles: flourish.particles(),
+    })
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 struct FeatherProgram<'a> {

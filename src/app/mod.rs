@@ -19,11 +19,11 @@ use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
 
-/// Panel animation state transitions extracted from the Iced update loop (#144).
-mod panels;
 /// Play-dispatch coordination (`request_play` / `handle_decoded` /
 /// `start_playback`), extracted to keep this file from growing (#151).
 mod macros;
+/// Panel animation state transitions extracted from the Iced update loop (#144).
+mod panels;
 mod playback;
 
 /// Virtual category name used for the Favorites filtered tab.
@@ -1526,6 +1526,11 @@ impl HonkHonk {
             self.panel_progress,
             t,
         ));
+        // Decorative flourish keeps a stable layer below interactive overlays.
+        layers.push(crate::ui::side_panel::view_panel_flourish(
+            &self.panel_flourish,
+        ));
+
         // Overlay context menu at window level so cursor coords map exactly.
         if let (Some(sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
             let found = self.sounds.iter().find(|s| s.id == *sound_id);
@@ -1552,9 +1557,6 @@ impl HonkHonk {
                     t,
                 ));
             }
-        }
-        if let Some(layer) = crate::ui::side_panel::view_panel_flourish(&self.panel_flourish) {
-            layers.push(layer);
         }
 
         iced::widget::Stack::with_children(layers)
