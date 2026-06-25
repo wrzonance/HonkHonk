@@ -32,19 +32,20 @@ impl<Message> canvas::Program<Message> for FeatherProgram<'_> {
         &self,
         _state: &Self::State,
         renderer: &iced::Renderer,
-        _theme: &iced::Theme,
+        theme: &iced::Theme,
         bounds: iced::Rectangle,
         _cursor: iced::mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
+        let colors = feather_colors(theme);
         for particle in self.particles {
-            draw_feather(&mut frame, *particle);
+            draw_feather(&mut frame, *particle, colors);
         }
         vec![frame.into_geometry()]
     }
 }
 
-fn draw_feather(frame: &mut canvas::Frame, particle: FeatherParticle) {
+fn draw_feather(frame: &mut canvas::Frame, particle: FeatherParticle, colors: FeatherColors) {
     use iced::widget::canvas::{Path, Stroke};
 
     if particle.alpha <= 0.0 {
@@ -56,17 +57,36 @@ fn draw_feather(frame: &mut canvas::Frame, particle: FeatherParticle) {
     let end = translate(particle.position, scale(spine, 0.55));
     let ink = Color {
         a: particle.alpha * 0.9,
-        ..Color::WHITE
+        ..colors.ink
     };
     let shadow = Color {
         a: particle.alpha * 0.5,
-        ..Color::from_rgb(0.72, 0.76, 0.8)
+        ..colors.shadow
     };
     frame.stroke(
         &Path::line(start, end),
         Stroke::default().with_color(ink).with_width(1.4),
     );
     draw_barbs(frame, particle, dir, shadow);
+}
+
+#[derive(Clone, Copy)]
+struct FeatherColors {
+    ink: Color,
+    shadow: Color,
+}
+
+fn feather_colors(theme: &iced::Theme) -> FeatherColors {
+    if matches!(theme, iced::Theme::Light) {
+        return FeatherColors {
+            ink: Color::from_rgb(0.20, 0.22, 0.24),
+            shadow: Color::from_rgb(0.55, 0.58, 0.62),
+        };
+    }
+    FeatherColors {
+        ink: Color::WHITE,
+        shadow: Color::from_rgb(0.72, 0.76, 0.8),
+    }
 }
 
 fn draw_barbs(frame: &mut canvas::Frame, particle: FeatherParticle, dir: Vector, color: Color) {

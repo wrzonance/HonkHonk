@@ -49,9 +49,9 @@ impl HonkHonk {
 
     pub(super) fn close_effects_panel(&mut self) -> Task<Message> {
         let now = Instant::now();
-        let was_visible = self.effects_panel.is_visible();
+        let should_emit = self.effects_panel.is_open();
         self.effects_panel.close(now);
-        if was_visible {
+        if should_emit {
             self.emit_effects_panel_flourish(PanelTransition::Close, now);
         }
         self.panel_progress = self.effects_panel.progress(now);
@@ -81,5 +81,33 @@ impl HonkHonk {
         let panel = panel_geometry(self.window_size, effects_panel_view::EFFECTS_PANEL_W);
         self.panel_flourish
             .emit(panel, self.window_size, transition, now);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn disabling_panel_animations_clears_in_flight_flourish() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.toggle_effects_panel();
+        assert!(app.panel_flourish.is_animating());
+
+        let _ = app.set_panel_animations(false);
+        assert!(!app.panel_flourish.is_animating());
+    }
+
+    #[test]
+    fn repeated_close_while_closing_does_not_reemit_flourish() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.toggle_effects_panel();
+        let _ = app.close_effects_panel();
+        app.tick_frame(Instant::now() + Duration::from_millis(16));
+        let moved = app.panel_flourish.particles()[0].position;
+
+        let _ = app.close_effects_panel();
+        assert_eq!(app.panel_flourish.particles()[0].position, moved);
     }
 }

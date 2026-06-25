@@ -1465,10 +1465,6 @@ impl HonkHonk {
             self.panel_progress,
             t,
         ));
-        if let Some(layer) = crate::ui::side_panel::view_panel_flourish(&self.panel_flourish) {
-            layers.push(layer);
-        }
-
         // Overlay context menu at window level so cursor coords map exactly.
         if let (Some(sound_id), Some(pos)) = (&self.context_menu, self.context_menu_pos) {
             let found = self.sounds.iter().find(|s| s.id == *sound_id);
@@ -1495,6 +1491,9 @@ impl HonkHonk {
                     t,
                 ));
             }
+        }
+        if let Some(layer) = crate::ui::side_panel::view_panel_flourish(&self.panel_flourish) {
+            layers.push(layer);
         }
 
         iced::widget::Stack::with_children(layers)
