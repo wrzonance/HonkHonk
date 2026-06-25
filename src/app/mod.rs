@@ -21,6 +21,7 @@ use crate::ui::{now_playing, search_bar, slot_manager};
 
 /// Play-dispatch coordination (`request_play` / `handle_decoded` /
 /// `start_playback`), extracted to keep this file from growing (#151).
+mod macros;
 mod playback;
 
 /// Virtual category name used for the Favorites filtered tab.
@@ -53,6 +54,22 @@ pub enum Message {
     AudioEvent(AudioEvent),
     PlaySound(String),
     StopAll,
+    /// Fire macro by id (slots call this in #169).
+    PlayMacro(String),
+    /// A scheduled macro step's timer elapsed; dispatch it if its run is current.
+    MacroStepDue {
+        run_id: u64,
+        step: usize,
+    },
+    /// A cold macro step's off-thread decode finished.
+    MacroStepDecoded {
+        run_id: u64,
+        voice_id: u64,
+        sound_id: String,
+        gain: f32,
+        effects: crate::audio::effects::EffectSettings,
+        result: Result<crate::audio::CachedPcm, String>,
+    },
     SelectCategory(Option<String>),
     SearchChanged(String),
     EscapePressed,
@@ -216,6 +233,19 @@ pub struct HonkHonk {
     /// Hot-path decoded-PCM cache (#151).
     audio_store: crate::audio::AudioStore,
     pending_play_ids: HashSet<u64>,
+    /// Persisted macro collection (#165).
+    macros: crate::state::MacroStore,
+    /// The single in-flight macro run, if any — `Some` enforces one macro at a
+    /// time (#166). `None` when idle.
+    macro_playback: Option<macros::MacroPlayback>,
+    /// Monotonic run counter; a `MacroStepDue`/`MacroStepDecoded` for a run that
+    /// is no longer current is ignored (re-fire / Stop All cancellation).
+    macro_run_id: u64,
+    /// Per-voice counter for macro steps. Combined with a top-bit flag into a
+    /// voice-id space disjoint from the tile `play_generation`, so a macro firing
+    /// mid-tile-press never advances (and corrupts) the tile's now-playing UI
+    /// ownership (#166).
+    macro_voice_seq: u64,
 }
 
 fn shortcuts_stream_sub(
@@ -381,6 +411,10 @@ impl HonkHonk {
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
+            macros: crate::state::MacroStore::load(),
+            macro_playback: None,
+            macro_run_id: 0,
+            macro_voice_seq: 0,
         }
     }
 
@@ -429,6 +463,10 @@ impl HonkHonk {
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
+            macros: crate::state::MacroStore::default(),
+            macro_playback: None,
+            macro_run_id: 0,
+            macro_voice_seq: 0,
         }
     }
 
@@ -604,7 +642,7 @@ impl HonkHonk {
                         }
                     }
                     AudioEvent::PlaybackFinished {
-                        voice_id: _,
+                        voice_id,
                         sound_id,
                         generation,
                     } => {
@@ -621,6 +659,9 @@ impl HonkHonk {
                         {
                             self.clear_playback_state();
                         }
+                        // A macro voice ending advances its run's completion
+                        // bookkeeping; a non-macro voice is ignored (#166).
+                        self.note_macro_voice_finished(voice_id);
                     }
                     AudioEvent::Progress(p) => {
                         // Raw 10 Hz anchor, retained for diagnostics/tests. The
@@ -701,8 +742,28 @@ impl HonkHonk {
                 // resurrecting it (#151).
                 self.pending_play_ids.clear();
                 self.clear_playback_state();
+                self.cancel_macro();
                 Task::none()
             }
+            Message::PlayMacro(id) => self.play_macro(&id),
+            Message::MacroStepDue { run_id, step } => self.on_macro_step_due(run_id, step),
+            Message::MacroStepDecoded {
+                run_id,
+                voice_id,
+                sound_id,
+                gain,
+                effects,
+                result,
+            } => self.on_macro_step_decoded(
+                run_id,
+                macros::MacroVoice {
+                    voice_id,
+                    sound_id,
+                    gain,
+                    effects,
+                },
+                result,
+            ),
             Message::SelectCategory(cat) => {
                 self.active_category = cat;
                 Task::none()
