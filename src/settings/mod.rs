@@ -13,6 +13,7 @@ pub enum SettingId {
     // Audio — wired when backends land (issues #71, #72)
     MicPassthrough,
     MicPassthroughLevel,
+    OverlapMode,
     MonitorDevice,
     // App — wired when backend lands (issue #73)
     Renderer,
@@ -91,6 +92,13 @@ pub static SETTINGS_REGISTRY: &[SettingDef] = &[
             max: 1.0,
             step: 0.01,
         },
+    },
+    SettingDef {
+        id: SettingId::OverlapMode,
+        category: SettingCategory::Audio,
+        label: "Overlap mode",
+        hint: "Whether tile presses layer sounds or stop all active voices before the new sound.",
+        control: ControlType::Radio(&["Concurrent", "Interrupt"]),
     },
     SettingDef {
         id: SettingId::RescanLibrary,
@@ -182,10 +190,7 @@ mod tests {
             .iter()
             .filter(|d| matches!(d.category, SettingCategory::Audio))
             .count();
-        assert_eq!(
-            count, 2,
-            "Audio section must have MicPassthrough + MicPassthroughLevel"
-        );
+        assert_eq!(count, 3, "Audio section must include overlap mode");
     }
 
     #[test]

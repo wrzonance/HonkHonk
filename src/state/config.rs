@@ -48,6 +48,30 @@ pub enum Renderer {
     TinySkia,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum OverlapMode {
+    #[default]
+    Concurrent,
+    Interrupt,
+}
+
+impl OverlapMode {
+    pub fn setting_index(self) -> usize {
+        match self {
+            OverlapMode::Concurrent => 0,
+            OverlapMode::Interrupt => 1,
+        }
+    }
+
+    pub fn from_setting_index(i: usize) -> Self {
+        match i {
+            1 => OverlapMode::Interrupt,
+            _ => OverlapMode::Concurrent,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -85,6 +109,8 @@ pub struct AppConfig {
     /// system default, excluding HonkHonk's own virtual source).
     #[serde(default)]
     pub input_device: Option<String>,
+    #[serde(default)]
+    pub overlap_mode: OverlapMode,
 }
 
 impl Default for AppConfig {
@@ -109,6 +135,7 @@ impl Default for AppConfig {
             renderer: Renderer::Wgpu,
             monitor_device: None,
             input_device: None,
+            overlap_mode: OverlapMode::Concurrent,
         }
     }
 }
@@ -228,6 +255,11 @@ mod tests {
     }
 
     #[test]
+    fn default_overlap_mode_is_concurrent() {
+        assert_eq!(AppConfig::default().overlap_mode, OverlapMode::Concurrent);
+    }
+
+    #[test]
     fn density_columns_compact_is_6() {
         assert_eq!(Density::Compact.columns(), 6);
     }
@@ -265,6 +297,7 @@ mod tests {
             renderer: Renderer::Wgpu,
             monitor_device: None,
             input_device: None,
+            overlap_mode: OverlapMode::Concurrent,
         };
 
         let json = serde_json::to_string_pretty(&config).unwrap();
@@ -290,6 +323,7 @@ mod tests {
             renderer: Renderer::Wgpu,
             monitor_device: None,
             input_device: None,
+            overlap_mode: OverlapMode::Concurrent,
         };
 
         config.save_to(&path).unwrap();
@@ -453,5 +487,23 @@ mod tests {
             back.input_device.as_deref(),
             Some("alsa_input.usb-OBSBOT_Meet_2-00.analog-stereo")
         );
+    }
+
+    #[test]
+    fn missing_overlap_mode_field_deserializes_to_concurrent() {
+        let json = r#"{"sound_directories":[],"volume":0.85,"window_width":900,"window_height":600,"theme":"Dark","density":"regular","mic_passthrough":true,"mic_passthrough_level":1.0,"renderer":"wgpu","monitor_device":null,"input_device":null}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.overlap_mode, OverlapMode::Concurrent);
+    }
+
+    #[test]
+    fn overlap_mode_interrupt_round_trips_json() {
+        let config = AppConfig {
+            overlap_mode: OverlapMode::Interrupt,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.overlap_mode, OverlapMode::Interrupt);
     }
 }

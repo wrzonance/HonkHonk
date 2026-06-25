@@ -1,8 +1,15 @@
 #![cfg(feature = "pipewire-test")]
 
 use std::process::Command;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+use honkhonk::audio::PlayMode;
+
+#[path = "pipewire_integration/support.rs"]
+mod support;
+
+use support::{play_command, play_command_with_format, play_command_with_mode};
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SOURCE_NODE_NAME: &str = "honkhonk-mic";
@@ -121,7 +128,7 @@ fn expect_started(handle: &honkhonk::audio::AudioHandle, expected: &str) {
         handle,
         Duration::from_secs(5),
         &label,
-        |event| matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { sound_id } if sound_id == expected),
+        |event| matches!(event, honkhonk::audio::AudioEvent::PlaybackStarted { sound_id, .. } if sound_id == expected),
     );
 }
 
@@ -243,15 +250,8 @@ fn sink_stream_reaches_virtual_sink() {
     pipewire::init();
     let handle = spawn_engine_and_wait();
 
-    let samples = std::sync::Arc::new(vec![0.5f32; 48000 * 5 * 2]);
-    handle.send(honkhonk::audio::AudioCommand::Play {
-        sound_id: "routing-test".into(),
-        samples,
-        sample_rate: 48000,
-        channels: 2,
-        generation: 1,
-        volume: 1.0,
-    });
+    let samples = Arc::new(vec![0.5f32; 48000 * 5 * 2]);
+    handle.send(play_command("routing-test", samples, 1));
 
     expect_started(&handle, "routing-test");
 
@@ -276,15 +276,8 @@ fn audio_pipeline_end_to_end() {
     pipewire::init();
     let handle = spawn_engine_and_wait();
 
-    let samples = std::sync::Arc::new(vec![0.5f32; 48000 * 3 * 2]);
-    handle.send(honkhonk::audio::AudioCommand::Play {
-        sound_id: "e2e-test".into(),
-        samples,
-        sample_rate: 48000,
-        channels: 2,
-        generation: 1,
-        volume: 1.0,
-    });
+    let samples = Arc::new(vec![0.5f32; 48000 * 3 * 2]);
+    handle.send(play_command("e2e-test", samples, 1));
 
     expect_started(&handle, "e2e-test");
 
@@ -341,16 +334,15 @@ fn play_sound_emits_started_and_finished_events() {
     let decoded = honkhonk::audio::decode(std::path::Path::new("tests/fixtures/sine_mono.wav"))
         .expect("decode failed");
 
-    let samples = std::sync::Arc::new(decoded.samples);
+    let samples = Arc::new(decoded.samples);
 
-    handle.send(honkhonk::audio::AudioCommand::Play {
-        sound_id: "test-sine".into(),
+    handle.send(play_command_with_format(
+        "test-sine",
         samples,
-        sample_rate: decoded.sample_rate,
-        channels: decoded.channels,
-        generation: 1,
-        volume: 1.0,
-    });
+        decoded.sample_rate,
+        decoded.channels,
+        1,
+    ));
 
     expect_started(&handle, "test-sine");
 
@@ -367,28 +359,19 @@ fn stop_command_halts_playback() {
 
     let handle = spawn_engine_and_wait();
 
-    let samples = std::sync::Arc::new(vec![0.3f32; 48000 * 5 * 2]);
-    let replacement = std::sync::Arc::new(vec![0.2f32; 48000 * 5 * 2]);
+    let samples = Arc::new(vec![0.3f32; 48000 * 5 * 2]);
+    let replacement = Arc::new(vec![0.2f32; 48000 * 5 * 2]);
 
-    handle.send(honkhonk::audio::AudioCommand::Play {
-        sound_id: "long-sound".into(),
-        samples,
-        sample_rate: 48000,
-        channels: 2,
-        generation: 1,
-        volume: 1.0,
-    });
+    handle.send(play_command("long-sound", samples, 1));
 
     expect_started(&handle, "long-sound");
 
-    handle.send(honkhonk::audio::AudioCommand::Play {
-        sound_id: "replacement-sound".into(),
-        samples: replacement,
-        sample_rate: 48000,
-        channels: 2,
-        generation: 2,
-        volume: 1.0,
-    });
+    handle.send(play_command_with_mode(
+        "replacement-sound",
+        replacement,
+        2,
+        PlayMode::Interrupt,
+    ));
 
     expect_finished(&handle, "long-sound", Duration::from_secs(5));
     expect_started(&handle, "replacement-sound");

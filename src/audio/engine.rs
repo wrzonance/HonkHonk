@@ -4,20 +4,34 @@ use std::sync::mpsc;
 use std::sync::Arc;
 
 use super::confd;
+use super::effects::EffectSettings;
 use super::error::{AudioError, EngineErrorEvent};
-use super::playback::{self, PlaybackState};
+mod playback_streams;
+use super::playback;
 use super::registry::{setup_registry_listener, RegistryConfig};
 use super::router::{Router, RouterEvent};
 use super::streams;
+use super::voices::{FinishedVoice, VoicePool, VoiceSpec};
+use playback_streams::{
+    active_format_conflict, ensure_playback_streams, monitor_enabled, rebuild_monitor_stream,
+    PlaybackStreams,
+};
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SINK_DESCRIPTION: &str = "HonkHonk Mix";
 const SOURCE_NODE_NAME: &str = "honkhonk-mic";
 const SOURCE_DESCRIPTION: &str = "HonkHonk Mic";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayMode {
+    Concurrent,
+    Interrupt,
+}
+
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
     Play {
+        voice_id: u64,
         sound_id: String,
         samples: Arc<Vec<f32>>,
         sample_rate: u32,
@@ -30,8 +44,11 @@ pub enum AudioCommand {
         /// Per-sound volume multiplier, applied alongside the master volume in
         /// `PlaybackState`. Lets the app send the canonical (pre-volume) PCM Arc
         /// without an O(n) copy per play (#151).
-        volume: f32,
+        gain: f32,
+        effects: EffectSettings,
+        mode: PlayMode,
     },
+    StopVoice(u64),
     Stop,
     SetVolume(f32),
     SetMicPassthrough(bool),
@@ -64,8 +81,14 @@ pub enum AudioEvent {
     Ready,
     PlaybackStarted {
         sound_id: String,
+        /// Echoes the `generation` of the `Play` this voice came from, mirroring
+        /// `PlaybackFinished`. Lets the app ignore a late superseded voice's
+        /// Started so it cannot re-highlight an old tile while the UI is idle
+        /// (#149/#164).
+        generation: u64,
     },
     PlaybackFinished {
+        voice_id: u64,
         sound_id: String,
         /// Echoes the `generation` of the `Play` this voice came from, so a stale
         /// `Finished` for a superseded voice can be distinguished from a genuine
@@ -167,21 +190,11 @@ fn query_default_source_name() -> Option<String> {
         .map(String::from)
 }
 
-struct ActivePlayback {
-    sound_id: String,
-    /// The `generation` of the `Play` command that started this voice; echoed on
-    /// its `PlaybackFinished` so the app can ignore a stale end (#149).
-    generation: u64,
-    sink_state: Rc<RefCell<PlaybackState>>,
-    monitor_state: Rc<RefCell<PlaybackState>>,
-    _sink_stream: playback::PlaybackStream,
-    monitor_stream: Option<playback::PlaybackStream>,
-}
-
 struct EngineCtx {
     registry_sink_id: Rc<Cell<Option<u32>>>,
     core: pipewire::core::CoreRc,
-    active: Rc<RefCell<Option<ActivePlayback>>>,
+    voices: Rc<RefCell<VoicePool>>,
+    playback_streams: Rc<RefCell<PlaybackStreams>>,
     evt_tx: mpsc::Sender<AudioEvent>,
     engine_volume: Rc<Cell<f32>>,
     monitor_target: Rc<RefCell<Option<String>>>,
@@ -293,34 +306,22 @@ fn ensure_virtual_source(
 
 fn setup_completion_timer(
     pw_loop: &pipewire::loop_::Loop,
-    active_timer: Rc<RefCell<Option<ActivePlayback>>>,
+    voices_timer: Rc<RefCell<VoicePool>>,
     evt_tx_timer: mpsc::Sender<AudioEvent>,
 ) -> Result<pipewire::loop_::TimerSource<'_>, AudioError> {
     let timer = pw_loop.add_timer(move |_expirations| {
-        let (done, progress) = {
-            let borrow = active_timer.borrow();
-            if let Some(ref ap) = *borrow {
-                let sink_done = !ap.sink_state.borrow().is_active();
-                let mon_done = !ap.monitor_state.borrow().is_active();
-                let p = ap.sink_state.borrow().progress();
-                (sink_done && mon_done, Some(p))
-            } else {
-                (false, None)
-            }
+        let (finished, progress) = {
+            let mut voices = voices_timer.borrow_mut();
+            let progress = voices.progress();
+            let finished = voices.drain_finished();
+            (finished, progress)
         };
 
         if let Some(p) = progress {
             let _ = evt_tx_timer.send(AudioEvent::Progress(p));
         }
 
-        if done {
-            if let Some(ap) = active_timer.borrow_mut().take() {
-                let _ = evt_tx_timer.send(AudioEvent::PlaybackFinished {
-                    sound_id: ap.sound_id,
-                    generation: ap.generation,
-                });
-            }
-        }
+        send_finished_events(&evt_tx_timer, finished);
     });
 
     if let Err(e) = timer
@@ -336,6 +337,16 @@ fn setup_completion_timer(
     }
 
     Ok(timer)
+}
+
+fn send_finished_events(evt_tx: &mpsc::Sender<AudioEvent>, voices: Vec<FinishedVoice>) {
+    for voice in voices {
+        let _ = evt_tx.send(AudioEvent::PlaybackFinished {
+            voice_id: voice.voice_id,
+            sound_id: voice.sound_id,
+            generation: voice.generation,
+        });
+    }
 }
 
 /// Bootstrap the external-stream observer (issue #26).
@@ -479,7 +490,9 @@ fn run_engine(
         timer
     };
 
-    let active: Rc<RefCell<Option<ActivePlayback>>> = Rc::new(RefCell::new(None));
+    let voices: Rc<RefCell<VoicePool>> = Rc::new(RefCell::new(VoicePool::new()));
+    let playback_streams: Rc<RefCell<PlaybackStreams>> =
+        Rc::new(RefCell::new(PlaybackStreams::default()));
     let engine_volume: Rc<Cell<f32>> = Rc::new(Cell::new(1.0));
     let mixer = Rc::new(RefCell::new(super::mixer::Mixer::new(4096)));
     mixer.borrow_mut().install_default_chain(48_000)?;
@@ -487,7 +500,8 @@ fn run_engine(
     let ctx = EngineCtx {
         registry_sink_id,
         core: core.clone(),
-        active: active.clone(),
+        voices: voices.clone(),
+        playback_streams,
         evt_tx: evt_tx.clone(),
         engine_volume,
         monitor_target,
@@ -495,48 +509,51 @@ fn run_engine(
         router: router.clone(),
     };
 
-    let active_timer = active;
+    let voices_timer = voices;
     let evt_tx_timer = evt_tx.clone();
     let pw_loop = mainloop.loop_();
-    let _completion_timer = setup_completion_timer(pw_loop, active_timer, evt_tx_timer)?;
+    let _completion_timer = setup_completion_timer(pw_loop, voices_timer, evt_tx_timer)?;
 
     let mainloop_quit = mainloop.clone();
     let _cmd_listener = cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
         AudioCommand::Play {
+            voice_id,
             sound_id,
             samples,
             sample_rate,
             channels,
             generation,
-            volume,
+            gain,
+            effects,
+            mode,
         } => {
             handle_play(
                 &ctx,
                 PlayRequest {
+                    voice_id,
                     sound_id,
                     samples,
                     sample_rate,
                     channels,
                     generation,
-                    volume,
+                    gain,
+                    effects,
+                    mode,
                 },
             );
         }
+        AudioCommand::StopVoice(voice_id) => {
+            let finished = ctx.voices.borrow_mut().stop_voice(voice_id);
+            send_finished_events(&ctx.evt_tx, finished);
+        }
         AudioCommand::Stop => {
-            let prev = ctx.active.borrow_mut().take();
-            if let Some(ap) = prev {
-                let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
-                    sound_id: ap.sound_id,
-                    generation: ap.generation,
-                });
-            }
+            let finished = ctx.voices.borrow_mut().stop_all();
+            send_finished_events(&ctx.evt_tx, finished);
         }
         AudioCommand::SetVolume(v) => {
-            ctx.engine_volume.set(v.clamp(0.0, 1.0));
-            if let Some(ref ap) = *ctx.active.borrow() {
-                ap.sink_state.borrow_mut().set_volume(v);
-                ap.monitor_state.borrow_mut().set_volume(v);
-            }
+            let volume = v.clamp(0.0, 1.0);
+            ctx.engine_volume.set(volume);
+            ctx.voices.borrow_mut().set_master_volume(volume);
         }
         AudioCommand::SetMicPassthrough(v) => {
             registry_guard.apply_passthrough(v);
@@ -570,7 +587,7 @@ fn run_engine(
             }
         }
         AudioCommand::Shutdown => {
-            let _ = ctx.active.borrow_mut().take();
+            let _ = ctx.voices.borrow_mut().stop_all();
             mainloop_quit.quit();
         }
         AudioCommand::SetEffectBypass { index, bypass } => {
@@ -617,53 +634,31 @@ fn run_engine(
     Ok(())
 }
 
-fn rebuild_monitor_stream(ctx: &EngineCtx) {
-    if let Some(ref mut ap) = *ctx.active.borrow_mut() {
-        let (rate, ch) = {
-            let ms = ap.monitor_state.borrow();
-            (ms.sample_rate(), ms.channels())
-        };
-        let target = ctx.monitor_target.borrow().clone();
-        match playback::create_monitor_stream(
-            ctx.core.clone(),
-            ap.monitor_state.clone(),
-            rate,
-            ch,
-            target.as_deref(),
-        ) {
-            Ok(stream) => ap.monitor_stream = Some(stream),
-            Err(e) => {
-                ap.monitor_stream = None;
-                ap.monitor_state.borrow_mut().stop();
-                let _ =
-                    ctx.evt_tx
-                        .send(AudioEvent::Error(EngineErrorEvent::MonitorStreamRebuild {
-                            detail: e.to_string(),
-                        }));
-            }
-        }
-    }
-}
-
 /// Decoded PCM plus identity for a single play, bundled so `handle_play` stays
 /// within the argument-count lint as fields accrete (e.g. `generation`, #149).
 struct PlayRequest {
+    voice_id: u64,
     sound_id: String,
     samples: Arc<Vec<f32>>,
     sample_rate: u32,
     channels: u16,
     generation: u64,
-    volume: f32,
+    gain: f32,
+    effects: EffectSettings,
+    mode: PlayMode,
 }
 
 fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
     let PlayRequest {
+        voice_id,
         sound_id,
         samples,
         sample_rate,
         channels,
         generation,
-        volume,
+        gain,
+        effects,
+        mode,
     } = req;
     if ctx.registry_sink_id.get().is_none() {
         let _ = ctx.evt_tx.send(AudioEvent::Error(
@@ -674,94 +669,47 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
         // this generation would stick forever, since the generation guard
         // ignores any other Finished (#149).
         let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
+            voice_id,
             sound_id,
             generation,
         });
         return;
     }
 
-    let prev = ctx.active.borrow_mut().take();
-    if let Some(ap) = prev {
-        // The displaced voice carries its OWN (older) generation, so the app can
-        // tell this "superseded" Finished from the genuine end of the new voice
-        // when a sound is re-pressed while still playing (#149).
-        let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
-            sound_id: ap.sound_id,
-            generation: ap.generation,
-        });
+    let format_fallback =
+        mode == PlayMode::Concurrent && active_format_conflict(ctx, sample_rate, channels);
+    if mode == PlayMode::Interrupt || format_fallback {
+        let finished = ctx.voices.borrow_mut().stop_all();
+        send_finished_events(&ctx.evt_tx, finished);
     }
 
-    let vol = ctx.engine_volume.get();
-    let sink_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
-    sink_state.borrow_mut().start(
-        sound_id.clone(),
-        samples.clone(),
-        sample_rate,
-        channels,
-        volume,
-    );
+    if !ensure_playback_streams(ctx, sample_rate, channels) {
+        let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
+            voice_id,
+            sound_id,
+            generation,
+        });
+        return;
+    }
 
-    let mon_state = Rc::new(RefCell::new(PlaybackState::with_volume(vol)));
-    mon_state
-        .borrow_mut()
-        .start(sound_id.clone(), samples, sample_rate, channels, volume);
-
-    let target = ctx.monitor_target.borrow().clone();
-    let sink_stream = playback::create_sink_stream(
-        ctx.core.clone(),
-        sink_state.clone(),
-        SINK_NODE_NAME,
-        sample_rate,
-        channels,
-    );
-    let mon_stream = playback::create_monitor_stream(
-        ctx.core.clone(),
-        mon_state.clone(),
-        sample_rate,
-        channels,
-        target.as_deref(),
-    );
-
-    let sink_s = match sink_stream {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = ctx
-                .evt_tx
-                .send(AudioEvent::Error(EngineErrorEvent::SinkStreamCreation {
-                    detail: e.to_string(),
-                }));
-            // Same invariant as the sink-not-registered path: signal that this
-            // generation produced no playback so the app clears it rather than
-            // getting stuck on a phantom playing state (#149). The displaced
-            // voice (if any) was already taken above and dropped.
-            let _ = ctx.evt_tx.send(AudioEvent::PlaybackFinished {
-                sound_id,
-                generation,
-            });
-            return;
-        }
-    };
-    let monitor_stream = match mon_stream {
-        Ok(s) => Some(s),
-        Err(e) => {
-            mon_state.borrow_mut().stop();
-            let _ = ctx.evt_tx.send(AudioEvent::Error(
-                EngineErrorEvent::MonitorStreamUnavailable {
-                    detail: e.to_string(),
-                },
-            ));
-            None
-        }
-    };
-    *ctx.active.borrow_mut() = Some(ActivePlayback {
+    let monitor_enabled = monitor_enabled(ctx);
+    let finished = ctx.voices.borrow_mut().push(VoiceSpec {
+        id: voice_id,
         sound_id: sound_id.clone(),
         generation,
-        sink_state,
-        monitor_state: mon_state,
-        _sink_stream: sink_s,
-        monitor_stream,
+        samples,
+        sample_rate,
+        channels,
+        gain,
+        master_volume: ctx.engine_volume.get(),
+        effects,
+        monitor_enabled,
     });
-    let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted { sound_id });
+    send_finished_events(&ctx.evt_tx, finished);
+    let _ = ctx.evt_tx.send(AudioEvent::PlaybackStarted {
+        sound_id,
+        generation,
+    });
 }
 
 #[cfg(test)]
@@ -797,6 +745,43 @@ mod tests {
     #[test]
     fn audio_command_set_input_device_some_is_constructible() {
         let _ = AudioCommand::SetInputDevice(Some("alsa_input.pci-test".into()));
+    }
+
+    #[test]
+    fn audio_command_polyphonic_play_is_constructible() {
+        let _ = AudioCommand::Play {
+            voice_id: 42,
+            sound_id: "test".into(),
+            samples: Arc::new(vec![0.0_f32; 8]),
+            sample_rate: 48_000,
+            channels: 1,
+            generation: 7,
+            gain: 0.8,
+            effects: crate::audio::effects::EffectSettings::default(),
+            mode: PlayMode::Concurrent,
+        };
+    }
+
+    #[test]
+    fn audio_command_stop_voice_is_constructible() {
+        let _ = AudioCommand::StopVoice(42);
+    }
+
+    #[test]
+    fn playback_finished_carries_voice_id() {
+        let event = AudioEvent::PlaybackFinished {
+            voice_id: 42,
+            sound_id: "test".into(),
+            generation: 7,
+        };
+        assert!(matches!(
+            event,
+            AudioEvent::PlaybackFinished {
+                voice_id: 42,
+                generation: 7,
+                ..
+            }
+        ));
     }
 
     #[test]
