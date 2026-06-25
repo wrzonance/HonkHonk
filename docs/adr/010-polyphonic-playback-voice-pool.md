@@ -40,9 +40,9 @@ Use a bounded in-process voice pool for decoded soundboard playback.
 - `PlaybackFinished` now includes `voice_id` so completion is tracked per
   active voice while the app can continue using the generation guard for
   stale UI updates.
-- A stream format change while voices are active may rebuild the shared
-  streams. Current library sounds are decoded into their original format, so
-  future resampling/normalization work should revisit mixed-format overlap if
-  it becomes common.
+- A mixed-format play while voices are active falls back to interrupt behavior:
+  active voices finish, then the shared streams rebuild for the new format.
+  Future resampling/normalization work can restore true mixed-format overlap
+  without replacing PipeWire streams under live voices.
 - The external source mixer remains separate and continues to represent the
   ADR-007 mic/app routing path, not internal soundboard voice summing.

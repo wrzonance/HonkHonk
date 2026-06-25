@@ -6,11 +6,16 @@ use std::sync::Arc;
 use super::confd;
 use super::effects::EffectSettings;
 use super::error::{AudioError, EngineErrorEvent};
+mod playback_streams;
 use super::playback;
 use super::registry::{setup_registry_listener, RegistryConfig};
 use super::router::{Router, RouterEvent};
 use super::streams;
 use super::voices::{FinishedVoice, VoicePool, VoiceSpec};
+use playback_streams::{
+    active_format_conflict, ensure_playback_streams, monitor_enabled, rebuild_monitor_stream,
+    PlaybackStreams,
+};
 
 const SINK_NODE_NAME: &str = "honkhonk-mix";
 const SINK_DESCRIPTION: &str = "HonkHonk Mix";
@@ -180,27 +185,6 @@ fn query_default_source_name() -> Option<String> {
         .map(String::from)
 }
 
-#[derive(Default)]
-struct PlaybackStreams {
-    sink_stream: Option<playback::PlaybackStream>,
-    monitor_stream: Option<playback::PlaybackStream>,
-    sample_rate: u32,
-    channels: u16,
-}
-
-impl PlaybackStreams {
-    fn has_format(&self, sample_rate: u32, channels: u16) -> bool {
-        self.sink_stream.is_some() && self.sample_rate == sample_rate && self.channels == channels
-    }
-
-    fn reset(&mut self) {
-        self.sink_stream = None;
-        self.monitor_stream = None;
-        self.sample_rate = 0;
-        self.channels = 0;
-    }
-}
-
 struct EngineCtx {
     registry_sink_id: Rc<Cell<Option<u32>>>,
     core: pipewire::core::CoreRc,
@@ -357,89 +341,6 @@ fn send_finished_events(evt_tx: &mpsc::Sender<AudioEvent>, voices: Vec<FinishedV
             sound_id: voice.sound_id,
             generation: voice.generation,
         });
-    }
-}
-
-fn stream_format(ctx: &EngineCtx) -> Option<(u32, u16)> {
-    let streams = ctx.playback_streams.borrow();
-    streams
-        .sink_stream
-        .as_ref()
-        .map(|_| (streams.sample_rate, streams.channels))
-}
-
-fn ensure_playback_streams(ctx: &EngineCtx, sample_rate: u32, channels: u16) -> bool {
-    if ctx.voices.borrow().is_empty() {
-        let mut streams = ctx.playback_streams.borrow_mut();
-        if !streams.has_format(sample_rate, channels) {
-            streams.reset();
-        }
-    }
-
-    if !ensure_sink_stream(ctx, sample_rate, channels) {
-        return false;
-    }
-    ensure_monitor_stream(ctx, sample_rate, channels);
-    true
-}
-
-fn ensure_sink_stream(ctx: &EngineCtx, sample_rate: u32, channels: u16) -> bool {
-    if ctx
-        .playback_streams
-        .borrow()
-        .has_format(sample_rate, channels)
-    {
-        return true;
-    }
-
-    match playback::create_sink_mix_stream(
-        ctx.core.clone(),
-        ctx.voices.clone(),
-        SINK_NODE_NAME,
-        sample_rate,
-        channels,
-    ) {
-        Ok(stream) => {
-            let mut streams = ctx.playback_streams.borrow_mut();
-            streams.sink_stream = Some(stream);
-            streams.sample_rate = sample_rate;
-            streams.channels = channels;
-            true
-        }
-        Err(e) => {
-            let _ = ctx
-                .evt_tx
-                .send(AudioEvent::Error(EngineErrorEvent::SinkStreamCreation {
-                    detail: e.to_string(),
-                }));
-            false
-        }
-    }
-}
-
-fn ensure_monitor_stream(ctx: &EngineCtx, sample_rate: u32, channels: u16) {
-    if ctx.playback_streams.borrow().monitor_stream.is_some() {
-        return;
-    }
-    let target = ctx.monitor_target.borrow().clone();
-    match playback::create_monitor_stream(
-        ctx.core.clone(),
-        ctx.voices.clone(),
-        sample_rate,
-        channels,
-        target.as_deref(),
-    ) {
-        Ok(stream) => {
-            ctx.playback_streams.borrow_mut().monitor_stream = Some(stream);
-        }
-        Err(e) => {
-            ctx.voices.borrow_mut().stop_all_monitors();
-            let _ = ctx.evt_tx.send(AudioEvent::Error(
-                EngineErrorEvent::MonitorStreamUnavailable {
-                    detail: e.to_string(),
-                },
-            ));
-        }
     }
 }
 
@@ -727,33 +628,6 @@ fn run_engine(
     Ok(())
 }
 
-fn rebuild_monitor_stream(ctx: &EngineCtx) {
-    let Some((rate, channels)) = stream_format(ctx) else {
-        return;
-    };
-    let target = ctx.monitor_target.borrow().clone();
-    match playback::create_monitor_stream(
-        ctx.core.clone(),
-        ctx.voices.clone(),
-        rate,
-        channels,
-        target.as_deref(),
-    ) {
-        Ok(stream) => {
-            ctx.playback_streams.borrow_mut().monitor_stream = Some(stream);
-        }
-        Err(e) => {
-            ctx.playback_streams.borrow_mut().monitor_stream = None;
-            ctx.voices.borrow_mut().stop_all_monitors();
-            let _ = ctx
-                .evt_tx
-                .send(AudioEvent::Error(EngineErrorEvent::MonitorStreamRebuild {
-                    detail: e.to_string(),
-                }));
-        }
-    }
-}
-
 /// Decoded PCM plus identity for a single play, bundled so `handle_play` stays
 /// within the argument-count lint as fields accrete (e.g. `generation`, #149).
 struct PlayRequest {
@@ -796,7 +670,9 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
         return;
     }
 
-    if mode == PlayMode::Interrupt {
+    let format_fallback =
+        mode == PlayMode::Concurrent && active_format_conflict(ctx, sample_rate, channels);
+    if mode == PlayMode::Interrupt || format_fallback {
         let finished = ctx.voices.borrow_mut().stop_all();
         send_finished_events(&ctx.evt_tx, finished);
     }
@@ -810,7 +686,7 @@ fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
         return;
     }
 
-    let monitor_enabled = ctx.playback_streams.borrow().monitor_stream.is_some();
+    let monitor_enabled = monitor_enabled(ctx);
     let finished = ctx.voices.borrow_mut().push(VoiceSpec {
         id: voice_id,
         sound_id: sound_id.clone(),
