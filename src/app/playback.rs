@@ -25,6 +25,7 @@ impl HonkHonk {
         sound: &SoundEntry,
         force_interrupt: bool,
     ) -> Task<Message> {
+        self.capture_recording_at(&sound.path, Instant::now());
         self.play_generation = self.play_generation.wrapping_add(1);
         let dispatch = PlaybackDispatch {
             generation: self.play_generation,
