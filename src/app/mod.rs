@@ -1289,19 +1289,7 @@ impl HonkHonk {
 
         let search = search_bar::view_search_bar(&self.search_query);
 
-        let (record_label, record_msg) = if self.is_recording() {
-            ("\u{25a0} Stop", Message::StopRecording)
-        } else {
-            ("\u{25cf} Record", Message::StartRecording)
-        };
-        let record_btn = button(text(record_label).size(14).color(t.ink()))
-            .on_press(record_msg)
-            .style(move |_theme, _status| button::Style {
-                background: Some(theme::bg_color(t.panel())),
-                text_color: t.ink(),
-                border: theme::tile_border(t.hairline(), 1.0),
-                ..Default::default()
-            });
+        let record_btn = self.view_record_button(t);
 
         let stop_btn = button(text("Stop All").size(14).color(t.ink()))
             .on_press(Message::StopAll)
@@ -1324,6 +1312,24 @@ impl HonkHonk {
         .spacing(theme::space::LG)
         .align_y(iced::Alignment::Center)
         .into()
+    }
+
+    fn view_record_button(&self, t: theme::Theme) -> Element<'_, Message> {
+        let (record_label, record_msg) = if self.is_recording() {
+            ("\u{25a0} Stop", Message::StopRecording)
+        } else {
+            ("\u{25cf} Record", Message::StartRecording)
+        };
+
+        button(text(record_label).size(14).color(t.ink()))
+            .on_press(record_msg)
+            .style(move |_theme, _status| button::Style {
+                background: Some(theme::bg_color(t.panel())),
+                text_color: t.ink(),
+                border: theme::tile_border(t.hairline(), 1.0),
+                ..Default::default()
+            })
+            .into()
     }
 
     fn view_category_chips(&self, t: theme::Theme) -> Element<'_, Message> {
