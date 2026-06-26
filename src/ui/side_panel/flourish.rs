@@ -21,12 +21,14 @@ pub enum PanelTransition {
     Close,
 }
 
+/// Source geometry for seeding a feather burst.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BurstEmitter {
     Edge(BurstLine),
     Center(Point),
 }
 
+/// Emitter line along a panel edge; `direction` points outward, away from the panel.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BurstLine {
     pub start: Point,
@@ -177,7 +179,7 @@ fn seed_particle(emitter: BurstEmitter, transition: PanelTransition, i: usize) -
     };
 
     FeatherParticle {
-        position: translate(emitter_point(emitter), offset),
+        position: translate(emitter_point(emitter, i), offset),
         velocity,
         alpha: 1.0,
         size: 10.0 + (i % 4) as f32 * 3.5,
@@ -195,14 +197,30 @@ fn particle_direction(emitter: BurstEmitter, i: usize) -> Vector {
     }
 }
 
-fn emitter_point(emitter: BurstEmitter) -> Point {
+fn emitter_point(emitter: BurstEmitter, i: usize) -> Point {
     match emitter {
-        BurstEmitter::Edge(line) => Point::new(
-            (line.start.x + line.end.x) / 2.0,
-            (line.start.y + line.end.y) / 2.0,
-        ),
+        BurstEmitter::Edge(line) => point_on_line(line, edge_t(i)),
         BurstEmitter::Center(point) => point,
     }
+}
+
+fn point_on_line(line: BurstLine, t: f32) -> Point {
+    Point::new(
+        line.start.x + (line.end.x - line.start.x) * t,
+        line.start.y + (line.end.y - line.start.y) * t,
+    )
+}
+
+fn edge_t(i: usize) -> f32 {
+    let slot = 1.0 / PARTICLES as f32;
+    let base = (i as f32 + 0.5) * slot;
+    let jitter = deterministic_jitter(i) * slot * 0.7;
+    (base + jitter).clamp(slot * 0.25, 1.0 - slot * 0.25)
+}
+
+fn deterministic_jitter(i: usize) -> f32 {
+    const JITTER: [f32; 9] = [-0.42, 0.18, -0.08, 0.36, -0.25, 0.05, 0.44, -0.15, 0.27];
+    JITTER[i % JITTER.len()]
 }
 
 fn tick_particle(particle: &mut FeatherParticle, dt: f32, cursor: Option<Point>) {
