@@ -18,6 +18,10 @@ impl HonkHonk {
         }
     }
 
+    #[allow(
+        clippy::cognitive_complexity,
+        reason = "keeps persisted animation toggle and in-flight flourish cleanup colocated"
+    )]
     pub(super) fn set_panel_animations(&mut self, enabled: bool) -> Task<Message> {
         if self.config.panel_animations != enabled {
             self.config = AppConfig {

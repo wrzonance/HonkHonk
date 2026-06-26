@@ -364,6 +364,10 @@ fn spawn_stream_watcher(
     Ok((stream_watcher, stream_rx))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "PipeWire mainloop setup keeps Rc handles and guards alive for the engine lifetime"
+)]
 fn run_engine(
     cmd_rx: pipewire::channel::Receiver<AudioCommand>,
     evt_tx: mpsc::Sender<AudioEvent>,
@@ -648,6 +652,10 @@ struct PlayRequest {
     mode: PlayMode,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "play request lifecycle keeps error, stream, voice, and event ordering invariants together"
+)]
 fn handle_play(ctx: &EngineCtx, req: PlayRequest) {
     let PlayRequest {
         voice_id,

@@ -68,6 +68,10 @@ impl ShortcutConfigService {
             || matches!(self.desktop_env, DesktopEnv::Kde | DesktopEnv::Gnome)
     }
 
+    #[allow(
+        clippy::cognitive_complexity,
+        reason = "portal-first shortcut configuration keeps desktop fallback behavior in one ladder"
+    )]
     pub(crate) fn open(&self) {
         if self.portal_v2_available {
             if let Some(tx) = &self.portal_cmd_tx {

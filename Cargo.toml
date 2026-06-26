@@ -7,6 +7,10 @@ license = "MIT"
 description = "Wayland-native Linux soundboard"
 repository = "https://github.com/thewrz/HonkHonk"
 
+[lints.clippy]
+cognitive_complexity = "warn"
+too_many_lines = "warn"
+
 [dependencies]
 iced = { version = "0.14", features = ["tokio", "tiny-skia", "canvas"] }
 # Pure-Rust StatusNotifierItem tray over zbus. Replaces tray-icon/muda/gtk so

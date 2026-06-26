@@ -4,6 +4,10 @@ use iced::{Alignment, Border, Element, Length, Padding};
 use crate::app::Message;
 use crate::ui::theme::{self, Hh, Theme};
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "stable stack layout avoids Iced text-input focus reset across query states"
+)]
 pub fn view_search_bar(query: &str) -> Element<'_, Message> {
     let t = Theme::Dark;
 

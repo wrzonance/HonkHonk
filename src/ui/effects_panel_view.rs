@@ -131,6 +131,10 @@ fn view_preset_chips(active: PresetId, t: Theme) -> Element<'static, Message> {
 }
 
 /// Per-effect parameter sliders. Each edit emits a `SetEffectParamUi`.
+#[allow(
+    clippy::too_many_lines,
+    reason = "effect slider stack declares all parameter controls inline to preserve UI order"
+)]
 fn view_param_sliders(state: &EffectsUiState, t: Theme) -> Element<'static, Message> {
     let sliders: Column<'static, Message> = column![
         labeled_slider(
