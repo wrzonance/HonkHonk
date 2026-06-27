@@ -8,6 +8,11 @@ fn effective_renderer(env_val: Option<&str>, config_pref: Renderer) -> Renderer 
     }
 }
 
+#[allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    reason = "startup sequence keeps renderer env setup before subsystem initialization"
+)]
 fn main() -> iced::Result {
     honkhonk::logging::init();
 

@@ -50,6 +50,10 @@ fn make_request_path(conn: &zbus::Connection, suffix: &str) -> zbus::Result<Owne
 /// setter, and Session constructors are also pub(crate). We call CreateSession
 /// directly via raw zbus to inject SESSION_TOKEN, then return the session path
 /// for use in subsequent bind/configure calls.
+#[allow(
+    clippy::too_many_lines,
+    reason = "raw zbus portal request keeps subscription, method call, and response parsing ordered"
+)]
 async fn create_session_fixed_token(
     conn: &zbus::Connection,
 ) -> Result<OwnedObjectPath, ashpd::Error> {
@@ -203,6 +207,10 @@ async fn configure_shortcuts_raw(
 /// `ShortcutEvent::Ready` once the portal session is established, then
 /// `ShortcutEvent::Activated(idx)` on each trigger press.
 /// Yields `ShortcutEvent::Failed(reason)` once on error, then ends.
+#[allow(
+    clippy::too_many_lines,
+    reason = "portal stream owns command channel setup plus activation/change select loop"
+)]
 pub fn shortcut_stream(_window_id: Option<WindowIdentifier>) -> impl Stream<Item = ShortcutEvent> {
     iced::stream::channel(32, async move |mut tx| {
         use ashpd::desktop::global_shortcuts::GlobalShortcuts;

@@ -205,6 +205,10 @@ mod effects_error_tests {
 mod engine_error_event_tests {
     use super::*;
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "display regression enumerates every public EngineErrorEvent variant"
+    )]
     #[test]
     fn engine_error_event_display_preserves_existing_log_text() {
         let cases = [

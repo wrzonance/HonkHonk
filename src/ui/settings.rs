@@ -188,6 +188,10 @@ fn settings_content<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
 
 /// Generic registry row renderer.
 /// Left: label+hint (260px). Right: control widget. Bottom: hairline border.
+#[allow(
+    clippy::too_many_lines,
+    reason = "registry row renderer handles all supported setting control variants in one match"
+)]
 pub fn render_setting_row<'a>(
     def: &'a SettingDef,
     state: &'a HonkHonk,
@@ -414,6 +418,10 @@ fn section_layout<'a>(
 
 // --- Section stubs (replaced in Tasks 5 and 6) ---
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "settings audio section composes status, registry, input, and monitor controls together"
+)]
 pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
     // Status badge — always active if user reached settings
     let dot = container(iced::widget::Space::new())
@@ -598,6 +606,10 @@ pub fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Mess
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "settings library section keeps folder list and supported-format rows ordered together"
+)]
 pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
     // --- Folder list ---
     let folder_rows: Vec<Element<'_, Message>> = state
@@ -761,6 +773,10 @@ pub fn view_library_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Me
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "settings hotkeys section keeps portal status and binding table together"
+)]
 pub fn view_hotkeys_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a, Message> {
     use crate::shortcuts::ShortcutsStatus;
 
@@ -887,6 +903,10 @@ pub fn view_appearance_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'a,
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "static about panel is a single Iced layout builder with no runtime branching"
+)]
 pub fn view_about_section(t: Theme) -> Element<'static, Message> {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
 

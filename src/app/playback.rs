@@ -78,6 +78,10 @@ impl HonkHonk {
     /// `Ok` caches the PCM and starts playback; an `Err` logs and tears down the
     /// optimistic state so it does not stick (#151). The `Decoded` arm in
     /// `update` delegates straight here.
+    #[allow(
+        clippy::cognitive_complexity,
+        reason = "decode landing owns stale-generation, cache, playback, and UI cleanup invariants"
+    )]
     pub(super) fn handle_decoded(
         &mut self,
         id: String,

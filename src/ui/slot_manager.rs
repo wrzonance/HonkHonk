@@ -319,6 +319,10 @@ fn sidebar_bound_portal<'a>(t: Theme) -> Element<'a, Message> {
     .into()
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "bound-slot sidebar keeps hotkey, portal status, and unbind controls in fixed order"
+)]
 fn sidebar_bound<'a>(
     idx: u8,
     sound: &'a SoundEntry,

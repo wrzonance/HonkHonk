@@ -33,6 +33,10 @@ fn missing_tile_slots(tiles_in_row: usize, columns: usize) -> usize {
     columns.saturating_sub(tiles_in_row)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "grid builder preserves row chunking, tile gaps, and empty state in one layout path"
+)]
 pub fn view_grid<'a>(
     sounds: &[&'a SoundEntry],
     playing: Option<&str>,
@@ -139,6 +143,10 @@ fn hotkey_for(sound: &SoundEntry, ctx: TileCtx<'_>) -> Option<String> {
 const MENU_W: f32 = 200.0;
 const MENU_H: f32 = 340.0;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "context menu builder keeps slot labels, edit action, clamping, and dismiss layer aligned"
+)]
 pub fn context_menu_overlay<'a>(
     sound: Option<&'a SoundEntry>,
     slot_ctx: SlotCtx<'a>,

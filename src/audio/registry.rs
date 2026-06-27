@@ -28,6 +28,10 @@ struct RegistryState {
     source_ports: HashMap<u32, Vec<u32>>,
 }
 
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "PipeWire mic link creation keeps node guards, duplicate suppression, and error logging together"
+)]
 fn try_create_mic_links(
     state: &mut RegistryState,
     core: &pipewire::core::Core,
@@ -69,6 +73,10 @@ fn try_create_mic_links(
     }
 }
 
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "PipeWire monitor link creation keeps node guards, duplicate suppression, and error logging together"
+)]
 fn try_create_monitor_links(
     state: &mut RegistryState,
     core: &pipewire::core::Core,
@@ -168,6 +176,11 @@ enum DeviceChange {
     Inputs,
 }
 
+#[allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    reason = "registry callback keeps PipeWire object classification and device-change reporting together"
+)]
 fn handle_registry_global(
     global: &pipewire::registry::GlobalObject<&pipewire::spa::utils::dict::DictRef>,
     state: &mut RegistryState,
@@ -337,6 +350,10 @@ pub struct RegistryConfig {
     pub shared_sink_ports: Rc<RefCell<Vec<u32>>>,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "PipeWire listener owns captured Rc guard setup that must stay in one lifetime scope"
+)]
 pub fn setup_registry_listener(
     core: &pipewire::core::CoreRc,
     cfg: RegistryConfig,

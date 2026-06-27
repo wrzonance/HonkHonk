@@ -360,6 +360,10 @@ Select 'HonkHonk Mic' as your input in Discord/OBS."
 }
 
 impl HonkHonk {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "constructor lists every app state field explicitly to avoid hidden defaults during app split"
+    )]
     pub fn new(
         mut tray: TrayHandle,
         audio: AudioHandle,
@@ -593,6 +597,11 @@ impl HonkHonk {
             .collect()
     }
 
+    #[allow(
+        clippy::cognitive_complexity,
+        clippy::too_many_lines,
+        reason = "legacy Elm update dispatcher is being split under #142; keep message routing visible until then"
+    )]
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ToggleVisibility => {
@@ -1435,6 +1444,10 @@ impl HonkHonk {
         Some(banner.into())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "legacy root layout preserves Iced widget-state ordering while the app split proceeds under #142"
+    )]
     fn view_main(&self) -> Element<'_, Message> {
         let t = self.config.theme;
         let header = self.view_header(t);
@@ -2033,6 +2046,10 @@ mod tests {
         assert_eq!(app.now_playing.display_progress(), 0.0);
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "regression test spells out the same-sound re-press event timeline from #149"
+    )]
     #[test]
     fn re_pressing_same_sound_keeps_playhead_alive() {
         // Re-pressing the SAME tile while it is still playing must re-trigger the
