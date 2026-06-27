@@ -36,13 +36,27 @@ pub struct BurstLine {
     pub direction: Vector,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FeatherClass {
+    Dust,
+    Chunk,
+    Feather,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FeatherParticle {
+    pub class: FeatherClass,
     pub position: Point,
     pub velocity: Vector,
     pub alpha: f32,
     pub size: f32,
     pub rotation: f32,
+    wobble_phase: f32,
+    wobble_frequency: f32,
+    wobble_strength: f32,
+    horizontal_drag: f32,
+    vertical_drag: f32,
+    rotation_velocity: f32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -160,13 +174,14 @@ fn seed_particles(emitter: BurstEmitter, transition: PanelTransition) -> Vec<Fea
 }
 
 fn seed_particle(emitter: BurstEmitter, transition: PanelTransition, i: usize) -> FeatherParticle {
+    let class = feather_class(i);
+    let params = class_params(class, i);
     let dir = particle_direction(emitter, i);
     let perp = Vector::new(-dir.y, dir.x);
     let scatter = ((i % 7) as f32 - 3.0) / 3.0;
-    let speed = 62.0 + (i % 5) as f32 * 9.0;
-    let drift = -18.0 + (i % 4) as f32 * 9.0;
+    let drift = params.vertical_bias + (-4.0 + (i % 3) as f32 * 4.0);
     let velocity = add(
-        scale(dir, speed),
+        scale(dir, params.outward_speed),
         add(scale(perp, scatter * 28.0), Vector::new(0.0, drift)),
     );
     let offset = add(
@@ -179,11 +194,18 @@ fn seed_particle(emitter: BurstEmitter, transition: PanelTransition, i: usize) -
     };
 
     FeatherParticle {
+        class,
         position: translate(emitter_point(emitter, i), offset),
         velocity,
         alpha: 1.0,
-        size: 10.0 + (i % 4) as f32 * 3.5,
+        size: params.size,
         rotation: rotation_bias + scatter * 0.45,
+        wobble_phase: i as f32 * 1.618_034,
+        wobble_frequency: params.wobble_frequency,
+        wobble_strength: params.wobble_strength,
+        horizontal_drag: params.horizontal_drag,
+        vertical_drag: params.vertical_drag,
+        rotation_velocity: params.rotation_velocity,
     }
 }
 
@@ -223,13 +245,81 @@ fn deterministic_jitter(i: usize) -> f32 {
     JITTER[i % JITTER.len()]
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FeatherClassParams {
+    size: f32,
+    outward_speed: f32,
+    vertical_bias: f32,
+    wobble_frequency: f32,
+    wobble_strength: f32,
+    horizontal_drag: f32,
+    vertical_drag: f32,
+    rotation_velocity: f32,
+}
+
+fn feather_class(i: usize) -> FeatherClass {
+    match i % 6 {
+        0 | 3 => FeatherClass::Dust,
+        1 | 4 => FeatherClass::Chunk,
+        _ => FeatherClass::Feather,
+    }
+}
+
+fn class_params(class: FeatherClass, i: usize) -> FeatherClassParams {
+    let variant = ((i / 3) % 3) as f32;
+    match class {
+        FeatherClass::Dust => FeatherClassParams {
+            size: 3.0 + variant,
+            outward_speed: 82.0 + variant * 5.0,
+            vertical_bias: 34.0 + variant * 8.0,
+            wobble_frequency: 8.0 + variant,
+            wobble_strength: 6.0 + variant,
+            horizontal_drag: 2.2,
+            vertical_drag: 0.25,
+            rotation_velocity: 1.4 + variant * 0.2,
+        },
+        FeatherClass::Chunk => FeatherClassParams {
+            size: 8.0 + variant * 1.5,
+            outward_speed: 74.0 + variant * 6.0,
+            vertical_bias: 10.0 + variant * 5.0,
+            wobble_frequency: 5.6 + variant * 0.5,
+            wobble_strength: 15.0 + variant * 2.0,
+            horizontal_drag: 1.4,
+            vertical_drag: 0.75,
+            rotation_velocity: 0.95 + variant * 0.12,
+        },
+        FeatherClass::Feather => FeatherClassParams {
+            size: 16.0 + variant * 2.5,
+            outward_speed: 68.0 + variant * 4.0,
+            vertical_bias: -18.0 + variant * 4.0,
+            wobble_frequency: 3.2 + variant * 0.35,
+            wobble_strength: 26.0 + variant * 3.0,
+            horizontal_drag: 0.9,
+            vertical_drag: 1.65,
+            rotation_velocity: 0.55 + variant * 0.08,
+        },
+    }
+}
+
 fn tick_particle(particle: &mut FeatherParticle, dt: f32, cursor: Option<Point>) {
     if let Some(cursor) = cursor {
         particle.velocity = add(particle.velocity, cursor_bump(*particle, cursor, dt));
     }
+
+    let wobble = (particle.wobble_phase + particle.wobble_frequency * dt).sin();
+    particle.wobble_phase += particle.wobble_frequency * dt;
+    particle.velocity.x += wobble * particle.wobble_strength * dt;
     particle.velocity.y += GRAVITY * dt;
+
+    particle.velocity.x *= drag_factor(particle.horizontal_drag, dt);
+    particle.velocity.y *= drag_factor(particle.vertical_drag, dt);
+
     particle.position = translate(particle.position, scale(particle.velocity, dt));
-    particle.rotation += dt * 0.6;
+    particle.rotation += particle.rotation_velocity * dt * (0.6 + wobble * 0.4);
+}
+
+fn drag_factor(drag_per_second: f32, dt: f32) -> f32 {
+    (-drag_per_second * dt).exp()
 }
 
 fn cursor_bump(particle: FeatherParticle, cursor: Point, dt: f32) -> Vector {

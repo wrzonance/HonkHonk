@@ -1,7 +1,9 @@
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 use honkhonk::ui::side_panel::{
-    BurstEmitter, BurstLine, PanelFlourish, PanelRect, PanelTransition, panel_burst_emitter,
+    BurstEmitter, BurstLine, FeatherClass, PanelFlourish, PanelRect, PanelTransition,
+    panel_burst_emitter,
 };
 use iced::{Point, Vector};
 
@@ -59,6 +61,43 @@ fn assert_line(actual: BurstLine, start: Point, end: Point, direction: Vector) {
     assert_eq!(actual.start, start);
     assert_eq!(actual.end, end);
     assert_eq!(actual.direction, direction);
+}
+
+fn first_particle_of(
+    flourish: &PanelFlourish,
+    class: FeatherClass,
+) -> honkhonk::ui::side_panel::FeatherParticle {
+    *flourish
+        .particles()
+        .iter()
+        .find(|p| p.class == class)
+        .expect("burst should include requested feather class")
+}
+
+fn size_range_for(flourish: &PanelFlourish, class: FeatherClass) -> f32 {
+    let sizes = flourish
+        .particles()
+        .iter()
+        .filter(|p| p.class == class)
+        .map(|p| p.size)
+        .collect::<Vec<_>>();
+    assert!(
+        sizes.len() > 1,
+        "burst should include multiple particles for {class:?}"
+    );
+    let min = sizes.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = sizes.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    max - min
+}
+
+fn tick_for(flourish: &mut PanelFlourish, start: Instant, total: Duration) {
+    let total_ms = total.as_millis() as u64;
+    let mut elapsed_ms = 16;
+    while elapsed_ms < total_ms {
+        assert!(flourish.tick(start + Duration::from_millis(elapsed_ms), None));
+        elapsed_ms += 16;
+    }
+    assert!(flourish.tick(start + total, None));
 }
 
 #[test]
@@ -146,6 +185,157 @@ fn edge_particles_span_most_of_the_panel_edge() {
 }
 
 #[test]
+fn burst_seeds_all_feather_classes() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let classes = flourish
+        .particles()
+        .iter()
+        .map(|p| p.class)
+        .collect::<BTreeSet<_>>();
+
+    assert!(classes.contains(&FeatherClass::Dust));
+    assert!(classes.contains(&FeatherClass::Chunk));
+    assert!(classes.contains(&FeatherClass::Feather));
+}
+
+#[test]
+fn feather_classes_have_distinct_visual_sizes() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let dust_size = first_particle_of(&flourish, FeatherClass::Dust).size;
+    let chunk_size = first_particle_of(&flourish, FeatherClass::Chunk).size;
+    let feather_size = first_particle_of(&flourish, FeatherClass::Feather).size;
+
+    assert!(dust_size < chunk_size);
+    assert!(chunk_size < feather_size);
+}
+
+#[test]
+fn same_class_particles_have_seed_variation() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    assert!(size_range_for(&flourish, FeatherClass::Dust) > 0.5);
+    assert!(size_range_for(&flourish, FeatherClass::Chunk) > 0.5);
+    assert!(size_range_for(&flourish, FeatherClass::Feather) > 0.5);
+}
+
+#[test]
+fn dust_descends_farther_than_full_feather() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let dust_start = first_particle_of(&flourish, FeatherClass::Dust).position.y;
+    let feather_start = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y;
+
+    tick_for(&mut flourish, now, Duration::from_millis(900));
+
+    let dust_drop = first_particle_of(&flourish, FeatherClass::Dust).position.y - dust_start;
+    let feather_drop = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y
+        - feather_start;
+
+    assert!(
+        dust_drop > feather_drop + 18.0,
+        "dust should fall faster than a full feather: dust={dust_drop}, feather={feather_drop}"
+    );
+}
+
+#[test]
+fn full_feathers_swoop_more_than_dust() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let dust_start = first_particle_of(&flourish, FeatherClass::Dust).position.x;
+    let feather_start = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .x;
+
+    tick_for(&mut flourish, now, Duration::from_millis(1200));
+
+    let dust_dx = (first_particle_of(&flourish, FeatherClass::Dust).position.x - dust_start).abs();
+    let feather_dx = (first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .x
+        - feather_start)
+        .abs();
+
+    assert!(
+        feather_dx > dust_dx + 8.0,
+        "full feathers should have more lateral swoop: dust={dust_dx}, feather={feather_dx}"
+    );
+}
+
+#[test]
+fn long_frame_hitch_does_not_snap_feather_drag_to_zero() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let feather_start = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y;
+
+    assert!(flourish.tick(now + Duration::from_millis(900), None));
+
+    let feather_drop = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y
+        - feather_start;
+
+    assert!(
+        feather_drop > 1.0,
+        "frame-independent drag should preserve visible descent after a hitch: {feather_drop}"
+    );
+}
+
+#[test]
+fn same_class_feathers_diverge_from_seeded_wobble_phase() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let starts = flourish
+        .particles()
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.class == FeatherClass::Feather)
+        .map(|(i, p)| (i, p.position.x, p.velocity.x))
+        .collect::<Vec<_>>();
+    let Some((first, second)) = starts.iter().enumerate().find_map(|(i, first)| {
+        starts.iter().skip(i + 1).find_map(|second| {
+            let same_x = (first.1 - second.1).abs() <= f32::EPSILON;
+            let same_vx = (first.2 - second.2).abs() <= f32::EPSILON;
+            (same_x && same_vx).then_some((*first, *second))
+        })
+    }) else {
+        panic!("burst should include same-class feathers with matching x seeds");
+    };
+
+    tick_for(&mut flourish, now, Duration::from_millis(1200));
+
+    let first_dx = flourish.particles()[first.0].position.x - first.1;
+    let second_dx = flourish.particles()[second.0].position.x - second.1;
+    let divergence = (first_dx - second_dx).abs();
+
+    assert!(
+        divergence > 4.0,
+        "same-class feathers should diverge from seeded wobble phase: first={first_dx}, second={second_dx}, divergence={divergence}"
+    );
+}
+
+#[test]
 fn feathers_float_down_and_fade_out() {
     let now = Instant::now();
     let mut flourish = PanelFlourish::default();
@@ -157,6 +347,36 @@ fn feathers_float_down_and_fade_out() {
     assert!(mid.alpha > 0.0 && mid.alpha < 1.0);
     assert!(!flourish.tick(now + Duration::from_millis(3100), None));
     assert!(!flourish.is_animating());
+}
+
+#[test]
+fn all_classes_clear_at_shared_burst_duration() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    assert!(
+        flourish
+            .particles()
+            .iter()
+            .any(|p| p.class == FeatherClass::Dust)
+    );
+    assert!(
+        flourish
+            .particles()
+            .iter()
+            .any(|p| p.class == FeatherClass::Chunk)
+    );
+    assert!(
+        flourish
+            .particles()
+            .iter()
+            .any(|p| p.class == FeatherClass::Feather)
+    );
+
+    assert!(!flourish.tick(now + honkhonk::ui::side_panel::BURST_DURATION, None));
+    assert!(!flourish.is_animating());
+    assert!(flourish.particles().is_empty());
 }
 
 #[test]
