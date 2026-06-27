@@ -21,16 +21,19 @@ pub enum PanelTransition {
     Close,
 }
 
+/// Source geometry for seeding a feather burst.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BurstSource {
-    Edge(Vector),
-    Center,
+pub enum BurstEmitter {
+    Edge(BurstLine),
+    Center(Point),
 }
 
+/// Emitter line along a panel edge; `direction` points outward, away from the panel.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BurstOrigin {
-    pub point: Point,
-    pub source: BurstSource,
+pub struct BurstLine {
+    pub start: Point,
+    pub end: Point,
+    pub direction: Vector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -49,7 +52,7 @@ pub struct PanelFlourish {
     last_tick: Option<Instant>,
 }
 
-pub fn panel_burst_origin(panel: PanelRect, window: (f32, f32)) -> BurstOrigin {
+pub fn panel_burst_emitter(panel: PanelRect, window: (f32, f32)) -> BurstEmitter {
     let win_w = window.0.max(0.0);
     let win_h = window.1.max(0.0);
     let touches_left = panel.x <= EDGE_EPS;
@@ -58,22 +61,39 @@ pub fn panel_burst_origin(panel: PanelRect, window: (f32, f32)) -> BurstOrigin {
     let touches_bottom = win_h > 0.0 && panel.y + panel.h >= win_h - EDGE_EPS;
 
     if touches_right && panel.x > EDGE_EPS {
-        return edge(Point::new(panel.x, panel.center.y), -1.0, 0.0);
+        return edge_line(
+            Point::new(panel.x, panel.y),
+            Point::new(panel.x, panel.y + panel.h),
+            -1.0,
+            0.0,
+        );
     }
     if touches_left && panel.x + panel.w < win_w - EDGE_EPS {
-        return edge(Point::new(panel.x + panel.w, panel.center.y), 1.0, 0.0);
+        return edge_line(
+            Point::new(panel.x + panel.w, panel.y),
+            Point::new(panel.x + panel.w, panel.y + panel.h),
+            1.0,
+            0.0,
+        );
     }
     if touches_bottom && panel.y > EDGE_EPS {
-        return edge(Point::new(panel.center.x, panel.y), 0.0, -1.0);
+        return edge_line(
+            Point::new(panel.x, panel.y),
+            Point::new(panel.x + panel.w, panel.y),
+            0.0,
+            -1.0,
+        );
     }
     if touches_top && panel.y + panel.h < win_h - EDGE_EPS {
-        return edge(Point::new(panel.center.x, panel.y + panel.h), 0.0, 1.0);
+        return edge_line(
+            Point::new(panel.x, panel.y + panel.h),
+            Point::new(panel.x + panel.w, panel.y + panel.h),
+            0.0,
+            1.0,
+        );
     }
 
-    BurstOrigin {
-        point: panel.center,
-        source: BurstSource::Center,
-    }
+    BurstEmitter::Center(panel.center)
 }
 
 impl PanelFlourish {
@@ -84,8 +104,8 @@ impl PanelFlourish {
         transition: PanelTransition,
         now: Instant,
     ) {
-        let origin = panel_burst_origin(panel, window);
-        self.particles = seed_particles(origin, transition);
+        let emitter = panel_burst_emitter(panel, window);
+        self.particles = seed_particles(emitter, transition);
         self.started = Some(now);
         self.last_tick = Some(now);
     }
@@ -125,21 +145,22 @@ impl PanelFlourish {
     }
 }
 
-fn edge(point: Point, x: f32, y: f32) -> BurstOrigin {
-    BurstOrigin {
-        point,
-        source: BurstSource::Edge(Vector::new(x, y)),
-    }
+fn edge_line(start: Point, end: Point, x: f32, y: f32) -> BurstEmitter {
+    BurstEmitter::Edge(BurstLine {
+        start,
+        end,
+        direction: Vector::new(x, y),
+    })
 }
 
-fn seed_particles(origin: BurstOrigin, transition: PanelTransition) -> Vec<FeatherParticle> {
+fn seed_particles(emitter: BurstEmitter, transition: PanelTransition) -> Vec<FeatherParticle> {
     (0..PARTICLES)
-        .map(|i| seed_particle(origin, transition, i))
+        .map(|i| seed_particle(emitter, transition, i))
         .collect()
 }
 
-fn seed_particle(origin: BurstOrigin, transition: PanelTransition, i: usize) -> FeatherParticle {
-    let dir = particle_direction(origin.source, i);
+fn seed_particle(emitter: BurstEmitter, transition: PanelTransition, i: usize) -> FeatherParticle {
+    let dir = particle_direction(emitter, i);
     let perp = Vector::new(-dir.y, dir.x);
     let scatter = ((i % 7) as f32 - 3.0) / 3.0;
     let speed = 62.0 + (i % 5) as f32 * 9.0;
@@ -158,7 +179,7 @@ fn seed_particle(origin: BurstOrigin, transition: PanelTransition, i: usize) -> 
     };
 
     FeatherParticle {
-        position: translate(origin.point, offset),
+        position: translate(emitter_point(emitter, i), offset),
         velocity,
         alpha: 1.0,
         size: 10.0 + (i % 4) as f32 * 3.5,
@@ -166,14 +187,40 @@ fn seed_particle(origin: BurstOrigin, transition: PanelTransition, i: usize) -> 
     }
 }
 
-fn particle_direction(source: BurstSource, i: usize) -> Vector {
-    match source {
-        BurstSource::Edge(v) => normalize(v),
-        BurstSource::Center => {
+fn particle_direction(emitter: BurstEmitter, i: usize) -> Vector {
+    match emitter {
+        BurstEmitter::Edge(line) => normalize(line.direction),
+        BurstEmitter::Center(_) => {
             let angle = i as f32 * 2.399_963_1;
             Vector::new(angle.cos(), angle.sin())
         }
     }
+}
+
+fn emitter_point(emitter: BurstEmitter, i: usize) -> Point {
+    match emitter {
+        BurstEmitter::Edge(line) => point_on_line(line, edge_t(i)),
+        BurstEmitter::Center(point) => point,
+    }
+}
+
+fn point_on_line(line: BurstLine, t: f32) -> Point {
+    Point::new(
+        line.start.x + (line.end.x - line.start.x) * t,
+        line.start.y + (line.end.y - line.start.y) * t,
+    )
+}
+
+fn edge_t(i: usize) -> f32 {
+    let slot = 1.0 / PARTICLES as f32;
+    let base = (i as f32 + 0.5) * slot;
+    let jitter = deterministic_jitter(i) * slot * 0.7;
+    (base + jitter).clamp(slot * 0.25, 1.0 - slot * 0.25)
+}
+
+fn deterministic_jitter(i: usize) -> f32 {
+    const JITTER: [f32; 9] = [-0.42, 0.18, -0.08, 0.36, -0.25, 0.05, 0.44, -0.15, 0.27];
+    JITTER[i % JITTER.len()]
 }
 
 fn tick_particle(particle: &mut FeatherParticle, dt: f32, cursor: Option<Point>) {

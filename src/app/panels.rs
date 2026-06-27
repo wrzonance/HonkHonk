@@ -79,6 +79,10 @@ impl HonkHonk {
     }
 
     fn emit_effects_panel_flourish(&mut self, transition: PanelTransition, now: Instant) {
+        if transition == PanelTransition::Close {
+            self.panel_flourish.clear();
+            return;
+        }
         if !self.visible || !self.config.panel_animations {
             return;
         }
@@ -91,7 +95,6 @@ impl HonkHonk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     #[test]
     fn disabling_panel_animations_clears_in_flight_flourish() {
@@ -108,10 +111,46 @@ mod tests {
         let mut app = HonkHonk::new_for_test();
         let _ = app.toggle_effects_panel();
         let _ = app.close_effects_panel();
-        app.tick_frame(Instant::now() + Duration::from_millis(16));
-        let moved = app.panel_flourish.particles()[0].position;
+        assert!(!app.panel_flourish.is_animating());
 
         let _ = app.close_effects_panel();
-        assert_eq!(app.panel_flourish.particles()[0].position, moved);
+        assert!(!app.panel_flourish.is_animating());
+    }
+
+    #[test]
+    fn closing_open_panel_does_not_emit_flourish() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.toggle_effects_panel();
+        app.tick_frame(Instant::now() + crate::ui::side_panel::BURST_DURATION);
+        assert!(!app.panel_flourish.is_animating());
+
+        let _ = app.close_effects_panel();
+        assert!(!app.panel_flourish.is_animating());
+    }
+
+    #[test]
+    fn escape_close_clears_in_flight_flourish() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.toggle_effects_panel();
+        assert!(app.panel_flourish.is_animating());
+
+        app.close_effects_panel_from_escape(Instant::now());
+        assert!(!app.panel_flourish.is_animating());
+    }
+
+    #[test]
+    fn close_flourish_does_not_extend_frame_subscription_after_slide() {
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.toggle_effects_panel();
+        app.tick_frame(Instant::now() + crate::ui::side_panel::SLIDE_DURATION);
+        assert!(app.effects_panel.is_open());
+
+        let _ = app.close_effects_panel();
+        assert!(app.frame_subscription_needed());
+
+        app.tick_frame(Instant::now() + crate::ui::side_panel::SLIDE_DURATION);
+        assert!(!app.effects_panel.is_animating());
+        assert!(!app.panel_flourish.is_animating());
+        assert!(!app.frame_subscription_needed());
     }
 }
