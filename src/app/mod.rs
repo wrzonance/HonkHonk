@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use iced::widget::{button, container, row, scrollable, space, text};
 use iced::{Element, Length, Point, Subscription, Task, Theme};
@@ -18,10 +18,14 @@ use crate::ui::side_panel::{PanelAnim, PanelFlourish};
 use crate::ui::sound_grid;
 use crate::ui::theme::{self, Hh};
 use crate::ui::{now_playing, search_bar, slot_manager};
+use notices::{Notice, NoticeId, NoticeQueue};
 
 /// Play-dispatch coordination (`request_play` / `handle_decoded` /
 /// `start_playback`), extracted to keep this file from growing (#151).
 mod macros;
+#[cfg(test)]
+mod notice_tests;
+pub(crate) mod notices;
 /// Panel animation state transitions extracted from the Iced update loop (#144).
 mod panels;
 mod playback;
@@ -55,6 +59,9 @@ pub enum Message {
     TrayEvent(TrayEvent),
     TrayPoll,
     AudioEvent(AudioEvent),
+    RaiseNotice(Notice),
+    DismissNotice(NoticeId),
+    NoticeTick(Instant),
     PlaySound(String),
     StopAll,
     StartRecording,
@@ -204,9 +211,8 @@ pub struct HonkHonk {
     pub monitor_devices: Vec<(String, String)>,
     pub input_devices: Vec<(String, String)>,
     shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService,
-    /// One-time notice surfaced on first run when the persistent virtual mic was
-    /// created programmatically (issue #49). `None` until `SourceFirstRun` fires.
-    source_notice: Option<String>,
+    /// User-visible in-window notices raised from app/audio events.
+    notices: NoticeQueue,
     /// Per-sound metadata: favorites, per-sound volume, display names.
     pub(crate) sound_meta: SoundMetaStore,
     /// When `false`, `sound_meta.save()` is skipped (used in tests to avoid
@@ -418,7 +424,7 @@ impl HonkHonk {
             monitor_devices: Vec::new(),
             input_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
-            source_notice: None,
+            notices: NoticeQueue::new(),
             sound_meta: SoundMetaStore::load(),
             persist_sound_meta: true,
             editor_sound_id: None,
@@ -478,7 +484,7 @@ impl HonkHonk {
             monitor_devices: Vec::new(),
             input_devices: Vec::new(),
             shortcut_config: crate::shortcuts::config_ui::ShortcutConfigService::new(),
-            source_notice: None,
+            notices: NoticeQueue::new(),
             sound_meta: SoundMetaStore::default(),
             persist_sound_meta: false,
             editor_sound_id: None,
@@ -578,11 +584,8 @@ impl HonkHonk {
         self.shortcuts_warning_dismissed
     }
 
-    /// First-run persistent-mic notice text, if one was surfaced this session
-    /// (issue #49). Returns `None` until a `SourceFirstRun` event fires. A UI
-    /// banner can render this; rendering is intentionally out of scope here.
-    pub fn source_notice(&self) -> Option<&str> {
-        self.source_notice.as_deref()
+    pub(crate) fn notices(&self) -> &NoticeQueue {
+        &self.notices
     }
 
     pub fn sound_meta(&self) -> &SoundMetaStore {
@@ -713,11 +716,14 @@ impl HonkHonk {
                     }
                     AudioEvent::Error(e) => {
                         tracing::error!(error = %e, "audio error");
+                        self.notices
+                            .push(Notice::error("Audio error", e.to_string()), Instant::now());
                     }
                     AudioEvent::SourceFirstRun { confd_written } => {
-                        let notice = source_first_run_notice(confd_written);
-                        tracing::info!(notice = %notice, "source first-run notice");
-                        self.source_notice = Some(notice);
+                        let body = source_first_run_notice(confd_written);
+                        tracing::info!(notice = %body, "source first-run notice");
+                        self.notices
+                            .push(Notice::info("HonkHonk Mic created", body), Instant::now());
                     }
                     AudioEvent::OutputDevicesChanged(devices) => {
                         if let Some(ref target) = self.config.monitor_device.clone() {
@@ -763,6 +769,18 @@ impl HonkHonk {
                         // Reserved for Phase 4B: update UI latency indicator.
                     }
                 }
+                Task::none()
+            }
+            Message::RaiseNotice(notice) => {
+                self.notices.push(notice, Instant::now());
+                Task::none()
+            }
+            Message::DismissNotice(id) => {
+                self.notices.dismiss(id);
+                Task::none()
+            }
+            Message::NoticeTick(now) => {
+                self.notices.expire(now);
                 Task::none()
             }
             Message::PlaySound(sound_id) => {
@@ -1419,8 +1437,7 @@ impl HonkHonk {
     pub fn subscription(&self) -> Subscription<Message> {
         let shortcuts = Subscription::run(shortcuts_stream_sub_none);
 
-        let tray_poll =
-            iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::TrayPoll);
+        let tray_poll = iced::time::every(Duration::from_millis(100)).map(|_| Message::TrayPoll);
 
         let events = iced::event::listen_with(|event, _, _window_id| match event {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
@@ -1454,6 +1471,10 @@ impl HonkHonk {
         // out automatically when playback ends. No fps cap (let it fly at refresh).
         if self.frame_subscription_needed() {
             subs.push(iced::window::frames().map(Message::Frame));
+        }
+
+        if self.notices.has_expiring() {
+            subs.push(iced::time::every(Duration::from_millis(250)).map(Message::NoticeTick));
         }
 
         Subscription::batch(subs)
@@ -1629,7 +1650,7 @@ impl HonkHonk {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        match self.view_mode {
+        let base = match self.view_mode {
             ViewMode::Main => self.view_main(),
             ViewMode::SlotManager => {
                 let t = self.config.theme;
@@ -1645,7 +1666,19 @@ impl HonkHonk {
                 )
             }
             ViewMode::Settings => crate::ui::settings::view_settings(self, self.config.theme),
+        };
+
+        let mut layers = vec![base];
+        if let Some(notice_layer) =
+            crate::ui::notice::view_notice_layer(self.notices(), self.config.theme)
+        {
+            layers.push(notice_layer);
         }
+
+        iced::widget::Stack::with_children(layers)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 }
 
@@ -1745,28 +1778,6 @@ mod tests {
         assert_eq!(app.progress, 0.0);
         assert_eq!(app.now_playing.display_progress(), 0.0);
         assert!(!app.now_playing.has_playhead());
-    }
-
-    #[test]
-    fn source_first_run_written_sets_persistent_notice() {
-        let mut app = HonkHonk::new_for_test();
-        assert!(app.source_notice().is_none());
-        let _ = app.update(Message::AudioEvent(AudioEvent::SourceFirstRun {
-            confd_written: true,
-        }));
-        let notice = app.source_notice().expect("notice set");
-        assert!(notice.contains("persist"));
-        assert!(notice.contains("HonkHonk Mic"));
-    }
-
-    #[test]
-    fn source_first_run_not_written_sets_session_notice() {
-        let mut app = HonkHonk::new_for_test();
-        let _ = app.update(Message::AudioEvent(AudioEvent::SourceFirstRun {
-            confd_written: false,
-        }));
-        let notice = app.source_notice().expect("notice set");
-        assert!(notice.contains("this session"));
     }
 
     #[test]
