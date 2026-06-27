@@ -237,6 +237,42 @@ fn full_feathers_swoop_more_than_dust() {
 }
 
 #[test]
+fn same_class_feathers_diverge_from_seeded_wobble_phase() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let starts = flourish
+        .particles()
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.class == FeatherClass::Feather)
+        .take(2)
+        .map(|(i, p)| (i, p.position.x, p.velocity.x))
+        .collect::<Vec<_>>();
+    assert_eq!(starts.len(), 2);
+    assert!(
+        (starts[0].1 - starts[1].1).abs() <= f32::EPSILON,
+        "chosen feathers must start at the same x position"
+    );
+    assert!(
+        (starts[0].2 - starts[1].2).abs() <= f32::EPSILON,
+        "chosen feathers must start with the same x velocity"
+    );
+
+    tick_for(&mut flourish, now, Duration::from_millis(1200));
+
+    let first_dx = flourish.particles()[starts[0].0].position.x - starts[0].1;
+    let second_dx = flourish.particles()[starts[1].0].position.x - starts[1].1;
+    let divergence = (first_dx - second_dx).abs();
+
+    assert!(
+        divergence > 4.0,
+        "same-class feathers should diverge from seeded wobble phase: first={first_dx}, second={second_dx}, divergence={divergence}"
+    );
+}
+
+#[test]
 fn feathers_float_down_and_fade_out() {
     let now = Instant::now();
     let mut flourish = PanelFlourish::default();
