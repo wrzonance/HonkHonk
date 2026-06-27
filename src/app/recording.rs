@@ -223,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn request_play_captures_step_and_keeps_live_playback() {
+    fn request_play_captures_step_and_queues_live_playback() {
         let mut app = HonkHonk::new_for_test();
         let sound = sound("honk", "/sounds/honk.wav");
         let start = Instant::now() - Duration::from_millis(15);
@@ -235,7 +235,8 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].sound, PathBuf::from("/sounds/honk.wav"));
         assert!(steps[0].start_offset_ms >= 15);
-        assert_eq!(app.playing(), Some("honk"));
+        assert_eq!(app.playing(), None);
+        assert_eq!(app.pending_play_ids.len(), 1);
     }
 
     #[test]
@@ -252,6 +253,7 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].sound, sound.path);
         assert!(steps[0].start_offset_ms >= 25);
-        assert_eq!(app.playing(), Some("slot"));
+        assert_eq!(app.playing(), None);
+        assert_eq!(app.pending_play_ids.len(), 1);
     }
 }

@@ -15,11 +15,17 @@ pub(super) struct PlaybackDispatch {
     pub(super) mode: PlayMode,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct PendingDecode {
+    pub(super) task_voice_id: u64,
+    pub(super) dispatch: PlaybackDispatch,
+}
+
 impl HonkHonk {
-    /// Begins playing `sound`. A warm PCM cache hit fires synchronously; a miss
-    /// returns a `Task` that decodes off the UI thread and yields
-    /// `Message::Decoded`. The play generation is bumped here so a stale decode
-    /// (superseded by a newer press) is dropped on arrival (#149/#151).
+    /// Begins playing `sound`. A warm PCM cache hit fires synchronously and
+    /// claims the UI immediately; a cold miss queues off-thread decode work
+    /// without taking the highlight until decode succeeds. Same-id cold repeats
+    /// update the pending dispatch instead of spawning duplicate decodes (#152).
     pub(super) fn request_play(
         &mut self,
         sound: &SoundEntry,
@@ -27,6 +33,7 @@ impl HonkHonk {
     ) -> Task<Message> {
         self.capture_recording_at(&sound.path, Instant::now());
         self.play_generation = self.play_generation.wrapping_add(1);
+        let id = sound.id.clone();
         let dispatch = PlaybackDispatch {
             generation: self.play_generation,
             voice_id: self.play_generation,
@@ -34,21 +41,47 @@ impl HonkHonk {
             effects: self.effects_ui.to_effect_settings(),
             mode: self.play_mode_for_request(force_interrupt),
         };
-        self.playing = Some(sound.id.clone());
-        self.now_playing.pending(&sound.id);
         if dispatch.mode == PlayMode::Interrupt {
             self.pending_play_ids.clear();
+            self.pending_decodes.clear();
             if let Some(ref audio) = self.audio {
                 audio.send(AudioCommand::Stop);
             }
+            self.clear_playback_state();
         }
         if let Some(pcm) = self.audio_store.get_pcm(&sound.id) {
             self.start_playback(&sound.id, pcm, dispatch);
             return Task::none();
         }
+        if let Some(pending) = self.pending_decodes.get_mut(&id) {
+            pending.dispatch = dispatch;
+            return Task::none();
+        }
+        self.queue_decode(id, sound.path.clone(), dispatch)
+    }
+
+    fn queue_decode(
+        &mut self,
+        id: String,
+        path: std::path::PathBuf,
+        dispatch: PlaybackDispatch,
+    ) -> Task<Message> {
         self.pending_play_ids.insert(dispatch.voice_id);
-        let id = sound.id.clone();
-        let path = sound.path.clone();
+        self.pending_decodes.insert(
+            id.clone(),
+            PendingDecode {
+                task_voice_id: dispatch.voice_id,
+                dispatch,
+            },
+        );
+        Self::decode_task(id, path, dispatch)
+    }
+
+    fn decode_task(
+        id: String,
+        path: std::path::PathBuf,
+        dispatch: PlaybackDispatch,
+    ) -> Task<Message> {
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || crate::audio::decode(&path))
@@ -74,11 +107,10 @@ impl HonkHonk {
         )
     }
 
-    /// Applies a completed background decode for `generation`. A stale
-    /// generation (a superseded press, or a StopAll mid-decode) is dropped; an
-    /// `Ok` caches the PCM and starts playback; an `Err` logs and tears down the
-    /// optimistic state so it does not stick (#151). The `Decoded` arm in
-    /// `update` delegates straight here.
+    /// Applies a completed background decode. Results are accepted only while
+    /// their task is still pending and the sound still exists in the library.
+    /// An `Ok` caches PCM and starts playback; an `Err` logs and clears only if
+    /// that sound still owns the current UI (#151/#152).
     #[allow(
         clippy::cognitive_complexity,
         reason = "decode landing owns stale-generation, cache, playback, and UI cleanup invariants"
@@ -89,14 +121,20 @@ impl HonkHonk {
         result: Result<crate::audio::CachedPcm, String>,
         dispatch: PlaybackDispatch,
     ) -> Task<Message> {
-        if !self.pending_play_ids.remove(&dispatch.voice_id) {
+        let Some(pending) = self.pending_decode_for(&id, dispatch) else {
+            return Task::none();
+        };
+        if !self.sound_exists(&id) {
             return Task::none();
         }
+        let dispatch = pending.dispatch;
         match result {
             Ok(pcm) => {
                 let pcm = std::sync::Arc::new(pcm);
-                self.audio_store
+                let evicted = self
+                    .audio_store
                     .insert_pcm(id.clone(), std::sync::Arc::clone(&pcm));
+                self.evict_waveform_envelopes(evicted);
                 self.start_playback(&id, pcm, dispatch);
             }
             Err(e) => {
@@ -115,6 +153,51 @@ impl HonkHonk {
             }
         }
         Task::none()
+    }
+
+    fn pending_decode_for(
+        &mut self,
+        id: &str,
+        dispatch: PlaybackDispatch,
+    ) -> Option<PendingDecode> {
+        let pending = self.pending_decodes.remove(id).unwrap_or(PendingDecode {
+            task_voice_id: dispatch.voice_id,
+            dispatch,
+        });
+        self.pending_play_ids
+            .remove(&pending.task_voice_id)
+            .then_some(pending)
+    }
+
+    pub(super) fn reconcile_playback_with_library(&mut self) {
+        if self
+            .playing
+            .as_deref()
+            .is_some_and(|id| !self.sound_exists(id))
+        {
+            self.clear_playback_state();
+        }
+        let removed: Vec<String> = self
+            .pending_decodes
+            .keys()
+            .filter(|id| !self.sound_exists(id))
+            .cloned()
+            .collect();
+        for id in removed {
+            if let Some(pending) = self.pending_decodes.remove(&id) {
+                self.pending_play_ids.remove(&pending.task_voice_id);
+            }
+        }
+    }
+
+    fn sound_exists(&self, id: &str) -> bool {
+        self.sounds.iter().any(|sound| sound.id == id)
+    }
+
+    fn evict_waveform_envelopes(&mut self, ids: Vec<String>) {
+        for id in ids {
+            self.now_playing.remove_envelope(&id);
+        }
     }
 
     /// Starts the playhead from the decoded duration, ensures the waveform
@@ -172,92 +255,4 @@ impl HonkHonk {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cold_play_updates_waveform_cache_key_before_decode_lands() {
-        let mut app = HonkHonk::new_for_test();
-        let (handle, _evt_tx) = crate::audio::test_handle();
-        app.audio = Some(handle);
-        app.now_playing.sync(Some("old"), 0.75);
-
-        let sound = SoundEntry {
-            id: "new".into(),
-            name: "New".into(),
-            path: "/tmp/new.wav".into(),
-            format: crate::state::AudioFormat::Wav,
-            duration_ms: Some(100),
-            category: "Test".into(),
-        };
-        let _ = app.request_play(&sound, false);
-
-        assert!(
-            app.now_playing
-                .current_key()
-                .is_some_and(|key| key.matches(Some("new"), 0.0)),
-            "cold play must invalidate stale waveform bars before decode completes"
-        );
-    }
-
-    #[test]
-    fn late_concurrent_decode_keeps_newest_in_now_playing() {
-        let mut app = HonkHonk::new_for_test();
-        let (handle, _evt_tx) = crate::audio::test_handle();
-        app.audio = Some(handle);
-        // Default overlap mode is Concurrent, so superseded presses stay pending.
-
-        let sound = |id: &str| SoundEntry {
-            id: id.into(),
-            name: id.to_uppercase(),
-            path: format!("/tmp/{id}.wav").into(),
-            format: crate::state::AudioFormat::Wav,
-            duration_ms: Some(100),
-            category: "Test".into(),
-        };
-
-        // Two cold presses: each bumps the generation (A=1, B=2) and, in
-        // concurrent mode, both stay pending awaiting their decode.
-        let _ = app.request_play(&sound("a"), false);
-        let _ = app.request_play(&sound("b"), false);
-
-        let effects = app.effects_ui.to_effect_settings();
-        let pcm = || crate::audio::CachedPcm {
-            samples: std::sync::Arc::new(vec![0.0_f32; 16]),
-            sample_rate: 48_000,
-            channels: 1,
-            duration: std::time::Duration::from_millis(100),
-        };
-        let dispatch = |generation: u64| PlaybackDispatch {
-            generation,
-            voice_id: generation,
-            gain: 1.0,
-            effects,
-            mode: PlayMode::Concurrent,
-        };
-
-        // Decodes land out of order: the newest press (B) finishes first, then
-        // the older press (A).
-        let _ = app.handle_decoded("b".into(), Ok(pcm()), dispatch(2));
-        let _ = app.handle_decoded("a".into(), Ok(pcm()), dispatch(1));
-
-        // The older decode must still start its audio (cached + accepted, not
-        // dropped as stale)...
-        assert!(
-            app.audio_store.get_pcm("a").is_some(),
-            "older concurrent decode must still start playing"
-        );
-        // ...but the newest press keeps ownership of the highlight/playhead.
-        assert_eq!(
-            app.playing.as_deref(),
-            Some("b"),
-            "a late older decode must not retake `playing` from the newer press"
-        );
-        assert!(
-            app.now_playing
-                .current_key()
-                .is_some_and(|key| key.matches(Some("b"), 0.0)),
-            "a late older decode must not retake the now-playing highlight"
-        );
-    }
-}
+mod tests;

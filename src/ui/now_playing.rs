@@ -98,6 +98,10 @@ impl NowPlaying {
         self.envelopes.get(id).map(Arc::clone)
     }
 
+    pub(crate) fn remove_envelope(&mut self, id: &str) {
+        self.envelopes.remove(id);
+    }
+
     /// Reconciles the cache with the current playback state. Returns `true` when
     /// the cached geometry was invalidated (content changed), `false` when the
     /// existing cache is reused. Call once per update/view glue — the only place
