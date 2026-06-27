@@ -25,6 +25,7 @@ mod macros;
 /// Panel animation state transitions extracted from the Iced update loop (#144).
 mod panels;
 mod playback;
+mod recording;
 
 /// Virtual category name used for the Favorites filtered tab.
 pub const FAVORITES_TAB: &str = "\u{2605} Favorites";
@@ -56,6 +57,8 @@ pub enum Message {
     AudioEvent(AudioEvent),
     PlaySound(String),
     StopAll,
+    StartRecording,
+    StopRecording,
     /// Fire macro by id (slots call this in #169).
     PlayMacro(String),
     /// A scheduled macro step's timer elapsed; dispatch it if its run is current.
@@ -240,6 +243,14 @@ pub struct HonkHonk {
     pending_play_ids: HashSet<u64>,
     /// Persisted macro collection (#165).
     macros: crate::state::MacroStore,
+    /// Active live macro capture, if recording is enabled (#167).
+    recording: Option<recording::Recording>,
+    /// Unsaved macro draft produced by `StopRecording`, ready for #168's editor
+    /// buffer to adopt.
+    macro_editor_draft: Option<crate::state::Macro>,
+    /// Session-local counter used for draft names/ids. Unsaved drafts are not
+    /// inserted into `MacroStore`; #168 owns keep/discard persistence.
+    macro_draft_seq: u64,
     /// The single in-flight macro run, if any — `Some` enforces one macro at a
     /// time (#166). `None` when idle.
     macro_playback: Option<macros::MacroPlayback>,
@@ -422,6 +433,9 @@ impl HonkHonk {
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
             macros: crate::state::MacroStore::load(),
+            recording: None,
+            macro_editor_draft: None,
+            macro_draft_seq: 0,
             macro_playback: None,
             macro_run_id: 0,
             macro_voice_seq: 0,
@@ -475,6 +489,9 @@ impl HonkHonk {
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
             macros: crate::state::MacroStore::default(),
+            recording: None,
+            macro_editor_draft: None,
+            macro_draft_seq: 0,
             macro_playback: None,
             macro_run_id: 0,
             macro_voice_seq: 0,
@@ -762,6 +779,14 @@ impl HonkHonk {
                 self.pending_play_ids.clear();
                 self.clear_playback_state();
                 self.cancel_macro();
+                Task::none()
+            }
+            Message::StartRecording => {
+                self.start_recording_at(Instant::now());
+                Task::none()
+            }
+            Message::StopRecording => {
+                self.stop_recording();
                 Task::none()
             }
             Message::PlayMacro(id) => self.play_macro(&id),
@@ -1273,6 +1298,8 @@ impl HonkHonk {
 
         let search = search_bar::view_search_bar(&self.search_query);
 
+        let record_btn = self.view_record_button(t);
+
         let stop_btn = button(text("Stop All").size(14).color(t.ink()))
             .on_press(Message::StopAll)
             .style(move |_theme, _status| button::Style {
@@ -1288,11 +1315,30 @@ impl HonkHonk {
             settings_btn,
             space::horizontal(),
             search,
+            record_btn,
             stop_btn
         ]
         .spacing(theme::space::LG)
         .align_y(iced::Alignment::Center)
         .into()
+    }
+
+    fn view_record_button(&self, t: theme::Theme) -> Element<'_, Message> {
+        let (record_label, record_msg) = if self.is_recording() {
+            ("\u{25a0} Stop", Message::StopRecording)
+        } else {
+            ("\u{25cf} Record", Message::StartRecording)
+        };
+
+        button(text(record_label).size(14).color(t.ink()))
+            .on_press(record_msg)
+            .style(move |_theme, _status| button::Style {
+                background: Some(theme::bg_color(t.panel())),
+                text_color: t.ink(),
+                border: theme::tile_border(t.hairline(), 1.0),
+                ..Default::default()
+            })
+            .into()
     }
 
     fn view_category_chips(&self, t: theme::Theme) -> Element<'_, Message> {
