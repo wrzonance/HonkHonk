@@ -11,8 +11,8 @@ mod view;
 
 pub use anim::{PanelAnim, SLIDE_DURATION};
 pub use flourish::{
-    BURST_DURATION, BurstEmitter, BurstLine, FeatherParticle, PanelFlourish, PanelTransition,
-    panel_burst_emitter,
+    BURST_DURATION, BurstEmitter, BurstLine, FeatherClass, FeatherParticle, PanelFlourish,
+    PanelTransition, panel_burst_emitter,
 };
 pub use flourish_view::view_panel_flourish;
 pub use geometry::{PanelRect, panel_geometry};

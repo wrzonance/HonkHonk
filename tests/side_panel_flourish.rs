@@ -1,7 +1,9 @@
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 use honkhonk::ui::side_panel::{
-    BurstEmitter, BurstLine, PanelFlourish, PanelRect, PanelTransition, panel_burst_emitter,
+    BurstEmitter, BurstLine, FeatherClass, PanelFlourish, PanelRect, PanelTransition,
+    panel_burst_emitter,
 };
 use iced::{Point, Vector};
 
@@ -143,6 +145,23 @@ fn edge_particles_span_most_of_the_panel_edge() {
         max_y - min_y > 700.0,
         "feathers should span most of the edge"
     );
+}
+
+#[test]
+fn burst_seeds_all_feather_classes() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let classes = flourish
+        .particles()
+        .iter()
+        .map(|p| p.class)
+        .collect::<BTreeSet<_>>();
+
+    assert!(classes.contains(&FeatherClass::Dust));
+    assert!(classes.contains(&FeatherClass::Chunk));
+    assert!(classes.contains(&FeatherClass::Feather));
 }
 
 #[test]
