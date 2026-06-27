@@ -442,6 +442,10 @@ impl HonkHonk {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "test constructor mirrors app state fields explicitly so tests do not depend on hidden defaults"
+    )]
     pub fn new_for_test() -> Self {
         let (_tx, rx) = std::sync::mpsc::channel();
         let config = AppConfig::default();
