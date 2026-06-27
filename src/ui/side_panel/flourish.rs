@@ -305,9 +305,21 @@ fn tick_particle(particle: &mut FeatherParticle, dt: f32, cursor: Option<Point>)
     if let Some(cursor) = cursor {
         particle.velocity = add(particle.velocity, cursor_bump(*particle, cursor, dt));
     }
+
+    let wobble = (particle.wobble_phase + particle.wobble_frequency * dt).sin();
+    particle.wobble_phase += particle.wobble_frequency * dt;
+    particle.velocity.x += wobble * particle.wobble_strength * dt;
     particle.velocity.y += GRAVITY * dt;
+
+    particle.velocity.x *= drag_factor(particle.horizontal_drag, dt);
+    particle.velocity.y *= drag_factor(particle.vertical_drag, dt);
+
     particle.position = translate(particle.position, scale(particle.velocity, dt));
-    particle.rotation += dt * 0.6;
+    particle.rotation += particle.rotation_velocity * dt * (0.6 + wobble * 0.4);
+}
+
+fn drag_factor(drag_per_second: f32, dt: f32) -> f32 {
+    (1.0 - drag_per_second * dt).clamp(0.0, 1.0)
 }
 
 fn cursor_bump(particle: FeatherParticle, cursor: Point, dt: f32) -> Vector {

@@ -63,6 +63,27 @@ fn assert_line(actual: BurstLine, start: Point, end: Point, direction: Vector) {
     assert_eq!(actual.direction, direction);
 }
 
+fn first_particle_of(
+    flourish: &PanelFlourish,
+    class: FeatherClass,
+) -> honkhonk::ui::side_panel::FeatherParticle {
+    *flourish
+        .particles()
+        .iter()
+        .find(|p| p.class == class)
+        .expect("burst should include requested feather class")
+}
+
+fn tick_for(flourish: &mut PanelFlourish, start: Instant, total: Duration) {
+    let total_ms = total.as_millis() as u64;
+    let mut elapsed_ms = 16;
+    while elapsed_ms < total_ms {
+        assert!(flourish.tick(start + Duration::from_millis(elapsed_ms), None));
+        elapsed_ms += 16;
+    }
+    assert!(flourish.tick(start + total, None));
+}
+
 #[test]
 fn right_docked_panel_emits_from_full_inner_edge_away_from_panel() {
     let emitter = panel_burst_emitter(right_panel(), (1280.0, 800.0));
@@ -162,6 +183,57 @@ fn burst_seeds_all_feather_classes() {
     assert!(classes.contains(&FeatherClass::Dust));
     assert!(classes.contains(&FeatherClass::Chunk));
     assert!(classes.contains(&FeatherClass::Feather));
+}
+
+#[test]
+fn dust_descends_farther_than_full_feather() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let dust_start = first_particle_of(&flourish, FeatherClass::Dust).position.y;
+    let feather_start = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y;
+
+    tick_for(&mut flourish, now, Duration::from_millis(900));
+
+    let dust_drop = first_particle_of(&flourish, FeatherClass::Dust).position.y - dust_start;
+    let feather_drop = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y
+        - feather_start;
+
+    assert!(
+        dust_drop > feather_drop + 18.0,
+        "dust should fall faster than a full feather: dust={dust_drop}, feather={feather_drop}"
+    );
+}
+
+#[test]
+fn full_feathers_swoop_more_than_dust() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let dust_start = first_particle_of(&flourish, FeatherClass::Dust).position.x;
+    let feather_start = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .x;
+
+    tick_for(&mut flourish, now, Duration::from_millis(1200));
+
+    let dust_dx = (first_particle_of(&flourish, FeatherClass::Dust).position.x - dust_start).abs();
+    let feather_dx = (first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .x
+        - feather_start)
+        .abs();
+
+    assert!(
+        feather_dx > dust_dx + 8.0,
+        "full feathers should have more lateral swoop: dust={dust_dx}, feather={feather_dx}"
+    );
 }
 
 #[test]
