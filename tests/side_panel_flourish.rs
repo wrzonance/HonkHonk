@@ -301,6 +301,36 @@ fn feathers_float_down_and_fade_out() {
 }
 
 #[test]
+fn all_classes_clear_at_shared_burst_duration() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    assert!(
+        flourish
+            .particles()
+            .iter()
+            .any(|p| p.class == FeatherClass::Dust)
+    );
+    assert!(
+        flourish
+            .particles()
+            .iter()
+            .any(|p| p.class == FeatherClass::Chunk)
+    );
+    assert!(
+        flourish
+            .particles()
+            .iter()
+            .any(|p| p.class == FeatherClass::Feather)
+    );
+
+    assert!(!flourish.tick(now + honkhonk::ui::side_panel::BURST_DURATION, None));
+    assert!(!flourish.is_animating());
+    assert!(flourish.particles().is_empty());
+}
+
+#[test]
 fn cursor_gently_bumps_nearby_feathers() {
     let now = Instant::now();
     let mut plain = PanelFlourish::default();
