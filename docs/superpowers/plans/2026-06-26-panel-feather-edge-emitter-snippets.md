@@ -106,17 +106,9 @@ fn all_docked_panel_edges_emit_from_full_inner_edge() {
 
 #[test]
 fn floating_panel_emits_from_center() {
-    let emitter = panel_burst_emitter(
-        PanelRect {
-            x: 300.0,
-            y: 180.0,
-            w: 420.0,
-            h: 320.0,
-            center: Point::new(510.0, 340.0),
-        },
-        (1280.0, 800.0),
-    );
-    assert_eq!(emitter, BurstEmitter::Center(Point::new(510.0, 340.0)));
+    let panel = floating_panel();
+    let emitter = panel_burst_emitter(panel, (1280.0, 800.0));
+    assert_eq!(emitter, BurstEmitter::Center(panel.center));
 }
 
 #[test]
