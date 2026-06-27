@@ -74,6 +74,22 @@ fn first_particle_of(
         .expect("burst should include requested feather class")
 }
 
+fn size_range_for(flourish: &PanelFlourish, class: FeatherClass) -> f32 {
+    let sizes = flourish
+        .particles()
+        .iter()
+        .filter(|p| p.class == class)
+        .map(|p| p.size)
+        .collect::<Vec<_>>();
+    assert!(
+        sizes.len() > 1,
+        "burst should include multiple particles for {class:?}"
+    );
+    let min = sizes.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = sizes.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    max - min
+}
+
 fn tick_for(flourish: &mut PanelFlourish, start: Instant, total: Duration) {
     let total_ms = total.as_millis() as u64;
     let mut elapsed_ms = 16;
@@ -200,6 +216,17 @@ fn feather_classes_have_distinct_visual_sizes() {
 }
 
 #[test]
+fn same_class_particles_have_seed_variation() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    assert!(size_range_for(&flourish, FeatherClass::Dust) > 0.5);
+    assert!(size_range_for(&flourish, FeatherClass::Chunk) > 0.5);
+    assert!(size_range_for(&flourish, FeatherClass::Feather) > 0.5);
+}
+
+#[test]
 fn dust_descends_farther_than_full_feather() {
     let now = Instant::now();
     let mut flourish = PanelFlourish::default();
@@ -251,6 +278,29 @@ fn full_feathers_swoop_more_than_dust() {
 }
 
 #[test]
+fn long_frame_hitch_does_not_snap_feather_drag_to_zero() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let feather_start = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y;
+
+    assert!(flourish.tick(now + Duration::from_millis(900), None));
+
+    let feather_drop = first_particle_of(&flourish, FeatherClass::Feather)
+        .position
+        .y
+        - feather_start;
+
+    assert!(
+        feather_drop > 1.0,
+        "frame-independent drag should preserve visible descent after a hitch: {feather_drop}"
+    );
+}
+
+#[test]
 fn same_class_feathers_diverge_from_seeded_wobble_phase() {
     let now = Instant::now();
     let mut flourish = PanelFlourish::default();
@@ -261,23 +311,22 @@ fn same_class_feathers_diverge_from_seeded_wobble_phase() {
         .iter()
         .enumerate()
         .filter(|(_, p)| p.class == FeatherClass::Feather)
-        .take(2)
         .map(|(i, p)| (i, p.position.x, p.velocity.x))
         .collect::<Vec<_>>();
-    assert_eq!(starts.len(), 2);
-    assert!(
-        (starts[0].1 - starts[1].1).abs() <= f32::EPSILON,
-        "chosen feathers must start at the same x position"
-    );
-    assert!(
-        (starts[0].2 - starts[1].2).abs() <= f32::EPSILON,
-        "chosen feathers must start with the same x velocity"
-    );
+    let Some((first, second)) = starts.iter().enumerate().find_map(|(i, first)| {
+        starts.iter().skip(i + 1).find_map(|second| {
+            let same_x = (first.1 - second.1).abs() <= f32::EPSILON;
+            let same_vx = (first.2 - second.2).abs() <= f32::EPSILON;
+            (same_x && same_vx).then_some((*first, *second))
+        })
+    }) else {
+        panic!("burst should include same-class feathers with matching x seeds");
+    };
 
     tick_for(&mut flourish, now, Duration::from_millis(1200));
 
-    let first_dx = flourish.particles()[starts[0].0].position.x - starts[0].1;
-    let second_dx = flourish.particles()[starts[1].0].position.x - starts[1].1;
+    let first_dx = flourish.particles()[first.0].position.x - first.1;
+    let second_dx = flourish.particles()[second.0].position.x - second.1;
     let divergence = (first_dx - second_dx).abs();
 
     assert!(

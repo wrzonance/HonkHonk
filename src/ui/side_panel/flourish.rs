@@ -266,7 +266,7 @@ fn feather_class(i: usize) -> FeatherClass {
 }
 
 fn class_params(class: FeatherClass, i: usize) -> FeatherClassParams {
-    let variant = (i % 3) as f32;
+    let variant = ((i / 3) % 3) as f32;
     match class {
         FeatherClass::Dust => FeatherClassParams {
             size: 3.0 + variant,
@@ -319,7 +319,7 @@ fn tick_particle(particle: &mut FeatherParticle, dt: f32, cursor: Option<Point>)
 }
 
 fn drag_factor(drag_per_second: f32, dt: f32) -> f32 {
-    (1.0 - drag_per_second * dt).clamp(0.0, 1.0)
+    (-drag_per_second * dt).exp()
 }
 
 fn cursor_bump(particle: FeatherParticle, cursor: Point, dt: f32) -> Vector {
