@@ -44,26 +44,70 @@ impl<Message> canvas::Program<Message> for FeatherProgram<'_> {
 }
 
 fn draw_feather(frame: &mut canvas::Frame, particle: FeatherParticle, colors: FeatherColors) {
-    use iced::widget::canvas::{Path, Stroke};
-
     if particle.alpha <= 0.0 {
         return;
     }
+
+    match particle.class {
+        super::FeatherClass::Dust => draw_dust(frame, particle, colors),
+        super::FeatherClass::Chunk => draw_chunk(frame, particle, colors),
+        super::FeatherClass::Feather => draw_full_feather(frame, particle, colors),
+    }
+}
+
+fn draw_dust(frame: &mut canvas::Frame, particle: FeatherParticle, colors: FeatherColors) {
+    use iced::widget::canvas::Path;
+
+    let color = Color {
+        a: particle.alpha * 0.55,
+        ..colors.shadow
+    };
+    let radius = (particle.size * 0.45).max(1.0);
+    let dot = Path::circle(particle.position, radius);
+    frame.fill(&dot, color);
+}
+
+fn draw_chunk(frame: &mut canvas::Frame, particle: FeatherParticle, colors: FeatherColors) {
+    use iced::widget::canvas::{Path, Stroke};
+
+    let dir = unit_from_angle(particle.rotation);
+    let normal = Vector::new(-dir.y, dir.x);
+    let start = translate(particle.position, scale(dir, -particle.size * 0.35));
+    let end = translate(particle.position, scale(dir, particle.size * 0.35));
+    let tip = translate(particle.position, scale(normal, particle.size * 0.25));
+    let color = Color {
+        a: particle.alpha * 0.72,
+        ..colors.shadow
+    };
+
+    frame.stroke(
+        &Path::line(start, end),
+        Stroke::default().with_color(color).with_width(1.2),
+    );
+    frame.stroke(
+        &Path::line(particle.position, tip),
+        Stroke::default().with_color(color).with_width(1.0),
+    );
+}
+
+fn draw_full_feather(frame: &mut canvas::Frame, particle: FeatherParticle, colors: FeatherColors) {
+    use iced::widget::canvas::{Path, Stroke};
+
     let dir = unit_from_angle(particle.rotation);
     let spine = scale(dir, particle.size);
     let start = translate(particle.position, scale(spine, -0.45));
     let end = translate(particle.position, scale(spine, 0.55));
     let ink = Color {
-        a: particle.alpha * 0.9,
+        a: particle.alpha * 0.95,
         ..colors.ink
     };
     let shadow = Color {
-        a: particle.alpha * 0.5,
+        a: particle.alpha * 0.55,
         ..colors.shadow
     };
     frame.stroke(
         &Path::line(start, end),
-        Stroke::default().with_color(ink).with_width(1.4),
+        Stroke::default().with_color(ink).with_width(1.5),
     );
     draw_barbs(frame, particle, dir, shadow);
 }

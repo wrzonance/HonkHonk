@@ -186,6 +186,20 @@ fn burst_seeds_all_feather_classes() {
 }
 
 #[test]
+fn feather_classes_have_distinct_visual_sizes() {
+    let now = Instant::now();
+    let mut flourish = PanelFlourish::default();
+    flourish.emit(right_panel(), (1280.0, 800.0), PanelTransition::Open, now);
+
+    let dust_size = first_particle_of(&flourish, FeatherClass::Dust).size;
+    let chunk_size = first_particle_of(&flourish, FeatherClass::Chunk).size;
+    let feather_size = first_particle_of(&flourish, FeatherClass::Feather).size;
+
+    assert!(dust_size < chunk_size);
+    assert!(chunk_size < feather_size);
+}
+
+#[test]
 fn dust_descends_farther_than_full_feather() {
     let now = Instant::now();
     let mut flourish = PanelFlourish::default();
