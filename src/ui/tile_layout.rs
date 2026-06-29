@@ -6,6 +6,7 @@ const TILE_INSET: f32 = 6.0;
 // Covers a four-column grid near a 2560px-wide window; wider cells shrink the
 // drawn tile instead of increasing row height or drawing into neighboring rows.
 const ROTATION_CLEARANCE_WIDTH: f32 = 600.0;
+pub const MIN_TILE_CELL_W: f32 = 180.0;
 pub const IDLE_MAX_ROTATION_DEGREES: f32 = 3.0;
 pub const MAX_ROTATION_DEGREES: f32 = 8.0;
 
@@ -28,6 +29,16 @@ pub fn fitted_tile_size(slot: Size) -> Size {
     height = height.min(max_height_inside_slot(slot, width)).max(0.0);
 
     Size::new(width, height)
+}
+
+pub fn responsive_columns(available_width: f32, preferred_columns: usize, spacing: f32) -> usize {
+    let preferred = preferred_columns.max(1);
+    let usable_width = available_width.max(0.0);
+    let columns_that_fit = ((usable_width + spacing) / (MIN_TILE_CELL_W + spacing))
+        .floor()
+        .max(1.0) as usize;
+
+    preferred.min(columns_that_fit)
 }
 
 fn visible_tile_height() -> f32 {
@@ -136,5 +147,18 @@ mod tests {
         let tile = fitted_tile_size(slot);
 
         assert!((tile.height - visible_tile_height()).abs() < EPSILON);
+    }
+
+    #[test]
+    fn responsive_columns_reduces_columns_when_cells_would_be_too_narrow() {
+        assert_eq!(responsive_columns(1128.0, 5, theme::space::LG), 5);
+        assert_eq!(responsive_columns(728.0, 5, theme::space::LG), 3);
+        assert_eq!(responsive_columns(428.0, 5, theme::space::LG), 2);
+        assert_eq!(responsive_columns(288.0, 5, theme::space::LG), 1);
+    }
+
+    #[test]
+    fn responsive_columns_never_exceeds_preferred_columns() {
+        assert_eq!(responsive_columns(1128.0, 1, theme::space::LG), 1);
     }
 }
