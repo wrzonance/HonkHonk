@@ -1,4 +1,4 @@
-use iced::widget::{Space, button, column, container, mouse_area, row, text};
+use iced::widget::{Space, button, column, container, mouse_area, responsive, row, text};
 use iced::{Element, Length, mouse};
 
 use crate::app::Message;
@@ -33,14 +33,30 @@ fn missing_tile_slots(tiles_in_row: usize, columns: usize) -> usize {
     columns.saturating_sub(tiles_in_row)
 }
 
+pub fn view_grid<'a>(
+    sounds: Vec<&'a SoundEntry>,
+    playing: Option<&'a str>,
+    grid: GridCtx<'a>,
+) -> Element<'a, Message> {
+    responsive(move |size| {
+        let columns = tile_layout::responsive_columns(size.width, grid.columns, theme::space::LG);
+
+        view_grid_columns(&sounds, playing, grid, columns)
+    })
+    .width(Length::Fill)
+    .height(Length::Shrink)
+    .into()
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "grid builder preserves row chunking, tile gaps, and empty state in one layout path"
 )]
-pub fn view_grid<'a>(
+fn view_grid_columns<'a>(
     sounds: &[&'a SoundEntry],
-    playing: Option<&str>,
+    playing: Option<&'a str>,
     grid: GridCtx<'a>,
+    columns: usize,
 ) -> Element<'a, Message> {
     let theme = Theme::Dark;
 
@@ -64,7 +80,7 @@ pub fn view_grid<'a>(
         sound_meta: grid.sound_meta,
     };
     // Keep invalid callers from reaching slice::chunks(0).
-    let columns = grid.columns.max(1);
+    let columns = columns.max(1);
 
     let rows: Vec<Element<'a, Message>> = sounds
         .chunks(columns)

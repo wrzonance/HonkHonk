@@ -1504,7 +1504,7 @@ impl HonkHonk {
         let chips = self.view_category_chips(t);
         let filtered = self.filtered_sounds();
         let grid = sound_grid::view_grid(
-            &filtered,
+            filtered,
             self.playing.as_deref(),
             sound_grid::GridCtx {
                 slots: &self.slots,
@@ -1549,12 +1549,16 @@ impl HonkHonk {
             bottom: 0.0,
             left: 0.0,
         }))
+        .width(Length::Fill)
         .height(Length::Fill);
 
         let items: Vec<Element<'_, Message>> =
             vec![top.into(), chips, grid_scroll.into(), now_playing];
 
-        let content = iced::widget::Column::with_children(items).spacing(theme::space::MD);
+        let content = iced::widget::Column::with_children(items)
+            .spacing(theme::space::MD)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         let base = container(content)
             .width(Length::Fill)

@@ -111,7 +111,7 @@ impl Default for GridFixture {
 /// provided renderer. This is the `view()`-construction + tessellation work
 /// ADR-009 cares about. Rasterization is renderer-specific (done by callers).
 fn layout_and_draw(sounds: &[&SoundEntry], grid: GridCtx, renderer: &mut iced::Renderer) {
-    let element: Element<'_, Message> = view_grid(sounds, None, grid);
+    let element: Element<'_, Message> = view_grid(sounds.to_vec(), None, grid);
     let bounds = Size::new(VIEW_W as f32, VIEW_H as f32);
     let mut ui = UserInterface::build(element, bounds, Cache::new(), renderer);
     let theme = Theme::Dark;
