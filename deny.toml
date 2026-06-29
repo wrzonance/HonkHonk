@@ -16,7 +16,7 @@ ignore = [
     { id = "RUSTSEC-2024-0436", reason = "transitive via lofty, no patched version available upstream" },
     # ttf-parser is unmaintained; transitive via iced's font stack. No safe
     # upgrade is available until iced/cosmic-text/winit move off it upstream.
-    { id = "RUSTSEC-0000-0000", reason = "transitive via iced font dependencies, no patched version available upstream" },
+    { id = "RUSTSEC-2026-0192", reason = "transitive via iced font dependencies, no patched version available upstream" },
 ]
 
 # ── Licenses ──────────────────────────────────────────────────────────────────
