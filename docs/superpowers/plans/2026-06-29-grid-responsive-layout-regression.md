@@ -117,8 +117,8 @@ Refactor `view_grid` into a small responsive wrapper plus the existing fixed-col
 
 ```rust
 pub fn view_grid<'a>(
-    sounds: &[&'a SoundEntry],
-    playing: Option<&str>,
+    sounds: Vec<&'a SoundEntry>,
+    playing: Option<&'a str>,
     grid: GridCtx<'a>,
 ) -> Element<'a, Message> {
     iced::widget::responsive(move |size| {
@@ -128,7 +128,7 @@ pub fn view_grid<'a>(
             theme::space::LG,
         );
 
-        view_grid_columns(sounds, playing, grid, columns)
+        view_grid_columns(&sounds, playing, grid, columns)
     })
     .width(Length::Fill)
     .height(Length::Shrink)
