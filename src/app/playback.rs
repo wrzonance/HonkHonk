@@ -192,6 +192,14 @@ impl HonkHonk {
             .as_deref()
             .is_some_and(|id| !self.sound_exists(id))
         {
+            // The highlighted sound's library entry vanished mid-play. Stop its
+            // engine voice so it doesn't keep honking with no UI; only the
+            // owning press holds the highlight, so its voice id is the current
+            // `play_generation`. (A cold press whose decode hasn't fired yet has
+            // no voice — the StopVoice is then a harmless no-op.)
+            if let Some(ref audio) = self.audio {
+                audio.send(AudioCommand::StopVoice(self.play_generation));
+            }
             self.clear_playback_state();
         }
         let removed: Vec<String> = self

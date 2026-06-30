@@ -43,6 +43,29 @@ fn dispatch(app: &HonkHonk, generation: u64) -> PlaybackDispatch {
     }
 }
 
+fn play_count(app: &HonkHonk) -> usize {
+    app.audio
+        .as_ref()
+        .expect("audio handle")
+        .sent_commands()
+        .iter()
+        .filter(|cmd| matches!(cmd, AudioCommand::Play { .. }))
+        .count()
+}
+
+fn stopped_voices(app: &HonkHonk) -> Vec<u64> {
+    app.audio
+        .as_ref()
+        .expect("audio handle")
+        .sent_commands()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            AudioCommand::StopVoice(voice) => Some(*voice),
+            _ => None,
+        })
+        .collect()
+}
+
 fn start_now_playing(app: &mut HonkHonk, id: &str) {
     app.playing = Some(id.to_owned());
     app.now_playing.start(now_playing::PlaybackStart {
@@ -300,5 +323,71 @@ fn late_concurrent_decode_keeps_newest_in_now_playing() {
             .current_key()
             .is_some_and(|key| key.matches(Some("b"), 0.0)),
         "a late older decode must not retake the now-playing highlight"
+    );
+}
+
+#[test]
+fn cold_press_emits_exactly_one_play_when_its_decode_lands() {
+    let mut app = app_with_audio();
+    let snd = sound("a");
+    app.sounds = vec![snd.clone()];
+
+    let _ = app.request_play(&snd, false);
+    let generation = app.play_generation;
+    assert_eq!(
+        play_count(&app),
+        0,
+        "a cold press queues a decode and must not fire before it lands"
+    );
+
+    let _ = app.handle_decoded("a".into(), Ok(pcm(16)), dispatch(&app, generation));
+
+    assert_eq!(
+        play_count(&app),
+        1,
+        "a landed cold decode fires exactly one engine Play"
+    );
+}
+
+#[test]
+fn stale_decode_after_stopall_emits_no_play() {
+    let mut app = app_with_audio();
+    let snd = sound("a");
+    app.sounds = vec![snd.clone()];
+
+    let _ = app.request_play(&snd, false);
+    let generation = app.play_generation;
+    let _ = app.update(Message::StopAll);
+    let plays_before = play_count(&app);
+
+    let _ = app.handle_decoded("a".into(), Ok(pcm(16)), dispatch(&app, generation));
+
+    assert_eq!(
+        play_count(&app),
+        plays_before,
+        "a decode landing after StopAll is stale and must fire no Play"
+    );
+}
+
+#[test]
+fn reconcile_stops_engine_voice_for_removed_playing_sound() {
+    let mut app = app_with_audio();
+    let snd = sound("gone");
+    app.sounds = vec![snd.clone()];
+    // Warm play so a real engine voice exists, then drop the sound from the
+    // library and reconcile: the orphaned voice must be stopped, not left to
+    // honk to completion with no UI.
+    cache_pcm(&mut app, "gone");
+    let _ = app.request_play(&snd, false);
+    let voice = app.play_generation;
+    assert_eq!(app.playing(), Some("gone"));
+
+    app.sounds.clear();
+    app.reconcile_playback_with_library();
+
+    assert_eq!(app.playing(), None);
+    assert!(
+        stopped_voices(&app).contains(&voice),
+        "reconcile must stop the removed playing sound's engine voice"
     );
 }
