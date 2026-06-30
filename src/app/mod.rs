@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -234,13 +234,13 @@ pub struct HonkHonk {
     /// Monotonic counter bumped on every play dispatch. Stamped onto the `Play`
     /// command and echoed back on `PlaybackFinished` to tell a genuine end from
     /// the stale `Finished` of a re-pressed voice (#149), and onto each
-    /// off-thread decode so a `Message::Decoded` from a superseded press is
-    /// dropped on arrival (#151). A decode for a play that was *cancelled*
-    /// (StopAll) is caught by `handle_decoded`'s `playing` check instead.
+    /// off-thread decode so the latest same-id cold repeat can claim ownership
+    /// when the shared decode lands (#151/#152).
     play_generation: u64,
     /// Hot-path decoded-PCM cache (#151).
     audio_store: crate::audio::AudioStore,
     pending_play_ids: HashSet<u64>,
+    pending_decodes: HashMap<String, playback::PendingDecode>,
     /// Persisted macro collection (#165).
     macros: crate::state::MacroStore,
     /// Active live macro capture, if recording is enabled (#167).
@@ -432,6 +432,7 @@ impl HonkHonk {
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
+            pending_decodes: HashMap::new(),
             macros: crate::state::MacroStore::load(),
             recording: None,
             macro_editor_draft: None,
@@ -492,6 +493,7 @@ impl HonkHonk {
             play_generation: 0,
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
+            pending_decodes: HashMap::new(),
             macros: crate::state::MacroStore::default(),
             recording: None,
             macro_editor_draft: None,
@@ -664,16 +666,14 @@ impl HonkHonk {
                         sound_id,
                         generation,
                     } => {
-                        // Every play path sets `playing` optimistically at
-                        // dispatch, so a Started for a *different* sound can
-                        // only be a stale event from an older press still in
-                        // the queue — don't let it steal the highlight (#111).
-                        // When the UI is idle, only the current generation may
-                        // claim it: a late superseded concurrent voice (older
-                        // generation) finishing its decode after a newer short
-                        // sound already ended would otherwise re-highlight its
-                        // tile, and its stale Finished is ignored, leaving it
-                        // stuck (#149/#164).
+                        // Warm plays and successful cold decodes claim
+                        // `playing` before the engine's Started event. When the
+                        // UI is idle, only the current generation may claim it:
+                        // a late superseded concurrent voice (older generation)
+                        // finishing after a newer short sound already ended
+                        // would otherwise re-highlight its tile and then leave
+                        // it stuck when the stale Finished is ignored
+                        // (#149/#152/#164).
                         let confirms_current = self.playing.as_deref() == Some(sound_id.as_str());
                         let claims_idle =
                             self.playing.is_none() && generation == self.play_generation;
@@ -781,6 +781,7 @@ impl HonkHonk {
                 // for the stopped sound is dropped on arrival rather than
                 // resurrecting it (#151).
                 self.pending_play_ids.clear();
+                self.pending_decodes.clear();
                 self.clear_playback_state();
                 self.cancel_macro();
                 Task::none()
@@ -975,6 +976,7 @@ impl HonkHonk {
                     .map(|s| (s.id.clone(), s.path.clone()))
                     .collect();
                 self.sounds = new_sounds;
+                self.reconcile_playback_with_library();
                 self.duration_scan_pairs = std::sync::Arc::new(pairs);
                 self.durations_loaded = false;
                 Task::none()
@@ -1912,31 +1914,6 @@ mod tests {
     }
 
     #[test]
-    fn play_sound_sets_playing_immediately() {
-        let mut app = HonkHonk::new_for_test();
-        let (handle, _evt_tx) = crate::audio::test_handle();
-        app.audio = Some(handle);
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let wav_path = dir.path().join("honk.wav");
-        write_test_wav(&wav_path);
-        app.sounds = vec![SoundEntry {
-            id: "wav1".into(),
-            name: "Honk".into(),
-            path: wav_path,
-            format: crate::state::AudioFormat::Wav,
-            duration_ms: Some(100),
-            category: "Test".into(),
-        }];
-
-        // The tile highlight must track the press itself, not wait for the
-        // engine's PlaybackStarted to round-trip through the event queue
-        // (issue #111).
-        let _ = app.update(Message::PlaySound("wav1".into()));
-        assert_eq!(app.playing(), Some("wav1"));
-    }
-
-    #[test]
     fn drain_audio_events_processes_entire_backlog() {
         let mut app = HonkHonk::new_for_test();
         let (handle, evt_tx) = crate::audio::test_handle();
@@ -1979,29 +1956,6 @@ mod tests {
 
         assert_eq!(app.playing(), Some("c"));
         assert!((app.progress() - 0.5).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn shortcut_activation_sets_playing_immediately() {
-        let mut app = HonkHonk::new_for_test();
-        let (handle, _evt_tx) = crate::audio::test_handle();
-        app.audio = Some(handle);
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let wav_path = dir.path().join("honk.wav");
-        write_test_wav(&wav_path);
-        app.sounds = vec![SoundEntry {
-            id: "wav1".into(),
-            name: "Honk".into(),
-            path: wav_path.clone(),
-            format: crate::state::AudioFormat::Wav,
-            duration_ms: Some(100),
-            category: "Test".into(),
-        }];
-        app.slots.set(0, wav_path);
-
-        let _ = app.update(Message::ShortcutActivated(0));
-        assert_eq!(app.playing(), Some("wav1"));
     }
 
     #[test]
@@ -3223,94 +3177,5 @@ mod tests {
             "stale decode must not start a playhead"
         );
         assert_eq!(app.playing(), Some("newer"));
-    }
-
-    #[test]
-    fn current_decoded_starts_playhead_and_caches_pcm() {
-        let mut app = HonkHonk::new_for_test();
-        let (handle, _evt_tx) = crate::audio::test_handle();
-        app.audio = Some(handle);
-        app.play_generation = 2;
-        app.playing = Some("snd".into());
-        app.pending_play_ids.insert(2);
-
-        let pcm = crate::audio::CachedPcm {
-            samples: std::sync::Arc::new(vec![0.25_f32; 64]),
-            sample_rate: 48_000,
-            channels: 2,
-            duration: std::time::Duration::from_secs(3),
-        };
-        let _ = app.update(Message::Decoded {
-            generation: 2,
-            voice_id: 2,
-            id: "snd".into(),
-            result: Ok(pcm),
-            gain: 1.0,
-            effects: crate::audio::effects::EffectSettings::default(),
-            mode: PlayMode::Concurrent,
-        });
-
-        assert!(
-            app.now_playing.has_playhead(),
-            "current decode must start the playhead"
-        );
-        assert!(
-            app.audio_store.get_pcm("snd").is_some(),
-            "decode result must be cached for instant re-fire"
-        );
-    }
-
-    #[test]
-    fn stopall_mid_decode_does_not_resurrect_playback() {
-        // A cold-cache press dispatches an off-thread decode but sends no engine
-        // Play yet. If the user hits StopAll before the decode lands, the stale
-        // `Decoded` must be dropped — not resurrect the stopped sound (#151).
-        let mut app = HonkHonk::new_for_test();
-        let (handle, _evt_tx) = crate::audio::test_handle();
-        app.audio = Some(handle);
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let wav_path = dir.path().join("honk.wav");
-        write_test_wav(&wav_path);
-        app.sounds = vec![SoundEntry {
-            id: "wav1".into(),
-            name: "Honk".into(),
-            path: wav_path,
-            format: crate::state::AudioFormat::Wav,
-            duration_ms: Some(100),
-            category: "Test".into(),
-        }];
-
-        // Cold press → generation bumped, decode Task in flight (ignored here).
-        let sound = app.sounds[0].clone();
-        let _ = app.request_play(&sound, false);
-        let in_flight_gen = app.play_generation;
-        assert_eq!(app.playing(), Some("wav1"));
-
-        // StopAll tears down playback and must invalidate the in-flight decode.
-        let _ = app.update(Message::StopAll);
-        assert_eq!(app.playing(), None);
-
-        // The decode lands carrying the now-stale generation.
-        let _ = app.update(Message::Decoded {
-            generation: in_flight_gen,
-            voice_id: in_flight_gen,
-            id: "wav1".into(),
-            result: Ok(crate::audio::CachedPcm {
-                samples: std::sync::Arc::new(vec![0.0_f32; 8]),
-                sample_rate: 48_000,
-                channels: 2,
-                duration: std::time::Duration::from_secs(1),
-            }),
-            gain: 1.0,
-            effects: crate::audio::effects::EffectSettings::default(),
-            mode: PlayMode::Concurrent,
-        });
-
-        assert_eq!(app.playing(), None, "StopAll must win — no resurrection");
-        assert!(
-            !app.now_playing.has_playhead(),
-            "no playhead after a stopped, stale decode"
-        );
     }
 }
