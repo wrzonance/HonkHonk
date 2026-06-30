@@ -63,11 +63,23 @@ pub struct NoticeQueue {
 }
 
 impl NoticeQueue {
+    /// Hard cap on queued notices. Error notices never auto-expire, so without a
+    /// bound a re-emitting fault (e.g. a broken sink honked repeatedly) would
+    /// grow the queue and the on-screen stack without limit (#156).
+    pub const MAX_NOTICES: usize = 5;
+
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn push(&mut self, notice: Notice, now: Instant) -> NoticeId {
+        // Coalesce an identical notice (same level/title/body): refresh its
+        // expiry in place rather than stacking a duplicate, so a fault that
+        // re-emits the same error cannot flood the queue (#156).
+        if let Some(existing) = self.entries.iter_mut().find(|queued| queued.notice == notice) {
+            existing.expires_at = notice.expires_at(now);
+            return existing.id;
+        }
         let id = NoticeId(self.next_id);
         self.next_id = self.next_id.saturating_add(1);
         let expires_at = notice.expires_at(now);
@@ -76,6 +88,11 @@ impl NoticeQueue {
             notice,
             expires_at,
         });
+        // Bound the queue: persistent (never-expiring) errors must not grow it
+        // without limit. Evict the oldest beyond the cap.
+        while self.entries.len() > Self::MAX_NOTICES {
+            self.entries.pop_front();
+        }
         id
     }
 
@@ -103,6 +120,10 @@ impl NoticeQueue {
 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
     }
 
     pub fn front(&self) -> Option<&QueuedNotice> {
@@ -151,6 +172,47 @@ mod tests {
         assert!(queue.contains(id));
         assert!(queue.dismiss(id).is_some());
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn identical_notices_coalesce_and_refresh_expiry() {
+        let start = Instant::now();
+        let mut queue = NoticeQueue::new();
+
+        let first = queue.push(Notice::info("Saved", "Configuration updated"), start);
+        let later = start + Duration::from_secs(3);
+        let again = queue.push(Notice::info("Saved", "Configuration updated"), later);
+
+        assert_eq!(queue.len(), 1, "an identical notice must coalesce, not stack");
+        assert_eq!(first, again, "a coalesced push returns the existing id");
+        // Expiry is refreshed from the second push, not the first.
+        assert_eq!(
+            queue.expire(later + Notice::DEFAULT_TIMEOUT - Duration::from_millis(1)),
+            0
+        );
+        assert_eq!(queue.expire(later + Notice::DEFAULT_TIMEOUT), 1);
+    }
+
+    #[test]
+    fn distinct_notices_are_capped_and_evict_oldest() {
+        let start = Instant::now();
+        let mut queue = NoticeQueue::new();
+
+        let ids: Vec<NoticeId> = (0..NoticeQueue::MAX_NOTICES + 2)
+            .map(|i| queue.push(Notice::error("Audio error", format!("failure {i}")), start))
+            .collect();
+
+        assert_eq!(
+            queue.len(),
+            NoticeQueue::MAX_NOTICES,
+            "queue stays bounded regardless of distinct persistent errors"
+        );
+        assert!(!queue.contains(ids[0]), "oldest beyond the cap is evicted");
+        assert!(!queue.contains(ids[1]), "second-oldest beyond the cap is evicted");
+        assert!(
+            queue.contains(ids[NoticeQueue::MAX_NOTICES + 1]),
+            "newest notice is retained"
+        );
     }
 
     #[test]

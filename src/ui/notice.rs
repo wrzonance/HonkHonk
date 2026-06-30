@@ -1,5 +1,5 @@
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{Column, Space, button, column, container, row, text};
+use iced::widget::{Column, Space, button, column, container, row, scrollable, text};
 use iced::{Alignment, Background, Border, Color, Element, Length};
 
 use crate::app::Message;
@@ -7,6 +7,9 @@ use crate::app::notices::{NoticeLevel, NoticeQueue, QueuedNotice};
 use crate::ui::theme::{self, Hh, Theme};
 
 const NOTICE_MAX_WIDTH: f32 = 360.0;
+/// Cap the toast stack's on-screen height; beyond this it scrolls so every
+/// notice (including capped persistent errors) stays reachable and dismissable.
+const NOTICE_MAX_HEIGHT: f32 = 420.0;
 
 pub fn view_notice_layer<'a>(notices: &'a NoticeQueue, t: Theme) -> Option<Element<'a, Message>> {
     if notices.is_empty() {
@@ -19,14 +22,25 @@ pub fn view_notice_layer<'a>(notices: &'a NoticeQueue, t: Theme) -> Option<Eleme
             col.push(view_notice(notice, t))
         });
 
+    // Scroll within a bounded height so a stack taller than the window never
+    // pushes notices (and their close buttons) off-screen.
+    let scroller = scrollable(stack.width(Length::Fill))
+        .width(Length::Fill)
+        .height(Length::Shrink);
+
     Some(
-        container(stack.width(Length::Fill).max_width(NOTICE_MAX_WIDTH))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(theme::space::LG)
-            .align_x(Horizontal::Right)
-            .align_y(Vertical::Top)
-            .into(),
+        container(
+            container(scroller)
+                .width(Length::Fill)
+                .max_width(NOTICE_MAX_WIDTH)
+                .max_height(NOTICE_MAX_HEIGHT),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(theme::space::LG)
+        .align_x(Horizontal::Right)
+        .align_y(Vertical::Top)
+        .into(),
     )
 }
 
