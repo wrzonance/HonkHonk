@@ -28,9 +28,7 @@ impl HonkHonk {
                 panel_animations: enabled,
                 ..self.config.clone()
             };
-            if let Err(e) = self.config.save() {
-                tracing::warn!(error = %e, "config save error");
-            }
+            self.persist_config();
         }
         if !enabled {
             self.panel_flourish.clear();
