@@ -87,8 +87,7 @@ impl HonkHonk {
             return;
         }
         let panel = panel_geometry(self.window_size, effects_panel_view::EFFECTS_PANEL_W);
-        self.panel_flourish
-            .emit(panel, self.window_size, transition, now);
+        self.panel_flourish.emit(panel, self.window_size, now);
     }
 }
 

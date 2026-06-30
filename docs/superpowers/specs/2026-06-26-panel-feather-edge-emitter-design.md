@@ -24,8 +24,10 @@ deterministic for tests.
 
 - Do not introduce small/medium/large feather variants.
 - Do not add pixel-art feather sprites.
-- Do not change the settings toggle, duration, fade, gravity, cursor bump, or
-  panel open/close lifecycle.
+- Do not change the settings toggle, duration, fade, gravity, or cursor bump.
+  > Update (as shipped): the close burst was dropped — feathers now emit on
+  > panel *open* only, and closing simply clears them. The open/close *lifecycle*
+  > is otherwise unchanged.
 - Do not add unrelated side-panel abstractions beyond what the emitter model
   needs.
 

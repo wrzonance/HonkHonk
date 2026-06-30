@@ -74,7 +74,13 @@ pub fn panel_burst_emitter(panel: PanelRect, window: (f32, f32)) -> BurstEmitter
     let touches_right = win_w > 0.0 && panel.x + panel.w >= win_w - EDGE_EPS;
     let touches_bottom = win_h > 0.0 && panel.y + panel.h >= win_h - EDGE_EPS;
 
-    if touches_right && panel.x > EDGE_EPS {
+    // Vertical edges need a non-degenerate height (and horizontal a width) to
+    // spread feathers along; a collapsed panel falls through to the center
+    // point rather than seeding a zero-length edge that stacks every particle.
+    let has_vertical_span = panel.h > EDGE_EPS;
+    let has_horizontal_span = panel.w > EDGE_EPS;
+
+    if touches_right && panel.x > EDGE_EPS && has_vertical_span {
         return edge_line(
             Point::new(panel.x, panel.y),
             Point::new(panel.x, panel.y + panel.h),
@@ -82,7 +88,7 @@ pub fn panel_burst_emitter(panel: PanelRect, window: (f32, f32)) -> BurstEmitter
             0.0,
         );
     }
-    if touches_left && panel.x + panel.w < win_w - EDGE_EPS {
+    if touches_left && panel.x + panel.w < win_w - EDGE_EPS && has_vertical_span {
         return edge_line(
             Point::new(panel.x + panel.w, panel.y),
             Point::new(panel.x + panel.w, panel.y + panel.h),
@@ -90,7 +96,7 @@ pub fn panel_burst_emitter(panel: PanelRect, window: (f32, f32)) -> BurstEmitter
             0.0,
         );
     }
-    if touches_bottom && panel.y > EDGE_EPS {
+    if touches_bottom && panel.y > EDGE_EPS && has_horizontal_span {
         return edge_line(
             Point::new(panel.x, panel.y),
             Point::new(panel.x + panel.w, panel.y),
@@ -98,7 +104,7 @@ pub fn panel_burst_emitter(panel: PanelRect, window: (f32, f32)) -> BurstEmitter
             -1.0,
         );
     }
-    if touches_top && panel.y + panel.h < win_h - EDGE_EPS {
+    if touches_top && panel.y + panel.h < win_h - EDGE_EPS && has_horizontal_span {
         return edge_line(
             Point::new(panel.x, panel.y + panel.h),
             Point::new(panel.x + panel.w, panel.y + panel.h),
@@ -111,15 +117,9 @@ pub fn panel_burst_emitter(panel: PanelRect, window: (f32, f32)) -> BurstEmitter
 }
 
 impl PanelFlourish {
-    pub fn emit(
-        &mut self,
-        panel: PanelRect,
-        window: (f32, f32),
-        transition: PanelTransition,
-        now: Instant,
-    ) {
+    pub fn emit(&mut self, panel: PanelRect, window: (f32, f32), now: Instant) {
         let emitter = panel_burst_emitter(panel, window);
-        self.particles = seed_particles(emitter, transition);
+        self.particles = seed_particles(emitter);
         self.started = Some(now);
         self.last_tick = Some(now);
     }
@@ -167,13 +167,11 @@ fn edge_line(start: Point, end: Point, x: f32, y: f32) -> BurstEmitter {
     })
 }
 
-fn seed_particles(emitter: BurstEmitter, transition: PanelTransition) -> Vec<FeatherParticle> {
-    (0..PARTICLES)
-        .map(|i| seed_particle(emitter, transition, i))
-        .collect()
+fn seed_particles(emitter: BurstEmitter) -> Vec<FeatherParticle> {
+    (0..PARTICLES).map(|i| seed_particle(emitter, i)).collect()
 }
 
-fn seed_particle(emitter: BurstEmitter, transition: PanelTransition, i: usize) -> FeatherParticle {
+fn seed_particle(emitter: BurstEmitter, i: usize) -> FeatherParticle {
     let class = feather_class(i);
     let params = class_params(class, i);
     let dir = particle_direction(emitter, i);
@@ -188,18 +186,13 @@ fn seed_particle(emitter: BurstEmitter, transition: PanelTransition, i: usize) -
         scale(dir, 5.0 + (i % 3) as f32 * 2.0),
         scale(perp, scatter * 6.0),
     );
-    let rotation_bias = match transition {
-        PanelTransition::Open => 0.0,
-        PanelTransition::Close => 0.35,
-    };
-
     FeatherParticle {
         class,
         position: translate(emitter_point(emitter, i), offset),
         velocity,
         alpha: 1.0,
         size: params.size,
-        rotation: rotation_bias + scatter * 0.45,
+        rotation: scatter * 0.45,
         wobble_phase: i as f32 * 1.618_034,
         wobble_frequency: params.wobble_frequency,
         wobble_strength: params.wobble_strength,
@@ -306,8 +299,9 @@ fn tick_particle(particle: &mut FeatherParticle, dt: f32, cursor: Option<Point>)
         particle.velocity = add(particle.velocity, cursor_bump(*particle, cursor, dt));
     }
 
-    let wobble = (particle.wobble_phase + particle.wobble_frequency * dt).sin();
-    particle.wobble_phase += particle.wobble_frequency * dt;
+    let advance = particle.wobble_frequency * dt;
+    let wobble = (particle.wobble_phase + advance).sin();
+    particle.wobble_phase += advance;
     particle.velocity.x += wobble * particle.wobble_strength * dt;
     particle.velocity.y += GRAVITY * dt;
 
