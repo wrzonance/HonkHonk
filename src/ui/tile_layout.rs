@@ -34,9 +34,11 @@ pub fn fitted_tile_size(slot: Size) -> Size {
 pub fn responsive_columns(available_width: f32, preferred_columns: usize, spacing: f32) -> usize {
     let preferred = preferred_columns.max(1);
     let usable_width = available_width.max(0.0);
-    let columns_that_fit = ((usable_width + spacing) / (MIN_TILE_CELL_W + spacing))
-        .floor()
-        .max(1.0) as usize;
+    // Clamp the per-tile stride to a positive value: a caller-supplied spacing
+    // that cancels MIN_TILE_CELL_W would otherwise divide by zero into an
+    // inf-derived (usize::MAX) column count.
+    let stride = (MIN_TILE_CELL_W + spacing).max(1.0);
+    let columns_that_fit = ((usable_width + spacing) / stride).floor().max(1.0) as usize;
 
     preferred.min(columns_that_fit)
 }
@@ -160,5 +162,19 @@ mod tests {
     #[test]
     fn responsive_columns_never_exceeds_preferred_columns() {
         assert_eq!(responsive_columns(1128.0, 1, theme::space::LG), 1);
+    }
+
+    #[test]
+    fn responsive_columns_floors_zero_preferred_to_one() {
+        assert_eq!(responsive_columns(1128.0, 0, theme::space::LG), 1);
+    }
+
+    #[test]
+    fn responsive_columns_does_not_overflow_on_stride_canceling_spacing() {
+        // A pathological spacing that cancels the tile stride must not divide by
+        // zero into an inf-derived usize::MAX column count: a 185px width fits
+        // far fewer than the 8 preferred tiles, so it must report fewer.
+        let cols = responsive_columns(185.0, 8, -MIN_TILE_CELL_W);
+        assert!(cols < 8, "stride-canceling spacing inflated columns to {cols}");
     }
 }

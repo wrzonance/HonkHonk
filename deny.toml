@@ -13,9 +13,12 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
     # paste is unmaintained; transitive dep via lofty. No fix available without
     # lofty dropping its paste dependency upstream.
+    # TODO: drop this ignore once lofty releases a build free of paste.
     { id = "RUSTSEC-2024-0436", reason = "transitive via lofty, no patched version available upstream" },
-    # ttf-parser is unmaintained; transitive via iced's font stack. No safe
-    # upgrade is available until iced/cosmic-text/winit move off it upstream.
+    # ttf-parser is unmaintained (informational advisory, not a memory-safety
+    # CVE); transitive via iced's font stack. No safe upgrade until
+    # iced/cosmic-text move off it upstream.
+    # TODO: drop this ignore once the iced font stack no longer pulls ttf-parser.
     { id = "RUSTSEC-2026-0192", reason = "transitive via iced font dependencies, no patched version available upstream" },
 ]
 
