@@ -235,7 +235,9 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].sound, PathBuf::from("/sounds/honk.wav"));
         assert!(steps[0].start_offset_ms >= 15);
-        assert_eq!(app.playing(), None);
+        // Cold press still claims the highlight optimistically (snappy UI, #111)
+        // while the decode is queued.
+        assert_eq!(app.playing(), Some("honk"));
         assert_eq!(app.pending_play_ids.len(), 1);
     }
 
@@ -253,7 +255,9 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].sound, sound.path);
         assert!(steps[0].start_offset_ms >= 25);
-        assert_eq!(app.playing(), None);
+        // Cold press still claims the highlight optimistically (snappy UI, #111)
+        // while the decode is queued.
+        assert_eq!(app.playing(), Some("slot"));
         assert_eq!(app.pending_play_ids.len(), 1);
     }
 }

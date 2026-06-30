@@ -55,7 +55,7 @@ fn start_now_playing(app: &mut HonkHonk, id: &str) {
 }
 
 #[test]
-fn cold_decode_failure_preserves_previous_playback_ui() {
+fn cold_press_takes_highlight_then_clears_on_decode_failure() {
     let mut app = app_with_audio();
     let current = sound("a");
     let corrupt = sound("b");
@@ -65,16 +65,17 @@ fn cold_decode_failure_preserves_previous_playback_ui() {
     let _ = app.request_play(&corrupt, false);
     let generation = app.play_generation;
 
+    // Snappy-UI doctrine (#111): a cold press claims the highlight instantly,
+    // before its decode lands, so the click never feels laggy. The previous
+    // sound losing the highlight here is the accepted cold-miss tradeoff (#152).
     assert_eq!(
         app.playing(),
-        Some("a"),
-        "cold cache misses must not steal the highlight before decode succeeds"
+        Some("b"),
+        "a cold press claims the highlight immediately (snappy UI)"
     );
     assert!(
-        app.now_playing
-            .current_key()
-            .is_some_and(|key| key.matches(Some("a"), 0.0)),
-        "the previous waveform remains visible while the cold decode is pending"
+        !app.now_playing.has_playhead(),
+        "the playhead stays idle until the decode confirms the duration"
     );
 
     let _ = app.handle_decoded(
@@ -83,12 +84,14 @@ fn cold_decode_failure_preserves_previous_playback_ui() {
         dispatch(&app, generation),
     );
 
+    // A failed cold decode releases the optimistic highlight rather than
+    // leaving it stuck on a sound that never produced audio.
     assert_eq!(
         app.playing(),
-        Some("a"),
-        "a failed cold decode must not blank audio that is still playing"
+        None,
+        "a failed cold decode clears the optimistic highlight"
     );
-    assert!(app.now_playing.has_playhead());
+    assert!(!app.now_playing.has_playhead());
 }
 
 #[test]
@@ -155,8 +158,8 @@ fn warm_play_sound_sets_playing_immediately() {
     app.sounds = vec![snd];
     cache_pcm(&mut app, "wav1");
 
-    // Warm cache hits keep the #111 instant-highlight path; only cold cache
-    // misses defer ownership until decode succeeds (#152).
+    // Warm cache hits claim the highlight synchronously via start_playback;
+    // cold misses claim it optimistically in request_play (both #111).
     let _ = app.update(Message::PlaySound("wav1".into()));
 
     assert_eq!(app.playing(), Some("wav1"));
@@ -237,8 +240,8 @@ fn stopall_mid_decode_does_not_resurrect_playback() {
     let in_flight_gen = app.play_generation;
     assert_eq!(
         app.playing(),
-        None,
-        "cold cache miss must not claim the highlight before decode"
+        Some("wav1"),
+        "a cold press claims the highlight optimistically (snappy UI)"
     );
     assert_eq!(app.pending_play_ids.len(), 1);
 

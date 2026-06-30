@@ -53,6 +53,14 @@ impl HonkHonk {
             self.start_playback(&sound.id, pcm, dispatch);
             return Task::none();
         }
+        // Cold cache miss: claim the highlight immediately so the press feels
+        // instant (snappy-UI doctrine, #111). The async decode confirms the
+        // playhead on success (`start_playback`) or releases this optimistic
+        // state on failure/removal (`handle_decoded`). A still-playing
+        // concurrent sound losing its highlight here is the accepted cold-miss
+        // tradeoff (#152 deferred that guard in favour of click latency).
+        self.playing = Some(sound.id.clone());
+        self.now_playing.pending(&sound.id);
         if let Some(pending) = self.pending_decodes.get_mut(&id) {
             pending.dispatch = dispatch;
             return Task::none();
@@ -124,10 +132,13 @@ impl HonkHonk {
         let Some(pending) = self.pending_decode_for(&id, dispatch) else {
             return Task::none();
         };
+        let dispatch = pending.dispatch;
         if !self.sound_exists(&id) {
+            // Removed mid-decode: drop the result and release the optimistic
+            // highlight if this press still owns the UI.
+            self.clear_owned_optimistic_ui(&id, dispatch);
             return Task::none();
         }
-        let dispatch = pending.dispatch;
         match result {
             Ok(pcm) => {
                 let pcm = std::sync::Arc::new(pcm);
@@ -145,14 +156,20 @@ impl HonkHonk {
                     .map(|s| s.path.display().to_string())
                     .unwrap_or_else(|| id.clone()); // fall back to id if rescanned away
                 tracing::error!(file = %file, error = %e, "decode failed");
-                if dispatch.generation == self.play_generation
-                    && self.playing.as_deref() == Some(&id)
-                {
-                    self.clear_playback_state();
-                }
+                self.clear_owned_optimistic_ui(&id, dispatch);
             }
         }
         Task::none()
+    }
+
+    /// Releases an optimistic cold-press highlight when its decode cannot
+    /// produce audio (decode failed, or the sound was removed mid-decode) and
+    /// the press still owns the UI. A superseded press (older generation) never
+    /// clears the newer press's highlight.
+    fn clear_owned_optimistic_ui(&mut self, id: &str, dispatch: PlaybackDispatch) {
+        if dispatch.generation == self.play_generation && self.playing.as_deref() == Some(id) {
+            self.clear_playback_state();
+        }
     }
 
     fn pending_decode_for(
