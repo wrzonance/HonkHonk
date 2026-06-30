@@ -635,6 +635,13 @@ impl HonkHonk {
             Message::Quit => {
                 if let Some(ref audio) = self.audio {
                     audio.shutdown();
+                    // Persist the latest window size (recorded in-memory on
+                    // resize) and any other config on a real quit. Gated on a
+                    // live audio engine so unit-test fixtures (audio: None)
+                    // never write the user's real config file.
+                    if let Err(e) = self.config.save() {
+                        tracing::warn!(error = %e, "failed to save config on quit");
+                    }
                 }
                 self.exit = true;
                 iced::exit()
@@ -933,6 +940,10 @@ impl HonkHonk {
             }
             Message::WindowResized(w, h) => {
                 self.window_size = (w, h);
+                // Record into config (in-memory only — no disk write per resize
+                // event); persisted on quit and by any other settings save.
+                self.config.window_width = w.round().max(0.0) as u32;
+                self.config.window_height = h.round().max(0.0) as u32;
                 Task::none()
             }
             Message::Frame(now) => {
@@ -1436,6 +1447,10 @@ impl HonkHonk {
             iced::Event::Window(iced::window::Event::Resized(size)) => {
                 Some(Message::WindowResized(size.width, size.height))
             }
+            // Route the window-manager close through the same quit path (audio
+            // shutdown + config save) instead of iced's default auto-close
+            // (which is disabled via window::Settings::exit_on_close_request).
+            iced::Event::Window(iced::window::Event::CloseRequested) => Some(Message::Quit),
             _ => None,
         });
 
@@ -1674,6 +1689,17 @@ mod tests {
         assert!(!app.should_exit());
         let _ = app.update(Message::Quit);
         assert!(app.should_exit());
+    }
+
+    #[test]
+    fn window_resize_records_dimensions_in_config() {
+        // The live window size must flow into config so it can be persisted on
+        // quit and restored on the next launch (the window_width/height fields
+        // were previously dead).
+        let mut app = HonkHonk::new_for_test();
+        let _ = app.update(Message::WindowResized(1440.0, 912.0));
+        assert_eq!(app.config.window_width, 1440);
+        assert_eq!(app.config.window_height, 912);
     }
 
     #[test]
