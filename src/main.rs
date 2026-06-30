@@ -76,6 +76,15 @@ fn main() -> iced::Result {
         }
     };
 
+    // Restore the saved window size, and disable iced's default auto-close so a
+    // window-manager close routes through Message::Quit (audio shutdown + config
+    // save) — see the window-event subscription in app::update.
+    let window_settings = iced::window::Settings {
+        size: iced::Size::new(config.window_width as f32, config.window_height as f32),
+        exit_on_close_request: false,
+        ..iced::window::Settings::default()
+    };
+
     let tray_handle = std::sync::Mutex::new(Some(tray_handle));
     let audio_handle = std::sync::Mutex::new(Some(audio_handle));
     let sounds = std::sync::Mutex::new(Some(sounds));
@@ -120,6 +129,7 @@ fn main() -> iced::Result {
         honkhonk::app::HonkHonk::view,
     )
     .title("HonkHonk")
+    .window(window_settings)
     .subscription(honkhonk::app::HonkHonk::subscription)
     .theme(honkhonk::app::HonkHonk::theme)
     .run()
