@@ -16,7 +16,7 @@ iced = { version = "0.14", features = ["tokio", "tiny-skia", "canvas", "advanced
 # Pure-Rust StatusNotifierItem tray over zbus. Replaces tray-icon/muda/gtk so
 # the Linux tray no longer pulls GTK3, libappindicator, or libxdo.
 ksni = { version = "0.3.5", features = ["blocking"] }
-symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
+symphonia = { version = "0.6", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
