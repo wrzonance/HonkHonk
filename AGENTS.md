@@ -14,7 +14,8 @@ Wayland-native Linux soundboard. Pure Rust — Iced 0.14 GUI (Elm/MVU) + PipeWir
 - **Coverage: 80% target** via `cargo tarpaulin` every CI run (diagnostic globally; a target here).
 - **GitHub PRs created by Claude or Codex must be drafts.** Use `gh pr create --draft` or connector
   `draft: true`; do not create ready-for-review PRs directly.
-- **Known violation:** `src/app.rs` is 2,491 lines. Do NOT add to it — split first.
+- **Known violation:** `src/app/mod.rs` is 3,109 lines (~7.7x the cap) and keeps growing one
+  feature PR at a time. Do NOT add to it — split first. Tracked in #243.
 
 ## Architecture
 

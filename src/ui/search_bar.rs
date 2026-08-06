@@ -6,6 +6,7 @@ use crate::ui::theme::{self, Hh, Theme};
 const INPUT_ID: &str = "honkhonk-shared-filter";
 const SETTINGS_INPUT_ID: &str = "honkhonk-settings-filter";
 const HOTKEYS_INPUT_ID: &str = "honkhonk-hotkeys-filter";
+const SLOTS_INPUT_ID: &str = "honkhonk-slots-filter";
 
 #[derive(Clone)]
 struct SearchInputConfig<'a> {
@@ -28,6 +29,11 @@ pub(crate) fn settings_input_id() -> iced::widget::Id {
 /// Returns the stable widget identifier used for hotkeys-section focus and selection.
 pub(crate) fn hotkeys_input_id() -> iced::widget::Id {
     iced::widget::Id::new(HOTKEYS_INPUT_ID)
+}
+
+/// Returns the stable widget identifier used for slot-manager focus and selection.
+pub(crate) fn slots_input_id() -> iced::widget::Id {
+    iced::widget::Id::new(SLOTS_INPUT_ID)
 }
 
 #[allow(
@@ -90,6 +96,28 @@ where
         SearchInputConfig {
             placeholder: "Search shortcuts\u{2026}",
             id: hotkeys_input_id(),
+            width: Length::Fill,
+            theme: t,
+        },
+        on_input,
+    )
+}
+
+/// Builds the slot-manager search (type-to-filter activated) using the same
+/// stable input stack.
+pub fn view_slots_search_bar<'a, Message>(
+    query: &'a str,
+    t: Theme,
+    on_input: impl Fn(String) -> Message + 'a,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    view_search_input(
+        query,
+        SearchInputConfig {
+            placeholder: "Search slots\u{2026}",
+            id: slots_input_id(),
             width: Length::Fill,
             theme: t,
         },
@@ -233,6 +261,30 @@ mod tests {
     }
 
     #[test]
+    fn slots_input_id_is_stable_across_calls() {
+        assert_eq!(slots_input_id(), slots_input_id());
+    }
+
+    #[test]
+    fn slots_input_id_is_distinct_from_other_search_inputs() {
+        let slots = slots_input_id();
+
+        assert_ne!(slots, input_id());
+        assert_ne!(slots, settings_input_id());
+        assert_ne!(slots, hotkeys_input_id());
+    }
+
+    #[test]
+    fn slots_input_id_uses_its_dedicated_dom_key() {
+        let debug = format!("{:?}", slots_input_id());
+
+        assert!(
+            debug.contains(SLOTS_INPUT_ID),
+            "expected slots input id to carry {SLOTS_INPUT_ID:?}, got {debug}"
+        );
+    }
+
+    #[test]
     fn view_hotkeys_search_bar_builds_for_empty_query() {
         let _element: Element<'_, TestMessage> =
             view_hotkeys_search_bar("", Theme::Dark, TestMessage::Input);
@@ -242,5 +294,17 @@ mod tests {
     fn view_hotkeys_search_bar_builds_for_populated_query() {
         let _element: Element<'_, TestMessage> =
             view_hotkeys_search_bar("mute", Theme::Dark, TestMessage::Input);
+    }
+
+    #[test]
+    fn view_slots_search_bar_builds_for_empty_query() {
+        let _element: Element<'_, TestMessage> =
+            view_slots_search_bar("", Theme::Dark, TestMessage::Input);
+    }
+
+    #[test]
+    fn view_slots_search_bar_builds_for_populated_query() {
+        let _element: Element<'_, TestMessage> =
+            view_slots_search_bar("airhorn", Theme::Dark, TestMessage::Input);
     }
 }

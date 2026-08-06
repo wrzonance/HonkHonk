@@ -9,14 +9,16 @@ use crate::app::{SettingsSection, ViewMode};
 ///
 /// Routing is total and mutually exclusive: [`active_filter_target`] maps
 /// every `(view_mode, settings section, staged-search state)` combination to
-/// exactly one of `Some(Tiles)`, `Some(Hotkeys)`, or `None` — never more than
-/// one target is active at once.
+/// exactly one of `Some(Tiles)`, `Some(Hotkeys)`, `Some(Slots)`, or `None` —
+/// never more than one target is active at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FilterTarget {
     /// The main sound grid's search bar.
     Tiles,
     /// The Settings → Shortcuts bindings list's own, independent search bar.
     Hotkeys,
+    /// The slot manager's own, independent search bar (#198).
+    Slots,
 }
 
 /// Resolves the active filter target, if any, for the current app state.
@@ -35,7 +37,8 @@ pub(super) fn active_filter_target(state: &HonkHonk) -> Option<FilterTarget> {
         {
             Some(FilterTarget::Hotkeys)
         }
-        ViewMode::Settings | ViewMode::SlotManager => None,
+        ViewMode::Settings => None,
+        ViewMode::SlotManager => Some(FilterTarget::Slots),
     }
 }
 
@@ -113,17 +116,18 @@ mod tests {
         (ViewMode::Main, SettingsSection::Appearance, true,  Some(FilterTarget::Tiles)),
         (ViewMode::Main, SettingsSection::About,      false, Some(FilterTarget::Tiles)),
         (ViewMode::Main, SettingsSection::About,      true,  Some(FilterTarget::Tiles)),
-        // The slot manager has no filter surface at all.
-        (ViewMode::SlotManager, SettingsSection::Audio,      false, None),
-        (ViewMode::SlotManager, SettingsSection::Audio,      true,  None),
-        (ViewMode::SlotManager, SettingsSection::Library,    false, None),
-        (ViewMode::SlotManager, SettingsSection::Library,    true,  None),
-        (ViewMode::SlotManager, SettingsSection::Hotkeys,    false, None),
-        (ViewMode::SlotManager, SettingsSection::Hotkeys,    true,  None),
-        (ViewMode::SlotManager, SettingsSection::Appearance, false, None),
-        (ViewMode::SlotManager, SettingsSection::Appearance, true,  None),
-        (ViewMode::SlotManager, SettingsSection::About,      false, None),
-        (ViewMode::SlotManager, SettingsSection::About,      true,  None),
+        // The slot manager always owns its own search bar, regardless of
+        // whatever settings state sits behind it.
+        (ViewMode::SlotManager, SettingsSection::Audio,      false, Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::Audio,      true,  Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::Library,    false, Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::Library,    true,  Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::Hotkeys,    false, Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::Hotkeys,    true,  Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::Appearance, false, Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::Appearance, true,  Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::About,      false, Some(FilterTarget::Slots)),
+        (ViewMode::SlotManager, SettingsSection::About,      true,  Some(FilterTarget::Slots)),
         // Settings routes to the bindings list only on Shortcuts, and only
         // while the staged settings search is not itself claiming keystrokes.
         (ViewMode::Settings, SettingsSection::Audio,      false, None),
@@ -201,10 +205,10 @@ mod tests {
     }
 
     #[test]
-    fn slot_manager_never_targets_a_filter() {
+    fn slot_manager_always_targets_its_own_filter() {
         let mut app = HonkHonk::new_for_test();
         app.view_mode = ViewMode::SlotManager;
 
-        assert_eq!(active_filter_target(&app), None);
+        assert_eq!(active_filter_target(&app), Some(FilterTarget::Slots));
     }
 }

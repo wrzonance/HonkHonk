@@ -65,6 +65,13 @@ pub enum Message {
     ToggleHotkeySortDirection,
     SelectHotkeySort(&'static str),
     DismissHotkeySortMenu,
+    // Slot manager list controls (#198): filter query and sort chip,
+    // independent of the tiles view's and Shortcuts list's messages above.
+    SlotSearchChanged(String),
+    ToggleSlotSortMenu,
+    ToggleSlotSortDirection,
+    SelectSlotSort(&'static str),
+    DismissSlotSortMenu,
     /// Seeds the active filter from an otherwise-unhandled printable keypress.
     TypeToFilter(String),
     /// Routes an uncaptured Escape through overlay and filter staging.
