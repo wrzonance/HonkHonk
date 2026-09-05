@@ -139,6 +139,9 @@ impl HonkHonk {
     }
 
     pub(super) fn handle_escape(&mut self, event_was_captured: bool) -> iced::Task<Message> {
+        if self.import.open {
+            return self.update_import(super::import::ImportMessage::Cancel);
+        }
         if self.view_mode == super::ViewMode::Macros
             && (self.macro_editor.menu.take().is_some()
                 || self.macro_editor.text_entry_active

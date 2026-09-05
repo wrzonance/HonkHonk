@@ -68,6 +68,8 @@ pub enum EngineErrorEvent {
 
 #[derive(Error, Debug)]
 pub enum AudioError {
+    #[error("decoded audio exceeds the import sample limit")]
+    SampleLimit,
     #[error("failed to open audio file")]
     FileOpen(#[source] std::io::Error),
 

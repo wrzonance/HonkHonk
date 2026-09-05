@@ -9,6 +9,7 @@ impl HonkHonk {
     )]
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Import(message) => self.update_import(message),
             Message::NoOp => Task::none(),
             Message::ShowMacros => self.show_macros(),
             Message::MacroEditor(message) => self.update_macro_editor(message),

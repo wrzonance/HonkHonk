@@ -69,6 +69,8 @@ fn validate_graphic_ref(filename: &str) -> Result<(), GraphicRefError> {
 /// Keyed by sound ID (deterministic hex hash of file path).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SoundMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u8>,
     /// User tags, normalized on input; absent in older metadata files.
     #[serde(
         default,
@@ -99,6 +101,7 @@ impl Default for SoundMeta {
     fn default() -> Self {
         Self {
             favorite: false,
+            color: None,
             volume: 1.0,
             display_name: None,
             assigned_graphic: None,
@@ -110,6 +113,7 @@ impl Default for SoundMeta {
 impl SoundMeta {
     pub fn is_default(&self) -> bool {
         !self.favorite
+            && self.color.is_none()
             && (self.volume - 1.0).abs() < f32::EPSILON
             && self.display_name.is_none()
             && self.assigned_graphic.is_none()

@@ -27,6 +27,11 @@ impl HonkHonk {
             title,
             slots,
             macros,
+            nav_button(
+                "Import",
+                Message::Import(super::import::ImportMessage::Open),
+                theme
+            ),
             settings,
             space::horizontal(),
             list_controls,

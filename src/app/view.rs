@@ -261,25 +261,29 @@ impl HonkHonk {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let base = match self.view_mode {
-            ViewMode::Main => self.view_main(),
-            ViewMode::Macros => self.view_macros(),
-            ViewMode::SlotManager => {
-                let t = self.config.theme;
-                slot_manager::view_slot_manager(
-                    self,
-                    slot_manager::SlotManagerCtx {
-                        slots: &self.slots,
-                        slot_triggers: &self.slot_triggers,
-                        sounds: &self.sounds,
-                        macros: &self.macros,
-                        selected_slot: self.selected_slot,
-                        configure_available: self.shortcut_config.can_open(),
-                    },
-                    t,
-                )
+        let base = if self.import.open {
+            self.view_import()
+        } else {
+            match self.view_mode {
+                ViewMode::Main => self.view_main(),
+                ViewMode::Macros => self.view_macros(),
+                ViewMode::SlotManager => {
+                    let t = self.config.theme;
+                    slot_manager::view_slot_manager(
+                        self,
+                        slot_manager::SlotManagerCtx {
+                            slots: &self.slots,
+                            slot_triggers: &self.slot_triggers,
+                            sounds: &self.sounds,
+                            macros: &self.macros,
+                            selected_slot: self.selected_slot,
+                            configure_available: self.shortcut_config.can_open(),
+                        },
+                        t,
+                    )
+                }
+                ViewMode::Settings => crate::ui::settings::view_settings(self, self.config.theme),
             }
-            ViewMode::Settings => crate::ui::settings::view_settings(self, self.config.theme),
         };
 
         let mut layers = vec![base];

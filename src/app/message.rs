@@ -23,6 +23,7 @@ use super::notices::{Notice, NoticeId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    Import(super::import::ImportMessage),
     NoOp,
     ShowMacros,
     MacroEditor(super::macro_editor::EditorMessage),

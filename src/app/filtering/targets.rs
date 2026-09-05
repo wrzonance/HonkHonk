@@ -30,6 +30,9 @@ pub(super) enum FilterTarget {
 /// active. The two search surfaces are independent and must never claim the
 /// same keystroke.
 pub(super) fn active_filter_target(state: &HonkHonk) -> Option<FilterTarget> {
+    if state.import.open {
+        return None;
+    }
     match state.view_mode {
         ViewMode::Main => Some(FilterTarget::Tiles),
         ViewMode::Settings

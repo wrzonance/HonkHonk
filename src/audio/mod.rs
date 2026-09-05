@@ -14,7 +14,7 @@ mod store;
 pub mod streams;
 pub mod voices;
 
-pub use decoder::{DecodedAudio, decode};
+pub use decoder::{DecodedAudio, decode, decode_limited};
 pub use effects::{AudioEffect, EffectChain, EffectsCommand, EffectsEvent};
 pub use engine::{AudioCommand, AudioEvent, PlayMode, spawn};
 pub use envelope::{ENVELOPE_BUCKETS, Envelope};

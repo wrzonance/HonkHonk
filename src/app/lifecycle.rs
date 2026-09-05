@@ -4,6 +4,7 @@ use super::*;
 
 impl HonkHonk {
     pub(super) fn stop_all(&mut self) -> Task<Message> {
+        self.import.preview = self.import.preview.wrapping_add(1);
         if let Some(ref audio) = self.audio {
             audio.send(AudioCommand::Stop);
         }

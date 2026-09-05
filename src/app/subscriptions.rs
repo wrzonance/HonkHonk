@@ -75,6 +75,9 @@ impl HonkHonk {
             }
 
             match event {
+                iced::Event::Window(iced::window::Event::FileDropped(path)) => {
+                    Some(Message::Import(import::ImportMessage::Drop(path)))
+                }
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                     key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
                     ..

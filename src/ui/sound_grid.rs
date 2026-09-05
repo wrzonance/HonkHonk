@@ -175,7 +175,13 @@ fn tile_data(sound: &SoundEntry, ctx: TileCtx<'_>) -> SoundTileData {
         duration: crate::ui::fmt_duration(sound.duration_ms),
         hotkey: hotkey_for(sound, ctx),
         favorite: ctx.sound_meta.is_favorite(&sound.id),
-        tone: sound_tile::tone_from_seed(seed),
+        tone: sound_tile::tone_from_seed(
+            ctx.sound_meta
+                .get_ref(&sound.id)
+                .and_then(|m| m.color)
+                .map(u64::from)
+                .unwrap_or(seed),
+        ),
         seed,
     }
 }

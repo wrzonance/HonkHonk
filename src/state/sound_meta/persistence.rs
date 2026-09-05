@@ -39,6 +39,7 @@ impl From<SoundMetaV1> for SoundMeta {
     fn from(meta: SoundMetaV1) -> Self {
         Self {
             favorite: meta.favorite,
+            color: None,
             volume: meta.volume,
             display_name: meta.display_name,
             assigned_graphic: None,

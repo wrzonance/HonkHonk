@@ -86,7 +86,7 @@ fn modified_ms(path: &Path) -> Option<u64> {
 }
 
 /// Builds a SoundEntry from a validated audio file path.
-fn entry_from_path(path: &Path) -> Option<SoundEntry> {
+pub(crate) fn entry_from_path(path: &Path) -> Option<SoundEntry> {
     let ext = path.extension()?.to_str()?;
     if !is_audio_extension(ext) {
         return None;

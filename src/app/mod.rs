@@ -31,6 +31,7 @@ mod filtering;
 mod header;
 /// Settings → Shortcuts bindings list sort state (#199).
 mod hotkeys;
+pub mod import;
 mod library_actions;
 mod library_scan;
 mod lifecycle;
@@ -86,6 +87,7 @@ pub use crate::settings::SettingCategory as SettingsSection;
 pub const MIN_WINDOW_DIMENSION: f32 = 200.0;
 
 pub struct HonkHonk {
+    import: import::ImportState,
     visible: bool,
     exit: bool,
     tray_rx: Arc<Mutex<Receiver<TrayEvent>>>,

@@ -18,6 +18,10 @@ pub struct DecodedAudio {
 }
 
 pub fn decode(path: &Path) -> Result<DecodedAudio, AudioError> {
+    decode_limited(path, usize::MAX)
+}
+
+pub fn decode_limited(path: &Path, max_samples: usize) -> Result<DecodedAudio, AudioError> {
     let file = std::fs::File::open(path).map_err(AudioError::FileOpen)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -53,7 +57,7 @@ pub fn decode(path: &Path) -> Result<DecodedAudio, AudioError> {
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(AudioError::DecoderInit)?;
 
-    let decoded = decode_packets(&mut format, &mut decoder, track_id)?;
+    let decoded = decode_packets(&mut format, &mut decoder, track_id, max_samples)?;
 
     // Header value wins; otherwise use what the first decoded frame reported.
     let sample_rate = header_rate
@@ -90,6 +94,7 @@ fn decode_packets(
     format: &mut Box<dyn symphonia::core::formats::FormatReader>,
     decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
     track_id: u32,
+    max_samples: usize,
 ) -> Result<DecodedFrames, AudioError> {
     let mut all_samples: Vec<f32> = Vec::new();
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
@@ -117,10 +122,22 @@ fn decode_packets(
         // channels the container header lacked (#153).
         sample_rate.get_or_insert(spec.rate);
         channels.get_or_insert(spec.channels.count() as u16);
-        let capacity = decoded.capacity();
+        let frames = decoded.frames();
+        if frames == 0 {
+            continue;
+        }
+        let sample_count = frames
+            .checked_mul(spec.channels.count())
+            .ok_or(AudioError::SampleLimit)?;
+        if sample_count > max_samples.saturating_sub(all_samples.len()) {
+            return Err(AudioError::SampleLimit);
+        }
 
-        if sample_buf.as_ref().is_none_or(|b| capacity > b.capacity()) {
-            sample_buf = Some(SampleBuffer::<f32>::new(capacity as u64, spec));
+        if sample_buf
+            .as_ref()
+            .is_none_or(|b| sample_count > b.capacity())
+        {
+            sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
         }
         let buf = sample_buf.as_mut().expect("buffer just initialized");
 

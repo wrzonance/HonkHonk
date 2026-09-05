@@ -45,6 +45,9 @@ pitch_shift = "2.1.0"
 default = []
 pipewire-test = []
 
+[patch.crates-io]
+winit = { path = "vendor/winit" }
+
 [dev-dependencies]
 tempfile = "3"
 # Official headless interaction harness shipped with Iced. It exercises the

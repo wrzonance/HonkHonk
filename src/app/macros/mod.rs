@@ -52,6 +52,7 @@ impl HonkHonk {
             }
             schedule(macro_def)
         };
+        self.stop_import_preview();
         self.cancel_macro();
         let run_id = self.macro_run_id;
         self.macro_playback = Some(MacroPlayback::new(run_id, id.to_string(), plan.len()));

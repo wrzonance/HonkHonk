@@ -27,6 +27,7 @@ impl HonkHonk {
                 .collect::<Vec<_>>(),
         );
         let mut app = Self {
+            import: Default::default(),
             visible: true,
             exit: false,
             tray_rx: Arc::new(Mutex::new(rx)),
@@ -155,6 +156,7 @@ impl HonkHonk {
             pending_decodes: HashMap::new(),
             macros: crate::state::MacroStore::default(),
             macro_editor: Default::default(),
+            import: Default::default(),
             recording: None,
             macro_editor_draft: None,
             macro_draft_seq: 0,
