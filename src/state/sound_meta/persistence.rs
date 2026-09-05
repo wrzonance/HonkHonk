@@ -12,6 +12,10 @@ use crate::state::error::ConfigError;
 struct PersistedSoundMeta {
     version: u32,
     #[serde(default)]
+    fingerprints: HashMap<String, String>,
+    #[serde(default)]
+    audio: HashMap<String, super::AudioPreferences>,
+    #[serde(default)]
     custom: HashMap<String, SoundMeta>,
     #[serde(default)]
     added: BTreeMap<String, u64>,
@@ -39,6 +43,7 @@ impl From<SoundMetaV1> for SoundMeta {
     fn from(meta: SoundMetaV1) -> Self {
         Self {
             favorite: meta.favorite,
+            processing: Default::default(),
             color: None,
             volume: meta.volume,
             display_name: meta.display_name,
@@ -84,6 +89,8 @@ impl SoundMetaStore {
         }
         let persisted = PersistedSoundMeta {
             version: META_FORMAT_VERSION,
+            fingerprints: self.fingerprints.clone(),
+            audio: self.audio.clone(),
             custom: self.custom.clone(),
             added: self.added.clone(),
         };
@@ -122,6 +129,7 @@ impl SoundMetaStore {
             custom: migrate_custom(legacy),
             added: BTreeMap::new(),
             writable: true,
+            ..Self::default()
         })
     }
 
@@ -136,7 +144,10 @@ impl SoundMetaStore {
             }
             version if version == u64::from(META_FORMAT_VERSION) => {
                 let persisted: PersistedSoundMeta = serde_json::from_value(value).ok()?;
-                Some(Self::from_parts(persisted.custom, persisted.added))
+                let mut store = Self::from_parts(persisted.custom, persisted.added);
+                store.fingerprints = persisted.fingerprints;
+                store.audio = persisted.audio;
+                Some(store)
             }
             _ => None,
         }
@@ -147,6 +158,7 @@ impl SoundMetaStore {
             custom,
             added,
             writable: true,
+            ..Self::default()
         }
     }
 }

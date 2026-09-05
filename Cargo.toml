@@ -22,6 +22,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# K-weighted gated loudness measurement; existing effects do not measure LUFS.
+ebur128 = "0.1"
+# Stable content identity; std's hashes are not durable fingerprints.
+sha2 = "0.10"
 directories = "6"
 walkdir = "2"
 pipewire = "0.9"

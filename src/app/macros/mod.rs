@@ -127,6 +127,7 @@ impl HonkHonk {
             }
             Err(e) => {
                 tracing::warn!(sound = %voice.sound_id, error = %e, "macro step decode failed");
+                self.playback_error(&voice.sound_id, &e);
                 self.resolve_macro_step_failed();
             }
         }
@@ -180,16 +181,10 @@ impl HonkHonk {
 
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || crate::audio::decode(&path))
+                tokio::task::spawn_blocking(move || crate::audio::processing::decode_cached(&path))
                     .await
                     .map_err(|e| e.to_string())
                     .and_then(|r| r.map_err(|e| e.to_string()))
-                    .map(|d| CachedPcm {
-                        samples: Arc::new(d.samples),
-                        sample_rate: d.sample_rate,
-                        channels: d.channels,
-                        duration: d.duration,
-                    })
             },
             move |result| Message::MacroStepDecoded {
                 run_id,
@@ -206,9 +201,13 @@ impl HonkHonk {
     /// top-bit-flagged `voice_id`, which can never equal the tile
     /// `play_generation`, so its `PlaybackStarted`/`Finished` never claim or
     /// clear the now-playing highlight (that stays with tile presses).
-    fn send_macro_play(&self, voice: &MacroVoice, pcm: &Arc<CachedPcm>) {
+    fn send_macro_play(&mut self, voice: &MacroVoice, pcm: &Arc<CachedPcm>) {
+        self.adopt_audio_identity(&voice.sound_id, pcm);
+        let mut processing = self.voice_processing(&voice.sound_id, pcm);
+        processing.normalization_gain *= self.sound_meta.volume_for(&voice.sound_id);
         if let Some(audio) = &self.audio {
             audio.send(AudioCommand::Play {
+                processing,
                 voice_id: voice.voice_id,
                 sound_id: voice.sound_id.clone(),
                 samples: Arc::clone(&pcm.samples),

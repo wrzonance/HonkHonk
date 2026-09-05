@@ -14,7 +14,8 @@ impl HonkHonk {
         self.editor_draft_name = name_override;
         self.editor_draft_tags = meta.tags.join(", ");
         self.editor_draft_volume = vol;
-        Task::none()
+        self.processing_ui.draft = meta.processing;
+        self.load_editor_fingerprint(self.editor_sound_id.clone().unwrap_or_default())
     }
 
     pub(super) fn toggle_sound_favorite(&mut self, sound_id: &str) {
@@ -52,6 +53,7 @@ impl HonkHonk {
         self.sound_meta.set(
             sound_id,
             SoundMeta {
+                processing: self.processing_ui.draft,
                 volume: self.editor_draft_volume,
                 display_name,
                 tags,
@@ -76,7 +78,7 @@ impl HonkHonk {
         (!display_name.is_empty()).then(|| display_name.to_owned())
     }
 
-    fn persist_sound_metadata(&self) {
+    pub(super) fn persist_sound_metadata(&self) {
         if !self.persist {
             return;
         }

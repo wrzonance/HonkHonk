@@ -156,6 +156,7 @@ fn bounded_decode_rejects_audio_over_sample_budget() {
 fn silent_and_stereo_processing_keeps_valid_frame_boundaries() {
     use crate::audio::DecodedAudio;
     let audio = DecodedAudio {
+        repaired_channel: false,
         samples: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0],
         sample_rate: 8000,
         channels: 2,
@@ -164,6 +165,7 @@ fn silent_and_stereo_processing_keeps_valid_frame_boundaries() {
     let processed = transform::prepare(audio, false, true);
     assert_eq!(processed.samples, vec![0.0, 0.5, 0.5, 0.0]);
     let silent = DecodedAudio {
+        repaired_channel: false,
         samples: vec![0.0; 80],
         sample_rate: 8000,
         channels: 1,

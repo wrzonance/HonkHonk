@@ -146,6 +146,7 @@ fn playing_a_sound_caches_its_waveform_envelope() {
         voice_id: app.play_generation,
         id: "wav1".into(),
         result: Ok(crate::audio::CachedPcm {
+            analysis: Default::default(),
             samples: std::sync::Arc::new(decoded.samples),
             sample_rate: decoded.sample_rate,
             channels: decoded.channels,
@@ -232,6 +233,7 @@ fn stale_decoded_is_dropped() {
     app.playing = Some("newer".into());
 
     let pcm = std::sync::Arc::new(crate::audio::CachedPcm {
+        analysis: Default::default(),
         samples: std::sync::Arc::new(vec![0.0_f32; 8]),
         sample_rate: 48_000,
         channels: 2,

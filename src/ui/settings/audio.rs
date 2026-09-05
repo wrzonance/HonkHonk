@@ -60,6 +60,7 @@ pub(super) fn view_audio_section<'a>(state: &'a HonkHonk, t: Theme) -> Element<'
         column![
             status_badge,
             registry_rows,
+            crate::ui::audio_processing::global(state.config.processing),
             input_device_row(state, t),
             monitor_device_row(state, t)
         ]

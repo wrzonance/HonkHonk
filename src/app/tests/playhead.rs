@@ -99,6 +99,7 @@ fn re_pressing_same_sound_keeps_playhead_alive() {
     let _ = app.request_play(&sound, false);
     let decoded = crate::audio::decode(&sound.path).expect("decode test wav");
     let to_pcm = |d: &crate::audio::DecodedAudio| crate::audio::CachedPcm {
+        analysis: Default::default(),
         samples: std::sync::Arc::new(d.samples.clone()),
         sample_rate: d.sample_rate,
         channels: d.channels,

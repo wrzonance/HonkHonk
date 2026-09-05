@@ -1172,6 +1172,32 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/dasp_frame/dasp_frame-0.11.0.crate",
+        "sha256": "b2a3937f5fe2135702897535c8d4a5553f8b116f76c1529088797f2eee7c5cd6",
+        "dest": "cargo/vendor/dasp_frame-0.11.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"b2a3937f5fe2135702897535c8d4a5553f8b116f76c1529088797f2eee7c5cd6\", \"files\": {}}",
+        "dest": "cargo/vendor/dasp_frame-0.11.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/dasp_sample/dasp_sample-0.11.0.crate",
+        "sha256": "0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f",
+        "dest": "cargo/vendor/dasp_sample-0.11.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f\", \"files\": {}}",
+        "dest": "cargo/vendor/dasp_sample-0.11.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/data-encoding/data-encoding-2.11.0.crate",
         "sha256": "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8",
         "dest": "cargo/vendor/data-encoding-2.11.0"
@@ -1336,6 +1362,19 @@
         "type": "inline",
         "contents": "{\"package\": \"d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555\", \"files\": {}}",
         "dest": "cargo/vendor/dyn-clone-1.0.20",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/ebur128/ebur128-0.1.10.crate",
+        "sha256": "e227cc62d64d6fe01abbef48134b9c1f17d470cef1e7a56337ad05b1f81df7f9",
+        "dest": "cargo/vendor/ebur128-0.1.10"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"e227cc62d64d6fe01abbef48134b9c1f17d470cef1e7a56337ad05b1f81df7f9\", \"files\": {}}",
+        "dest": "cargo/vendor/ebur128-0.1.10",
         "dest-filename": ".cargo-checksum.json"
     },
     {

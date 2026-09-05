@@ -4,6 +4,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 mod persistence;
+mod processing;
+use crate::audio::processing::SoundProcessing;
+use processing::AudioPreferences;
 
 const META_FILE_NAME: &str = "sound_meta.json";
 const CONFIG_DIR_NAME: &str = "honkhonk";
@@ -69,6 +72,8 @@ fn validate_graphic_ref(filename: &str) -> Result<(), GraphicRefError> {
 /// Keyed by sound ID (deterministic hex hash of file path).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SoundMeta {
+    #[serde(default)]
+    pub processing: SoundProcessing,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<u8>,
     /// User tags, normalized on input; absent in older metadata files.
@@ -101,6 +106,7 @@ impl Default for SoundMeta {
     fn default() -> Self {
         Self {
             favorite: false,
+            processing: SoundProcessing::default(),
             color: None,
             volume: 1.0,
             display_name: None,
@@ -113,6 +119,7 @@ impl Default for SoundMeta {
 impl SoundMeta {
     pub fn is_default(&self) -> bool {
         !self.favorite
+            && self.processing == SoundProcessing::default()
             && self.color.is_none()
             && (self.volume - 1.0).abs() < f32::EPSILON
             && self.display_name.is_none()
@@ -124,6 +131,8 @@ impl SoundMeta {
 /// In-memory store for all sound metadata, backed by a JSON file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundMetaStore {
+    fingerprints: HashMap<String, String>,
+    audio: HashMap<String, AudioPreferences>,
     custom: HashMap<String, SoundMeta>,
     added: BTreeMap<String, u64>,
     writable: bool,
@@ -133,6 +142,8 @@ impl Default for SoundMetaStore {
     fn default() -> Self {
         Self {
             custom: HashMap::new(),
+            fingerprints: HashMap::new(),
+            audio: HashMap::new(),
             added: BTreeMap::new(),
             writable: true,
         }
@@ -160,6 +171,13 @@ impl SoundMetaStore {
     /// Upserts metadata for a sound. Removes the entry if it becomes default.
     pub fn set(&mut self, id: String, mut meta: SoundMeta) {
         meta.tags = normalize_tags(meta.tags);
+        meta.processing = meta.processing.sanitized();
+        meta.volume = if meta.volume.is_finite() {
+            meta.volume.clamp(0.0, 2.0)
+        } else {
+            1.0
+        };
+        self.share_audio_preferences(&id, &meta);
         if meta.is_default() {
             self.custom.remove(&id);
         } else {

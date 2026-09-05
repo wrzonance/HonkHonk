@@ -36,12 +36,7 @@ impl HonkHonk {
                         row.normalize,
                         row.trim,
                     );
-                    Ok(CachedPcm {
-                        samples: Arc::new(audio.samples),
-                        sample_rate: audio.sample_rate,
-                        channels: audio.channels,
-                        duration: audio.duration,
-                    })
+                    measured_preview(audio)
                 })
                 .await
                 .map_err(|e| {
@@ -64,6 +59,14 @@ impl HonkHonk {
         }
         match result {
             Ok(pcm) => self.send_audio_commands([AudioCommand::Play {
+                processing: crate::audio::processing::VoiceProcessing {
+                    normalization_gain: if self.config.processing.normalize {
+                        pcm.analysis.normalization_gain
+                    } else {
+                        1.0
+                    },
+                    ..Default::default()
+                },
                 voice_id: PREVIEW_VOICE,
                 sound_id: "import-preview".into(),
                 samples: pcm.samples,
@@ -77,4 +80,23 @@ impl HonkHonk {
             Err(error) => self.import.status = error.to_string(),
         }
     }
+}
+
+fn measured_preview(audio: crate::audio::DecodedAudio) -> Result<CachedPcm, ImportError> {
+    let normalization_gain =
+        crate::audio::processing::measure_gain(&audio.samples, audio.sample_rate, audio.channels)
+            .map_err(|e| {
+            ImportError::from(anyhow::Error::new(e).context("measure preview loudness"))
+        })?;
+    Ok(CachedPcm {
+        analysis: crate::audio::processing::AudioAnalysis {
+            normalization_gain,
+            repaired_channel: audio.repaired_channel,
+            ..Default::default()
+        },
+        samples: Arc::new(audio.samples),
+        sample_rate: audio.sample_rate,
+        channels: audio.channels,
+        duration: audio.duration,
+    })
 }

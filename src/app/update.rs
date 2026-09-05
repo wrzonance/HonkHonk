@@ -9,6 +9,18 @@ impl HonkHonk {
     )]
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::GlobalProcessingChanged(settings) => self.change_processing(settings),
+            Message::SoundProcessingChanged(settings) => {
+                if !self.processing_ui.loading {
+                    self.processing_ui.draft = settings.sanitized();
+                }
+                Task::none()
+            }
+            Message::AudioFingerprintReady {
+                id,
+                generation,
+                result,
+            } => self.editor_fingerprint_ready(id, generation, result),
             Message::Import(message) => self.update_import(message),
             Message::NoOp => Task::none(),
             Message::ShowMacros => self.show_macros(),

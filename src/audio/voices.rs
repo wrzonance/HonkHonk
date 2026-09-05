@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::audio::effects::{EffectChain, EffectSettings};
 use crate::audio::playback::PlaybackState;
+use crate::audio::processing::{self, Dynamics, DynamicsSettings, VoiceProcessing};
 
 pub const MAX_VOICES: usize = 16;
 const DEFAULT_MIX_SCRATCH: usize = 8192;
@@ -38,7 +39,8 @@ pub struct MixScratch {
 
 impl MixScratch {
     pub fn new(capacity: usize) -> Self {
-        let capacity = capacity.max(1);
+        // Keep room for one complete frame of any supported PipeWire format.
+        let capacity = capacity.max(pipewire::spa::param::audio::MAX_CHANNELS);
         Self {
             dry: vec![0.0; capacity],
             wet: vec![0.0; capacity],
@@ -57,6 +59,7 @@ impl Default for MixScratch {
 }
 
 pub struct VoiceSpec {
+    pub processing: VoiceProcessing,
     pub id: u64,
     pub sound_id: String,
     pub generation: u64,
@@ -70,6 +73,10 @@ pub struct VoiceSpec {
 }
 
 pub struct Voice {
+    processing: VoiceProcessing,
+    sink_dynamics: Dynamics,
+    monitor_dynamics: Dynamics,
+    channels: u16,
     pub id: u64,
     pub sound_id: String,
     pub generation: u64,
@@ -103,6 +110,11 @@ impl Voice {
         };
         Self {
             id: spec.id,
+            processing: spec.processing,
+            sink_dynamics: Dynamics::default(),
+            monitor_dynamics: Dynamics::default(),
+            channels: processing::ChannelLayout::new(spec.channels, spec.processing.sound)
+                .output_channels(),
             sound_id: spec.sound_id,
             generation: spec.generation,
             sink_state,
@@ -123,6 +135,7 @@ impl Voice {
             spec.channels,
             spec.gain,
         );
+        state.set_channel_processing(spec.processing.sound);
         Rc::new(RefCell::new(state))
     }
 
@@ -177,6 +190,7 @@ impl Voice {
         scratch: &mut MixScratch,
         sample_rate: u32,
     ) {
+        self.process_dry(target, &mut scratch.dry[..n], sample_rate);
         match target {
             MixTarget::Sink => {
                 self.sink_effects
@@ -187,6 +201,29 @@ impl Voice {
                     .process(&scratch.dry[..n], &mut scratch.wet[..n], sample_rate)
             }
         }
+    }
+
+    fn process_dry(&mut self, target: MixTarget, samples: &mut [f32], rate: u32) {
+        let gain = self.processing.normalization_gain;
+        let gain = if gain.is_finite() {
+            gain.clamp(0.0, 8.0)
+        } else {
+            1.0
+        };
+        for sample in samples.iter_mut() {
+            *sample *= gain;
+        }
+        processing::pan(samples, self.channels, self.processing.sound.pan);
+        let dynamics = match target {
+            MixTarget::Sink => &mut self.sink_dynamics,
+            MixTarget::Monitor => &mut self.monitor_dynamics,
+        };
+        dynamics.process(
+            samples,
+            (rate, self.channels),
+            self.processing.sound.dynamics,
+            false,
+        );
     }
 
     fn mix_processed(&self, output: &mut [f32], processed: &[f32]) {
@@ -225,6 +262,9 @@ impl Voice {
 }
 
 pub struct VoicePool {
+    dynamics: DynamicsSettings,
+    sink_dynamics: Dynamics,
+    monitor_dynamics: Dynamics,
     voices: Vec<Voice>,
     max_voices: usize,
 }
@@ -237,6 +277,9 @@ impl VoicePool {
     pub fn with_max_voices(max_voices: usize) -> Self {
         Self {
             voices: Vec::new(),
+            dynamics: DynamicsSettings::default(),
+            sink_dynamics: Dynamics::default(),
+            monitor_dynamics: Dynamics::default(),
             max_voices: max_voices.max(1),
         }
     }
@@ -284,19 +327,27 @@ impl VoicePool {
         scratch: &mut MixScratch,
         sample_rate: u32,
     ) {
-        for chunk in output.chunks_mut(scratch.capacity()) {
+        let channels = self.voices.first().map_or(2, |v| v.channels).max(1);
+        let capacity = (scratch.capacity() / channels as usize).max(1) * channels as usize;
+        for chunk in output.chunks_mut(capacity.min(scratch.capacity())) {
             chunk.fill(0.0);
             for voice in &mut self.voices {
                 voice.mix_into(target, chunk, scratch, sample_rate);
             }
-            for sample in chunk {
-                *sample = sample.clamp(-1.0, 1.0);
-            }
+            let dynamics = match target {
+                MixTarget::Sink => &mut self.sink_dynamics,
+                MixTarget::Monitor => &mut self.monitor_dynamics,
+            };
+            dynamics.process(chunk, (sample_rate, channels), self.dynamics, true);
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.voices.is_empty()
+    }
+
+    pub fn set_dynamics(&mut self, settings: DynamicsSettings) {
+        self.dynamics = settings.sanitized();
     }
 
     pub fn voice_ids(&self) -> Vec<u64> {

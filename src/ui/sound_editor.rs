@@ -15,6 +15,8 @@ use crate::ui::theme::{self, Hh, Theme};
 
 /// View context passed in from app.rs.
 pub struct EditorCtx<'a> {
+    pub processing: crate::audio::processing::SoundProcessing,
+    pub loading_audio: bool,
     pub sound: &'a SoundEntry,
     /// Snapshot of the current persisted meta (favorite flag etc.).
     pub meta: SoundMeta,
@@ -78,13 +80,22 @@ fn view_sheet<'a>(ctx: EditorCtx<'a>, t: Theme) -> Element<'a, Message> {
         header,
         name_row,
         view_tags_row(ctx.draft_tags, t),
-        volume_row,
+        if ctx.loading_audio {
+            text("Loading audio preferences…").into()
+        } else {
+            volume_row
+        },
+        container(crate::ui::audio_processing::sound(
+            ctx.processing,
+            ctx.loading_audio
+        ))
+        .padding([8, 24]),
         footer
     ]
     .spacing(0)
     .width(Length::Fixed(560.0));
 
-    container(body)
+    container(iced::widget::scrollable(body).height(Length::Fill))
         .style(move |_| container::Style {
             background: Some(theme::bg_color(t.bg())),
             border: theme::tile_border(t.hairline(), 1.0),

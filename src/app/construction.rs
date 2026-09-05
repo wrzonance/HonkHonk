@@ -27,6 +27,7 @@ impl HonkHonk {
                 .collect::<Vec<_>>(),
         );
         let mut app = Self {
+            processing_ui: Default::default(),
             import: Default::default(),
             visible: true,
             exit: false,
@@ -103,6 +104,7 @@ impl HonkHonk {
         let hotkey_sort = hotkeys::hotkey_sort_from_config(&config);
         let slot_sort = slots::slot_sort_from_config(&config);
         let mut app = Self {
+            processing_ui: Default::default(),
             visible: true,
             exit: false,
             tray_rx: Arc::new(Mutex::new(rx)),

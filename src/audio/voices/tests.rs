@@ -5,6 +5,7 @@ use crate::audio::effects::EffectSettings;
 
 fn spec(id: u64, samples: Vec<f32>) -> VoiceSpec {
     VoiceSpec {
+        processing: Default::default(),
         id,
         sound_id: format!("sound-{id}"),
         generation: id + 100,
@@ -72,7 +73,7 @@ fn mix_sums_active_voices_and_clamps_output() {
 
     pool.mix(MixTarget::Sink, &mut out, &mut scratch, 48_000);
 
-    let expected = [1.0, -1.0, 0.4, -0.4];
+    let expected = [0.98, -0.98, 0.4, -0.4];
     for (actual, expected) in out.iter().zip(expected) {
         assert!(
             (*actual - expected).abs() < 1e-6,

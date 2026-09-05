@@ -243,6 +243,8 @@ impl HonkHonk {
             if let Some(sound) = self.sounds.iter().find(|s| s.id == *sound_id) {
                 layers.push(crate::ui::sound_editor::view_editor_overlay(
                     crate::ui::sound_editor::EditorCtx {
+                        processing: self.processing_ui.draft,
+                        loading_audio: self.processing_ui.loading,
                         sound,
                         meta: self.sound_meta.get(sound_id),
                         draft_name: &self.editor_draft_name,

@@ -8,6 +8,7 @@ mod error;
 mod handle;
 pub mod mixer;
 pub mod playback;
+pub mod processing;
 mod registry;
 mod router;
 mod store;

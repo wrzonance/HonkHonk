@@ -44,6 +44,9 @@ pub(crate) mod notices;
 mod panels;
 mod playback;
 mod preferences;
+mod processing;
+#[cfg(test)]
+mod processing_tests;
 mod recording;
 mod settings;
 mod slot_sort;
@@ -87,6 +90,7 @@ pub use crate::settings::SettingCategory as SettingsSection;
 pub const MIN_WINDOW_DIMENSION: f32 = 200.0;
 
 pub struct HonkHonk {
+    processing_ui: processing::ProcessingUi,
     import: import::ImportState,
     visible: bool,
     exit: bool,

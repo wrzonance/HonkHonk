@@ -50,6 +50,7 @@ impl HonkHonk {
     }
 
     fn audio_ready(&self) {
+        self.send_audio_commands([AudioCommand::SetDynamics(self.config.processing.dynamics)]);
         tracing::info!("audio engine ready");
         if let Some(ref audio) = self.audio {
             audio.send(AudioCommand::SetVolume(self.config.volume));

@@ -14,6 +14,7 @@ pub const DEFAULT_PCM_CAP_BYTES: usize = 256 * 1024 * 1024;
 /// O(1) and a single canonical buffer is shared.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CachedPcm {
+    pub analysis: super::processing::AudioAnalysis,
     pub samples: Arc<Vec<f32>>,
     pub sample_rate: u32,
     pub channels: u16,
@@ -114,6 +115,7 @@ mod tests {
 
     fn pcm(n: usize) -> Arc<CachedPcm> {
         Arc::new(CachedPcm {
+            analysis: Default::default(),
             samples: Arc::new(vec![0.0_f32; n]),
             sample_rate: 48_000,
             channels: 2,

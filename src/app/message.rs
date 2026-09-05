@@ -23,6 +23,13 @@ use super::notices::{Notice, NoticeId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    GlobalProcessingChanged(crate::audio::processing::GlobalProcessing),
+    SoundProcessingChanged(crate::audio::processing::SoundProcessing),
+    AudioFingerprintReady {
+        id: String,
+        generation: u64,
+        result: Result<String, String>,
+    },
     Import(super::import::ImportMessage),
     NoOp,
     ShowMacros,
