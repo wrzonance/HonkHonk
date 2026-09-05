@@ -16,7 +16,7 @@ iced = { version = "0.14", features = ["tokio", "tiny-skia", "canvas", "advanced
 # Pure-Rust StatusNotifierItem tray over zbus. Replaces tray-icon/muda/gtk so
 # the Linux tray no longer pulls GTK3, libappindicator, or libxdo.
 ksni = { version = "0.3.5", features = ["blocking"] }
-symphonia = { version = "0.5", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
+symphonia = { version = "0.6", features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm", "aac"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
@@ -24,11 +24,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 directories = "6"
 walkdir = "2"
-pipewire = "0.9"
+pipewire = "0.10"
 ashpd = { version = "0.13", features = ["global_shortcuts", "raw-window-handle", "file_chooser"] }
 zbus = "5"
 url = "2"  # RFC-8089 file URI parsing for pick_directory() ashpd file chooser result
-lofty = "0.24"
+lofty = "0.25"
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
 anyhow = "1.0.102"
 # Phase 4B voice effects DSP framework (ADR-006). Added in issue #30 (PR 1 of 6)
@@ -54,7 +54,7 @@ iced_test = "=0.14.0"
 # Bench harness for the sound-grid render baseline (ADR-009). Criterion is the
 # de-facto Rust micro-benchmark standard; stdlib #[bench] is nightly-only.
 # License: Apache-2.0 OR MIT (cargo-deny clean).
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 # block_on for the headless wgpu device setup in the grid_render bench — avoids
 # pulling a full async runtime into a bench. License: MIT OR Apache-2.0.
 pollster = "0.4"
@@ -68,7 +68,7 @@ iced_wgpu = "=0.14.0"
 iced_tiny_skia = "=0.14.0"
 iced_core = "=0.14.0"
 iced_graphics = "=0.14.0"
-tiny-skia = "=0.11.4"
+tiny-skia = "=0.12.0"
 
 [[bench]]
 name = "grid_render"
