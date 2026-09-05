@@ -263,6 +263,7 @@ impl HonkHonk {
     pub fn view(&self) -> Element<'_, Message> {
         let base = match self.view_mode {
             ViewMode::Main => self.view_main(),
+            ViewMode::Macros => self.view_macros(),
             ViewMode::SlotManager => {
                 let t = self.config.theme;
                 slot_manager::view_slot_manager(

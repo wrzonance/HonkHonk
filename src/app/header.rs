@@ -10,6 +10,7 @@ impl HonkHonk {
     pub(super) fn view_header(&self, theme: theme::Theme) -> Element<'_, Message> {
         let title = text("HonkHonk").size(24).color(theme.ink());
         let slots = nav_button("Slots", Message::ShowSlots, theme);
+        let macros = nav_button("Macros", Message::ShowMacros, theme);
         let settings = nav_button("Settings", SettingsMessage::Show.into(), theme);
         let search = search_bar::view_search_bar(self.filter.query(), Message::SearchChanged);
         let sort = sort::view_sort_chip(
@@ -25,6 +26,7 @@ impl HonkHonk {
         row![
             title,
             slots,
+            macros,
             settings,
             space::horizontal(),
             list_controls,

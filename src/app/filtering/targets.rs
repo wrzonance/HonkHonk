@@ -19,6 +19,7 @@ pub(super) enum FilterTarget {
     Hotkeys,
     /// The slot manager's own, independent search bar (#198).
     Slots,
+    Macros,
 }
 
 /// Resolves the active filter target, if any, for the current app state.
@@ -39,6 +40,7 @@ pub(super) fn active_filter_target(state: &HonkHonk) -> Option<FilterTarget> {
         }
         ViewMode::Settings => None,
         ViewMode::SlotManager => Some(FilterTarget::Slots),
+        ViewMode::Macros => Some(FilterTarget::Macros),
     }
 }
 
@@ -54,7 +56,12 @@ mod tests {
         SettingsSection::About,
     ];
 
-    const VIEW_MODES: [ViewMode; 3] = [ViewMode::Main, ViewMode::SlotManager, ViewMode::Settings];
+    const VIEW_MODES: [ViewMode; 4] = [
+        ViewMode::Main,
+        ViewMode::SlotManager,
+        ViewMode::Settings,
+        ViewMode::Macros,
+    ];
 
     /// Compile-time tripwire for the two hand-maintained arrays above.
     ///
@@ -79,6 +86,7 @@ mod tests {
             ViewMode::Main => 0,
             ViewMode::SlotManager => 1,
             ViewMode::Settings => 2,
+            ViewMode::Macros => 3,
         }
     }
 
@@ -104,7 +112,17 @@ mod tests {
     /// [`active_filter_target`]'s own match — a mirrored oracle can only fail
     /// when the two copies diverge, never when the rule itself is wrong.
     #[rustfmt::skip]
-    const EXPECTED_ROUTING: [(ViewMode, SettingsSection, bool, Option<FilterTarget>); 30] = [
+    const EXPECTED_ROUTING: [(ViewMode, SettingsSection, bool, Option<FilterTarget>); 40] = [
+        (ViewMode::Macros, SettingsSection::Audio, false, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::Audio, true, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::Library, false, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::Library, true, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::Hotkeys, false, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::Hotkeys, true, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::Appearance, false, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::Appearance, true, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::About, false, Some(FilterTarget::Macros)),
+        (ViewMode::Macros, SettingsSection::About, true, Some(FilterTarget::Macros)),
         // The main grid owns typing regardless of any settings state behind it.
         (ViewMode::Main, SettingsSection::Audio,      false, Some(FilterTarget::Tiles)),
         (ViewMode::Main, SettingsSection::Audio,      true,  Some(FilterTarget::Tiles)),

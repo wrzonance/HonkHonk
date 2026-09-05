@@ -24,6 +24,8 @@ use super::notices::{Notice, NoticeId};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
     NoOp,
+    ShowMacros,
+    MacroEditor(super::macro_editor::EditorMessage),
     ToggleVisibility,
     Quit,
     TrayEvent(TrayEvent),

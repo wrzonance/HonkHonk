@@ -49,6 +49,7 @@ fn filter_input_id(target: FilterTarget) -> iced::widget::Id {
         FilterTarget::Tiles => search_bar::input_id(),
         FilterTarget::Hotkeys => search_bar::hotkeys_input_id(),
         FilterTarget::Slots => search_bar::slots_input_id(),
+        FilterTarget::Macros => search_bar::macros_input_id(),
     }
 }
 
@@ -82,6 +83,10 @@ impl HonkHonk {
         self.context_menu.is_some()
             || self.editor_sound_id.is_some()
             || self.macro_editor_draft.is_some()
+            || (self.view_mode == super::ViewMode::Macros
+                && (self.macro_editor.text_entry_active
+                    || self.macro_editor.menu.is_some()
+                    || self.macro_editor.sort_open))
             || self.effects_panel.is_visible()
             || self.sort_menu_anchor.is_some()
     }
@@ -94,6 +99,7 @@ impl HonkHonk {
             FilterTarget::Tiles => &mut self.filter,
             FilterTarget::Hotkeys => &mut self.hotkey_filter,
             FilterTarget::Slots => &mut self.slot_filter,
+            FilterTarget::Macros => &mut self.macro_editor.filter,
         }
     }
 
@@ -113,6 +119,10 @@ impl HonkHonk {
                 iced::widget::operation::focus(filter_input_id(FilterTarget::Slots))
             }
             None => iced::Task::none(),
+            Some(FilterTarget::Macros) => {
+                self.macro_editor.filter.insert(text);
+                iced::widget::operation::focus(filter_input_id(FilterTarget::Macros))
+            }
         }
     }
 
@@ -129,6 +139,19 @@ impl HonkHonk {
     }
 
     pub(super) fn handle_escape(&mut self, event_was_captured: bool) -> iced::Task<Message> {
+        if self.view_mode == super::ViewMode::Macros
+            && (self.macro_editor.menu.take().is_some()
+                || self.macro_editor.text_entry_active
+                || self.macro_editor.sort_open
+                || self.macro_editor.dragging.is_some())
+        {
+            self.macro_editor.text_entry_active = false;
+            self.macro_editor.sort_open = false;
+            self.macro_editor.dragging = None;
+            self.macro_editor.pointer = None;
+            self.sort_menu_anchor = None;
+            return iced::Task::none();
+        }
         if self.dismiss_sound_sort_menu() {
             return iced::Task::none();
         }

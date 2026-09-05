@@ -63,6 +63,7 @@ impl HonkHonk {
                 .collect(),
         );
         self.sounds = scan.entries;
+        self.sync_macro_timeline();
         self.refresh_filtered_sounds();
         self.reconcile_playback_with_library();
         self.durations_loaded = false;

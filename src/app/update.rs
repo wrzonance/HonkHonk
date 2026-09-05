@@ -10,6 +10,8 @@ impl HonkHonk {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::NoOp => Task::none(),
+            Message::ShowMacros => self.show_macros(),
+            Message::MacroEditor(message) => self.update_macro_editor(message),
             Message::ToggleVisibility => self.toggle_visibility(),
             Message::Quit => self.quit(),
             Message::TrayEvent(event) => {
@@ -44,6 +46,9 @@ impl HonkHonk {
             }
             Message::StopRecording => {
                 self.stop_recording();
+                if self.view_mode == ViewMode::Macros {
+                    self.adopt_macro_draft();
+                }
                 Task::none()
             }
             Message::PlayMacro(id) => self.play_macro(&id),
@@ -170,6 +175,7 @@ impl HonkHonk {
             }
             Message::DurationsLoaded(map) => {
                 self.apply_loaded_durations(&map);
+                self.sync_macro_timeline();
                 Task::none()
             }
             Message::AssignSlot(idx, path) => {

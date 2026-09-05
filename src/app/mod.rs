@@ -34,6 +34,7 @@ mod hotkeys;
 mod library_actions;
 mod library_scan;
 mod lifecycle;
+pub mod macro_editor;
 mod macros;
 mod message;
 #[cfg(test)]
@@ -72,6 +73,7 @@ pub enum ViewMode {
     #[default]
     Main,
     SlotManager,
+    Macros,
     Settings,
 }
 
@@ -202,6 +204,7 @@ pub struct HonkHonk {
     /// mid-tile-press never advances (and corrupts) the tile's now-playing UI
     /// ownership (#166).
     macro_voice_seq: u64,
+    macro_editor: macro_editor::EditorState,
 }
 
 impl HonkHonk {

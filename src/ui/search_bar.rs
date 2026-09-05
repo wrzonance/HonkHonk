@@ -8,6 +8,27 @@ const SETTINGS_INPUT_ID: &str = "honkhonk-settings-filter";
 const HOTKEYS_INPUT_ID: &str = "honkhonk-hotkeys-filter";
 const SLOTS_INPUT_ID: &str = "honkhonk-slots-filter";
 
+pub(crate) fn macros_input_id() -> iced::widget::Id {
+    iced::widget::Id::new("honkhonk-macros-filter")
+}
+
+pub(crate) fn view_macros_search_bar<'a, Message: Clone + 'a>(
+    query: &'a str,
+    theme: Theme,
+    on_input: impl Fn(String) -> Message + 'a,
+) -> Element<'a, Message> {
+    view_search_input(
+        query,
+        SearchInputConfig {
+            placeholder: "Search macros…",
+            id: macros_input_id(),
+            width: Length::Fill,
+            theme,
+        },
+        on_input,
+    )
+}
+
 #[derive(Clone)]
 struct SearchInputConfig<'a> {
     placeholder: &'a str,
