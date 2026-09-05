@@ -1,7 +1,21 @@
-use super::{FAVORITES_TAB, HonkHonk};
+use super::{FAVORITES_TAB, HonkHonk, Message};
 use crate::state::SoundMeta;
+use iced::Task;
 
 impl HonkHonk {
+    pub(super) fn open_sound_editor(&mut self, sound_id: String) -> Task<Message> {
+        let meta = self.sound_meta.get(&sound_id);
+        let name_override = meta.display_name.clone().unwrap_or_default();
+        let vol = meta.volume;
+        // Clear the context menu so the editor overlay surfaces immediately.
+        self.context_menu = None;
+        self.context_menu_pos = None;
+        self.editor_sound_id = Some(sound_id);
+        self.editor_draft_name = name_override;
+        self.editor_draft_volume = vol;
+        Task::none()
+    }
+
     pub(super) fn toggle_sound_favorite(&mut self, sound_id: &str) {
         let favorites_filter_active = self.active_category.as_deref() == Some(FAVORITES_TAB);
         let is_favorite = self.sound_meta.toggle_favorite(sound_id);
