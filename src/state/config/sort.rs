@@ -12,6 +12,8 @@ pub struct SortPref {
     key: String,
     #[serde(default)]
     direction: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    group_by_tag: bool,
 }
 
 impl SortPref {
@@ -19,11 +21,21 @@ impl SortPref {
         Self {
             key: key.into(),
             direction: direction.into(),
+            group_by_tag: false,
         }
     }
 
     pub fn key(&self) -> &str {
         &self.key
+    }
+
+    pub fn group_by_tag(&self) -> bool {
+        self.group_by_tag
+    }
+
+    pub fn with_tag_grouping(mut self, enabled: bool) -> Self {
+        self.group_by_tag = enabled;
+        self
     }
 
     pub fn direction(&self) -> &str {
@@ -52,7 +64,11 @@ fn parse_sort_pref(value: &serde_json::Value) -> Option<SortPref> {
     let fields = value.as_object()?;
     let key = optional_string(fields.get("key"))?;
     let direction = optional_string(fields.get("direction"))?;
-    Some(SortPref::new(key, direction))
+    let grouped = fields
+        .get("group_by_tag")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    Some(SortPref::new(key, direction).with_tag_grouping(grouped))
 }
 
 fn optional_string(value: Option<&serde_json::Value>) -> Option<&str> {

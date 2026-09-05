@@ -20,6 +20,7 @@ pub struct EditorCtx<'a> {
     pub meta: SoundMeta,
     /// Current draft display name (held in app state while the editor is open).
     pub draft_name: &'a str,
+    pub draft_tags: &'a str,
     /// Current draft volume (held in app state while the editor is open).
     pub draft_volume: f32,
 }
@@ -73,9 +74,15 @@ fn view_sheet<'a>(ctx: EditorCtx<'a>, t: Theme) -> Element<'a, Message> {
     let volume_row = view_volume_row(draft_volume, sound_id.clone(), t);
     let footer = view_footer(sound_id, t);
 
-    let body = column![header, name_row, volume_row, footer]
-        .spacing(0)
-        .width(Length::Fixed(560.0));
+    let body = column![
+        header,
+        name_row,
+        view_tags_row(ctx.draft_tags, t),
+        volume_row,
+        footer
+    ]
+    .spacing(0)
+    .width(Length::Fixed(560.0));
 
     container(body)
         .style(move |_| container::Style {
@@ -167,6 +174,22 @@ fn view_name_row<'a>(draft_name: &'a str, t: Theme) -> Element<'a, Message> {
         ..Default::default()
     })
     .width(Length::Fill)
+    .into()
+}
+
+fn view_tags_row<'a>(draft: &'a str, t: Theme) -> Element<'a, Message> {
+    column![
+        text("Tags").size(theme::font::LABEL).color(t.ink()),
+        text("Separate tags with commas. Leave blank to remove all tags.")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+        text_input("Meme, Airhorn", draft)
+            .on_input(Message::SoundEditorTagsChanged)
+            .padding([theme::space::SM, theme::space::MD])
+            .size(theme::font::BODY),
+    ]
+    .spacing(theme::space::XS)
+    .padding([theme::space::MD, theme::space::LG])
     .into()
 }
 

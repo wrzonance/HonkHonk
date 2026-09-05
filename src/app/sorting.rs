@@ -4,6 +4,7 @@ use super::HonkHonk;
 use crate::state::{AppConfig, SortPref, SoundEntry, SoundMetaStore};
 use crate::ui::list_controls::sort::{Direction, SortKey, SortLabel, SortState};
 
+mod tags;
 #[cfg(test)]
 mod tests;
 mod view;
@@ -135,9 +136,11 @@ impl HonkHonk {
     }
 
     fn persist_sound_sort(&mut self) {
+        let grouped = self.sound_tags_grouped();
         self.config.sort_prefs.insert(
             TILES_VIEW_KEY.into(),
-            SortPref::new(self.sound_sort.key().id(), self.sound_sort.direction().id()),
+            SortPref::new(self.sound_sort.key().id(), self.sound_sort.direction().id())
+                .with_tag_grouping(grouped),
         );
         self.persist_config();
     }

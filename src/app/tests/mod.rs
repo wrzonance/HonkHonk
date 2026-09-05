@@ -10,6 +10,7 @@ mod playback_events;
 mod playhead;
 mod preferences;
 mod sound_editor;
+mod tags;
 
 /// Minimal 16-bit PCM mono WAV (4 samples) so tests can exercise the real
 /// decode path without fixture files.

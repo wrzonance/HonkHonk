@@ -12,6 +12,7 @@ impl HonkHonk {
         self.context_menu_pos = None;
         self.editor_sound_id = Some(sound_id);
         self.editor_draft_name = name_override;
+        self.editor_draft_tags = meta.tags.join(", ");
         self.editor_draft_volume = vol;
         Task::none()
     }
@@ -42,22 +43,31 @@ impl HonkHonk {
         let previous_meta = self.sound_meta.get(&sound_id);
         let display_name = self.editor_display_name();
         let display_name_changed = previous_meta.display_name != display_name;
+        let tags = self
+            .editor_draft_tags
+            .split(',')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let tags_changed = previous_meta.tags != tags;
         self.sound_meta.set(
             sound_id,
             SoundMeta {
                 volume: self.editor_draft_volume,
                 display_name,
+                tags,
                 ..previous_meta
             },
         );
         self.persist_sound_metadata();
-        if display_name_changed
-            && (!self.filter.query().is_empty() || self.sound_sort.key().uses_display_name())
+        if tags_changed
+            || (display_name_changed
+                && (!self.filter.query().is_empty() || self.sound_sort.key().uses_display_name()))
         {
             self.refresh_filtered_sounds();
         }
         self.editor_sound_id = None;
         self.editor_draft_name.clear();
+        self.editor_draft_tags.clear();
         self.editor_draft_volume = 1.0;
     }
 

@@ -42,6 +42,7 @@ impl From<SoundMetaV1> for SoundMeta {
             volume: meta.volume,
             display_name: meta.display_name,
             assigned_graphic: None,
+            tags: Vec::new(),
         }
     }
 }

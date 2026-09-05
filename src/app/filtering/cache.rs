@@ -24,6 +24,13 @@ impl HonkHonk {
                 Cow::Borrowed(sound.name.as_str()),
                 Cow::Borrowed(sound.category.as_str()),
             ]
+            .into_iter()
+            .chain(
+                self.sound_meta
+                    .get_ref(&sound.id)
+                    .into_iter()
+                    .flat_map(|meta| meta.tags.iter().map(|tag| Cow::Borrowed(tag.as_str()))),
+            )
         })
         .into_iter()
         .filter(|&index| self.sound_matches_active_category(index))

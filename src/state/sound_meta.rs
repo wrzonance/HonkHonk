@@ -69,6 +69,13 @@ fn validate_graphic_ref(filename: &str) -> Result<(), GraphicRefError> {
 /// Keyed by sound ID (deterministic hex hash of file path).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SoundMeta {
+    /// User tags, normalized on input; absent in older metadata files.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_tags"
+    )]
+    pub tags: Vec<String>,
     /// Star / unstar: included in "Favorites" filtered view.
     #[serde(default)]
     pub favorite: bool,
@@ -95,6 +102,7 @@ impl Default for SoundMeta {
             volume: 1.0,
             display_name: None,
             assigned_graphic: None,
+            tags: Vec::new(),
         }
     }
 }
@@ -105,6 +113,7 @@ impl SoundMeta {
             && (self.volume - 1.0).abs() < f32::EPSILON
             && self.display_name.is_none()
             && self.assigned_graphic.is_none()
+            && self.tags.is_empty()
     }
 }
 
@@ -145,12 +154,20 @@ impl SoundMetaStore {
     }
 
     /// Upserts metadata for a sound. Removes the entry if it becomes default.
-    pub fn set(&mut self, id: String, meta: SoundMeta) {
+    pub fn set(&mut self, id: String, mut meta: SoundMeta) {
+        meta.tags = normalize_tags(meta.tags);
         if meta.is_default() {
             self.custom.remove(&id);
         } else {
             self.custom.insert(id, meta);
         }
+    }
+
+    /// Replaces tags, normalizing whitespace and case-insensitive duplicates.
+    pub fn set_tags(&mut self, id: &str, tags: Vec<String>) {
+        let mut meta = self.get(id);
+        meta.tags = tags;
+        self.set(id.to_owned(), meta);
     }
 
     /// Toggles the favorite flag for a sound, returning the new value.
@@ -235,3 +252,15 @@ impl SoundMetaStore {
 
 #[cfg(test)]
 mod tests;
+
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    tags.into_iter()
+        .map(|tag| tag.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|tag| !tag.is_empty() && seen.insert(tag.to_lowercase()))
+        .collect()
+}
+
+fn deserialize_tags<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    Vec::<String>::deserialize(deserializer).map(normalize_tags)
+}

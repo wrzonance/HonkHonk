@@ -117,18 +117,28 @@ impl HonkHonk {
         let t = self.config.theme;
         let header = self.view_header(t);
         let chips = self.view_category_chips(t);
-        let grid = sound_grid::view_grid(
-            &self.sounds,
-            &self.filtered_sound_indices,
-            self.playing.as_deref(),
-            sound_grid::GridCtx {
-                slots: &self.slots,
-                triggers: &self.slot_triggers,
-                shortcuts_active: matches!(self.shortcuts_status, ShortcutsStatus::Active),
-                columns: self.config.density.columns(),
-                sound_meta: &self.sound_meta,
-            },
-        );
+        let grid_ctx = sound_grid::GridCtx {
+            slots: &self.slots,
+            triggers: &self.slot_triggers,
+            shortcuts_active: matches!(self.shortcuts_status, ShortcutsStatus::Active),
+            columns: self.config.density.columns(),
+            sound_meta: &self.sound_meta,
+        };
+        let grid = if self.sound_tags_grouped() {
+            sound_grid::view_groups(
+                &self.sounds,
+                self.sound_tag_groups(),
+                self.playing.as_deref(),
+                grid_ctx,
+            )
+        } else {
+            sound_grid::view_grid(
+                &self.sounds,
+                &self.filtered_sound_indices,
+                self.playing.as_deref(),
+                grid_ctx,
+            )
+        };
 
         let playing_sound = self
             .playing
@@ -236,6 +246,7 @@ impl HonkHonk {
                         sound,
                         meta: self.sound_meta.get(sound_id),
                         draft_name: &self.editor_draft_name,
+                        draft_tags: &self.editor_draft_tags,
                         draft_volume: self.editor_draft_volume,
                     },
                     t,

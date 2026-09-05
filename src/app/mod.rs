@@ -155,6 +155,7 @@ pub struct HonkHonk {
     editor_sound_id: Option<String>,
     /// Draft display name held while the editor is open.
     editor_draft_name: String,
+    editor_draft_tags: String,
     /// Draft per-sound volume held while the editor is open.
     editor_draft_volume: f32,
     /// User-facing voice-effects state (preset, bypass, wet/dry, params).

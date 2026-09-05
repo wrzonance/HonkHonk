@@ -36,6 +36,7 @@ pub(super) struct SlotRow {
     pub(super) display_name: String,
     pub(super) filename: String,
     pub(super) tag: String,
+    pub(super) tags: Vec<String>,
     pub(super) duration_ms: Option<u64>,
     pub(super) modified_ms: Option<u64>,
     pub(super) added_ms: Option<u64>,
@@ -74,6 +75,7 @@ fn sound_slot_row(state: &HonkHonk, idx: u8, path: &Path) -> SlotRow {
         display_name: resolved_display_name(custom_name, &sound.name),
         filename: file_name(path),
         tag: sound.category.clone(),
+        tags: state.sound_meta.get(&sound.id).tags,
         duration_ms: sound.duration_ms,
         modified_ms: sound.modified_ms,
         added_ms: state.sound_meta.added_ms(&sound.id),
@@ -110,6 +112,7 @@ fn empty_slot_row(idx: u8) -> SlotRow {
         display_name: String::new(),
         filename: String::new(),
         tag: String::new(),
+        tags: Vec::new(),
         duration_ms: None,
         modified_ms: None,
         added_ms: None,
@@ -131,9 +134,11 @@ fn file_name(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// The fields a type-to-filter query matches against: name, file name, tag.
-pub(super) fn slot_haystacks(row: &SlotRow) -> [&str; 3] {
-    [&row.display_name, &row.filename, &row.tag]
+/// Search the name, file name, folder, and each assigned tag independently.
+pub(super) fn slot_haystacks(row: &SlotRow) -> impl Iterator<Item = &str> {
+    [row.display_name.as_str(), &row.filename, &row.tag]
+        .into_iter()
+        .chain(row.tags.iter().map(String::as_str))
 }
 
 impl SortKey<SlotRow> for SlotSortKey {

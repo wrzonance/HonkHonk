@@ -138,6 +138,7 @@ impl HonkHonk {
         } else if self.editor_sound_id.is_some() {
             self.editor_sound_id = None;
             self.editor_draft_name.clear();
+            self.editor_draft_tags.clear();
             self.editor_draft_volume = 1.0;
         } else if self.macro_editor_draft.is_some() {
             // The draft belongs to the macro editor; its own close/discard flow

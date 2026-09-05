@@ -116,7 +116,7 @@ fn dangling_and_empty_slots_share_a_fully_blank_haystack() {
             .find(|row| row.slot_index == idx)
             .unwrap_or_else(|| panic!("slot {idx} missing from build_slot_rows output"));
         assert_eq!(
-            rows::slot_haystacks(row),
+            rows::slot_haystacks(row).collect::<Vec<_>>(),
             ["", "", ""],
             "slot {idx} should have a fully-blank haystack"
         );

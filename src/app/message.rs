@@ -57,6 +57,7 @@ pub enum Message {
     ToggleSoundSortMenu,
     ToggleSoundSortDirection,
     SelectSoundSort(&'static str),
+    ToggleSoundTagGrouping,
     DismissSoundSortMenu,
     // Settings → Shortcuts list controls (#199): filter query and sort chip,
     // independent of the tiles view's messages above.
@@ -149,6 +150,7 @@ pub enum Message {
     OpenSoundEditor(String),
     CloseSoundEditor,
     SoundEditorNameChanged(String),
+    SoundEditorTagsChanged(String),
     SoundEditorVolumeChanged(String, f32),
     SaveSoundMeta(String),
     /// A background decode completed for play generation `generation`. Applied

@@ -88,6 +88,10 @@ impl HonkHonk {
                 self.select_sound_sort(key);
                 Task::none()
             }
+            Message::ToggleSoundTagGrouping => {
+                self.toggle_sound_tag_grouping();
+                Task::none()
+            }
             Message::DismissSoundSortMenu => {
                 self.dismiss_sound_sort_menu();
                 Task::none()
@@ -282,11 +286,16 @@ impl HonkHonk {
             Message::CloseSoundEditor => {
                 self.editor_sound_id = None;
                 self.editor_draft_name = String::new();
+                self.editor_draft_tags.clear();
                 self.editor_draft_volume = 1.0;
                 Task::none()
             }
             Message::SoundEditorNameChanged(name) => {
                 self.editor_draft_name = name;
+                Task::none()
+            }
+            Message::SoundEditorTagsChanged(tags) => {
+                self.editor_draft_tags = tags;
                 Task::none()
             }
             Message::SoundEditorVolumeChanged(_sound_id, v) => {

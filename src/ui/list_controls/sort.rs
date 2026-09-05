@@ -165,6 +165,20 @@ where
     Message: Clone + 'a,
     F: Fn(K) -> Message + Copy + 'a,
 {
+    view_sort_menu_with_grouping(menu, on_select, on_dismiss, None)
+}
+
+pub fn view_sort_menu_with_grouping<'a, K, Message, F>(
+    menu: SortMenu<'a, K>,
+    on_select: F,
+    on_dismiss: Message,
+    grouping: Option<(bool, Message)>,
+) -> Element<'a, Message>
+where
+    K: Copy + Eq + SortLabel + 'a,
+    Message: Clone + 'a,
+    F: Fn(K) -> Message + Copy + 'a,
+{
     let SortMenu {
         state,
         options,
@@ -172,9 +186,10 @@ where
         anchor,
         window_size,
     } = menu;
-    // Keep sort choices as one self-contained section. Future grouping controls
-    // can be appended here without becoming part of `SortState`.
-    let options = view_sort_options(state, options, on_select, theme);
+    let mut options = view_sort_options(state, options, on_select, theme);
+    if let Some((selected, message)) = grouping {
+        options.push(grouping_option(selected, message, theme));
+    }
     let menu_height = options.len() as f32 * OPTION_HEIGHT;
     let menu = container(Column::with_children(options).spacing(2))
         .width(MENU_WIDTH)
@@ -208,6 +223,24 @@ where
     .width(Length::Fill)
     .height(Length::Fill)
     .into()
+}
+
+fn grouping_option<'a, Message: Clone + 'a>(
+    selected: bool,
+    message: Message,
+    theme: Theme,
+) -> Element<'a, Message> {
+    let label = if selected {
+        "✓ Group by tag"
+    } else {
+        "  Group by tag"
+    };
+    button(text(label).size(theme::font::BODY).color(theme.ink()))
+        .on_press(message)
+        .width(Length::Fill)
+        .padding([theme::space::SM, theme::space::MD])
+        .style(move |_, status| option_style(theme, status, selected))
+        .into()
 }
 
 fn view_sort_options<'a, K, Message, F>(
