@@ -113,10 +113,6 @@ struct DecodedFrames {
     channels: Option<u16>,
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "packet decoding keeps the ordered limit and buffer invariants together"
-)]
 fn decode_packets(
     format: &mut Box<dyn symphonia::core::formats::FormatReader>,
     decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
@@ -148,28 +144,13 @@ fn decode_packets(
         }
         sample_rate.get_or_insert(spec.rate);
         channels.get_or_insert(spec.channels.count() as u16);
-        let frames = decoded.frames();
-        if frames == 0 {
-            continue;
-        }
-        let sample_count = frames
-            .checked_mul(spec.channels.count())
-            .ok_or(AudioError::SampleLimit)?;
-        if sample_count > max_samples.saturating_sub(all_samples.len()) {
-            return Err(AudioError::SampleLimit);
-        }
-        if sample_buf
-            .as_ref()
-            .is_none_or(|b| sample_count > b.capacity())
-        {
-            sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
-        }
-        let Some(buf) = sample_buf.as_mut() else {
-            return Err(AudioError::MissingCodecParams);
-        };
-
-        buf.copy_interleaved_ref(decoded);
-        all_samples.extend_from_slice(buf.samples());
+        append_decoded(
+            decoded,
+            spec,
+            max_samples,
+            &mut all_samples,
+            &mut sample_buf,
+        )?;
     }
 
     Ok(DecodedFrames {
@@ -177,6 +158,37 @@ fn decode_packets(
         sample_rate,
         channels,
     })
+}
+
+fn append_decoded(
+    decoded: symphonia::core::audio::AudioBufferRef<'_>,
+    spec: symphonia::core::audio::SignalSpec,
+    max_samples: usize,
+    all_samples: &mut Vec<f32>,
+    sample_buf: &mut Option<SampleBuffer<f32>>,
+) -> Result<(), AudioError> {
+    let frames = decoded.frames();
+    if frames == 0 {
+        return Ok(());
+    }
+    let sample_count = frames
+        .checked_mul(spec.channels.count())
+        .ok_or(AudioError::SampleLimit)?;
+    if sample_count > max_samples.saturating_sub(all_samples.len()) {
+        return Err(AudioError::SampleLimit);
+    }
+    if sample_buf
+        .as_ref()
+        .is_none_or(|buffer| sample_count > buffer.capacity())
+    {
+        *sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
+    }
+    let Some(buffer) = sample_buf.as_mut() else {
+        return Err(AudioError::MissingCodecParams);
+    };
+    buffer.copy_interleaved_ref(decoded);
+    all_samples.extend_from_slice(buffer.samples());
+    Ok(())
 }
 
 #[cfg(test)]
