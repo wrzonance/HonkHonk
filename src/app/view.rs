@@ -109,6 +109,34 @@ impl HonkHonk {
         Some(banner.into())
     }
 
+    fn view_preparation_banner(&self, t: theme::Theme) -> Option<Element<'_, Message>> {
+        let (done, total) = self.library_preparation_progress()?;
+        let ratio = if total == 0 {
+            1.0
+        } else {
+            done as f32 / total as f32
+        };
+        Some(
+            container(
+                iced::widget::column![
+                    text(format!("Preparing library… {done}/{total}"))
+                        .size(theme::font::BODY)
+                        .color(t.ink()),
+                    iced::widget::progress_bar(0.0..=1.0, ratio),
+                ]
+                .spacing(theme::space::XS),
+            )
+            .padding([theme::space::SM, theme::space::MD])
+            .width(Length::Fill)
+            .style(move |_theme| container::Style {
+                background: Some(theme::bg_color(t.panel())),
+                border: theme::tile_border(t.accent(), 1.0),
+                ..Default::default()
+            })
+            .into(),
+        )
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "legacy root layout preserves Iced widget-state ordering while the app split proceeds under #142"
@@ -164,7 +192,10 @@ impl HonkHonk {
         if let Some(banner) = self.view_shortcuts_banner(t) {
             top = top.push(banner);
         }
-        let top = top.push(header);
+        let mut top = top.push(header);
+        if let Some(banner) = self.view_preparation_banner(t) {
+            top = top.push(banner);
+        }
 
         // Inset the grid from the overlay scrollbar (10px, drawn over content) so
         // the last tile column is never clipped by it.

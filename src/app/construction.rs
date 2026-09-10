@@ -80,6 +80,7 @@ impl HonkHonk {
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
             pending_decodes: HashMap::new(),
+            preparation: preparation::PreparationState::default(),
             macros: crate::state::MacroStore::load(),
             macro_editor: Default::default(),
             recording: None,
@@ -90,6 +91,7 @@ impl HonkHonk {
             macro_voice_seq: 0,
         };
         app.refresh_filtered_sounds();
+        app.start_library_preparation();
         app
     }
 
@@ -156,6 +158,7 @@ impl HonkHonk {
             audio_store: crate::audio::AudioStore::new(crate::audio::DEFAULT_PCM_CAP_BYTES),
             pending_play_ids: HashSet::new(),
             pending_decodes: HashMap::new(),
+            preparation: preparation::PreparationState::default(),
             macros: crate::state::MacroStore::default(),
             macro_editor: Default::default(),
             import: Default::default(),
