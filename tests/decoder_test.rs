@@ -312,3 +312,28 @@ fn decode_probes_audio_content_when_extension_is_wrong() {
     assert_eq!(audio.channels, 1);
     assert!(!audio.samples.is_empty());
 }
+
+#[test]
+fn decode_rejects_zero_rate_wav_without_panicking() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("zero-rate.wav");
+    let mut wav = Vec::from(&b"RIFF"[..]);
+    wav.extend_from_slice(&40_u32.to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&0_u32.to_le_bytes());
+    wav.extend_from_slice(&0_u32.to_le_bytes());
+    wav.extend_from_slice(&2_u16.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&4_u32.to_le_bytes());
+    wav.extend_from_slice(&0_i16.to_le_bytes());
+    wav.extend_from_slice(&0_i16.to_le_bytes());
+    std::fs::write(&path, wav).expect("write malformed WAV");
+
+    let result = std::panic::catch_unwind(|| decode(&path));
+    assert!(result.is_ok(), "malformed audio must not panic");
+    assert!(result.expect("panic already checked").is_err());
+}

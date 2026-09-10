@@ -82,6 +82,9 @@ pub enum AudioError {
     #[error("missing codec parameters (sample rate or channels)")]
     MissingCodecParams,
 
+    #[error("audio decoder rejected malformed input")]
+    DecoderPanic,
+
     #[error("failed to create audio decoder: {0}")]
     DecoderInit(#[source] symphonia::core::errors::Error),
 

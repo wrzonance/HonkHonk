@@ -23,6 +23,13 @@ pub fn decode(path: &Path) -> Result<DecodedAudio, AudioError> {
 }
 
 pub fn decode_limited(path: &Path, max_samples: usize) -> Result<DecodedAudio, AudioError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        decode_limited_inner(path, max_samples)
+    }))
+    .unwrap_or(Err(AudioError::DecoderPanic))
+}
+
+fn decode_limited_inner(path: &Path, max_samples: usize) -> Result<DecodedAudio, AudioError> {
     let file = std::fs::File::open(path).map_err(AudioError::FileOpen)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -93,6 +100,10 @@ fn metadata_from(
     Some((sample_rate, channels))
 }
 
+fn valid_signal_spec(spec: symphonia::core::audio::SignalSpec) -> bool {
+    spec.rate > 0 && spec.channels.count() > 0
+}
+
 /// Decoded PCM plus the rate / channel count observed in the first decoded
 /// frame's `SignalSpec`, used to backfill metadata the container header omitted
 /// (#153). `sample_rate` / `channels` are `None` only when no frame decoded.
@@ -112,7 +123,6 @@ fn decode_packets(
     let mut sample_buf: Option<SampleBuffer<f32>> = None;
     let mut sample_rate: Option<u32> = None;
     let mut channels: Option<u16> = None;
-
     loop {
         let packet = match format.next_packet() {
             Ok(p) => p,
@@ -127,36 +137,20 @@ fn decode_packets(
         if packet.track_id() != track_id {
             continue;
         }
-
         let decoded = decoder.decode(&packet).map_err(AudioError::Decode)?;
         let spec = *decoded.spec();
-        // Record the first frame's spec so the caller can fill in any rate /
-        // channels the container header lacked (#153).
+        if !valid_signal_spec(spec) {
+            return Err(AudioError::MissingCodecParams);
+        }
         sample_rate.get_or_insert(spec.rate);
         channels.get_or_insert(spec.channels.count() as u16);
-        let frames = decoded.frames();
-        if frames == 0 {
-            continue;
-        }
-        let sample_count = frames
-            .checked_mul(spec.channels.count())
-            .ok_or(AudioError::SampleLimit)?;
-        if sample_count > max_samples.saturating_sub(all_samples.len()) {
-            return Err(AudioError::SampleLimit);
-        }
-
-        if sample_buf
-            .as_ref()
-            .is_none_or(|b| sample_count > b.capacity())
-        {
-            sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
-        }
-        let Some(buf) = sample_buf.as_mut() else {
-            return Err(AudioError::MissingCodecParams);
-        };
-
-        buf.copy_interleaved_ref(decoded);
-        all_samples.extend_from_slice(buf.samples());
+        append_decoded(
+            decoded,
+            spec,
+            max_samples,
+            &mut all_samples,
+            &mut sample_buf,
+        )?;
     }
 
     Ok(DecodedFrames {
@@ -164,6 +158,37 @@ fn decode_packets(
         sample_rate,
         channels,
     })
+}
+
+fn append_decoded(
+    decoded: symphonia::core::audio::AudioBufferRef<'_>,
+    spec: symphonia::core::audio::SignalSpec,
+    max_samples: usize,
+    all_samples: &mut Vec<f32>,
+    sample_buf: &mut Option<SampleBuffer<f32>>,
+) -> Result<(), AudioError> {
+    let frames = decoded.frames();
+    if frames == 0 {
+        return Ok(());
+    }
+    let sample_count = frames
+        .checked_mul(spec.channels.count())
+        .ok_or(AudioError::SampleLimit)?;
+    if sample_count > max_samples.saturating_sub(all_samples.len()) {
+        return Err(AudioError::SampleLimit);
+    }
+    if sample_buf
+        .as_ref()
+        .is_none_or(|buffer| sample_count > buffer.capacity())
+    {
+        *sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
+    }
+    let Some(buffer) = sample_buf.as_mut() else {
+        return Err(AudioError::MissingCodecParams);
+    };
+    buffer.copy_interleaved_ref(decoded);
+    all_samples.extend_from_slice(buffer.samples());
+    Ok(())
 }
 
 #[cfg(test)]
