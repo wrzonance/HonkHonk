@@ -298,3 +298,17 @@ fn decode_mono_m4a_succeeds() {
     assert_eq!(audio.channels, 1);
     assert!(!audio.samples.is_empty(), "samples should not be empty");
 }
+
+#[test]
+fn decode_probes_audio_content_when_extension_is_wrong() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mislabeled = dir.path().join("clip.mp3");
+    std::fs::copy(Path::new("tests/fixtures/sine_mono.wav"), &mislabeled)
+        .expect("copy WAV fixture");
+
+    let audio = decode(&mislabeled).expect("content probe should decode mislabeled WAV");
+
+    assert_eq!(audio.sample_rate, 48_000);
+    assert_eq!(audio.channels, 1);
+    assert!(!audio.samples.is_empty());
+}

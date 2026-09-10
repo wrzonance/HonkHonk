@@ -60,12 +60,8 @@ pub fn decode_limited(path: &Path, max_samples: usize) -> Result<DecodedAudio, A
 
     let decoded = decode_packets(&mut format, &mut decoder, track_id, max_samples)?;
 
-    // Header value wins; otherwise use what the first decoded frame reported.
-    let sample_rate = header_rate
-        .or(decoded.sample_rate)
-        .ok_or(AudioError::MissingCodecParams)?;
-    let channels = header_channels
-        .or(decoded.channels)
+    // Header value wins when valid; otherwise use the first decoded frame.
+    let (sample_rate, channels) = metadata_from(header_rate, header_channels, &decoded)
         .ok_or(AudioError::MissingCodecParams)?;
 
     let mut samples = decoded.samples;
@@ -81,6 +77,20 @@ pub fn decode_limited(path: &Path, max_samples: usize) -> Result<DecodedAudio, A
         channels,
         duration,
     })
+}
+
+fn metadata_from(
+    header_rate: Option<u32>,
+    header_channels: Option<u16>,
+    decoded: &DecodedFrames,
+) -> Option<(u32, u16)> {
+    let sample_rate = header_rate
+        .filter(|rate| *rate > 0)
+        .or(decoded.sample_rate.filter(|rate| *rate > 0))?;
+    let channels = header_channels
+        .filter(|channels| *channels > 0)
+        .or(decoded.channels.filter(|channels| *channels > 0))?;
+    Some((sample_rate, channels))
 }
 
 /// Decoded PCM plus the rate / channel count observed in the first decoded
@@ -141,7 +151,9 @@ fn decode_packets(
         {
             sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
         }
-        let buf = sample_buf.as_mut().expect("buffer just initialized");
+        let Some(buf) = sample_buf.as_mut() else {
+            return Err(AudioError::MissingCodecParams);
+        };
 
         buf.copy_interleaved_ref(decoded);
         all_samples.extend_from_slice(buf.samples());
@@ -152,4 +164,20 @@ fn decode_packets(
         sample_rate,
         channels,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DecodedFrames, metadata_from};
+
+    #[test]
+    fn invalid_header_metadata_is_replaced_by_frame_metadata() {
+        let decoded = DecodedFrames {
+            samples: vec![0.0, 0.0],
+            sample_rate: Some(48_000),
+            channels: Some(2),
+        };
+
+        assert_eq!(metadata_from(Some(0), Some(0), &decoded), Some((48_000, 2)));
+    }
 }
