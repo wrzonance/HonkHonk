@@ -82,21 +82,22 @@ impl HonkHonk {
                 dispatch,
             },
         );
-        Self::decode_task(id, path, dispatch)
+        Self::decode_task(
+            id,
+            path,
+            dispatch,
+            Arc::clone(&self.preparation.coordinator),
+        )
     }
 
     fn decode_task(
         id: String,
         path: std::path::PathBuf,
         dispatch: PlaybackDispatch,
+        coordinator: Arc<crate::audio::preparation::PreparationCoordinator>,
     ) -> Task<Message> {
         Task::perform(
-            async move {
-                tokio::task::spawn_blocking(move || crate::audio::processing::decode_cached(&path))
-                    .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r.map_err(|e| e.to_string()))
-            },
+            async move { coordinator.prepare(&path).await },
             move |result| Message::Decoded {
                 generation: dispatch.generation,
                 voice_id: dispatch.voice_id,
@@ -117,10 +118,21 @@ impl HonkHonk {
         clippy::cognitive_complexity,
         reason = "decode landing owns stale-generation, cache, playback, and UI cleanup invariants"
     )]
+    #[cfg(test)]
     pub(super) fn handle_decoded(
         &mut self,
         id: String,
-        result: Result<crate::audio::CachedPcm, String>,
+        pcm: Result<crate::audio::CachedPcm, String>,
+        dispatch: PlaybackDispatch,
+    ) -> Task<Message> {
+        let result = pcm.map(crate::audio::preparation::PreparedAudio::from_pcm);
+        self.handle_prepared_decoded(id, result, dispatch)
+    }
+
+    pub(super) fn handle_prepared_decoded(
+        &mut self,
+        id: String,
+        result: Result<Arc<crate::audio::preparation::PreparedAudio>, String>,
         dispatch: PlaybackDispatch,
     ) -> Task<Message> {
         let Some(pending) = self.pending_decode_for(&id, dispatch) else {
@@ -134,8 +146,20 @@ impl HonkHonk {
             return Task::none();
         }
         match result {
-            Ok(pcm) => {
-                let pcm = std::sync::Arc::new(pcm);
+            Ok(prepared) => {
+                if prepared.has_source_identity()
+                    && self
+                        .sounds
+                        .iter()
+                        .find(|sound| sound.id == id)
+                        .is_some_and(|sound| !prepared.matches_path(&sound.path))
+                {
+                    self.clear_owned_optimistic_ui(&id, dispatch);
+                    return Task::none();
+                }
+                self.now_playing
+                    .cache_envelope_arc(&id, Arc::clone(&prepared.envelope));
+                let pcm = Arc::clone(&prepared.pcm);
                 let evicted = self
                     .audio_store
                     .insert_pcm(id.clone(), std::sync::Arc::clone(&pcm));

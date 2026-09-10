@@ -7,7 +7,7 @@
 //! of compounding the already-frozen `mod.rs`, and gives future features the
 //! same escape hatch rather than defaulting back to `mod.rs`.
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use iced::Point;
 
@@ -33,7 +33,7 @@ pub enum Message {
     LibraryPreparationItem {
         generation: u64,
         id: String,
-        result: Result<crate::audio::CachedPcm, String>,
+        result: Result<Arc<crate::audio::preparation::PreparedAudio>, String>,
     },
     LibraryPreparationFinished {
         generation: u64,
@@ -178,7 +178,7 @@ pub enum Message {
         generation: u64,
         voice_id: u64,
         id: String,
-        result: Result<crate::audio::CachedPcm, String>,
+        result: Result<Arc<crate::audio::preparation::PreparedAudio>, String>,
         gain: f32,
         effects: crate::audio::effects::EffectSettings,
         mode: PlayMode,

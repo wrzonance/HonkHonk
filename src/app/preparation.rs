@@ -6,10 +6,36 @@ use iced::futures::stream::BoxStream;
 
 use super::{HonkHonk, Message};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub(super) struct PreparationRequest {
     pub(super) generation: u64,
     pub(super) files: Vec<(String, std::path::PathBuf)>,
+    pub(super) coordinator: Arc<crate::audio::preparation::PreparationCoordinator>,
+}
+
+impl PartialEq for PreparationRequest {
+    fn eq(&self, other: &Self) -> bool {
+        self.generation == other.generation && self.files == other.files
+    }
+}
+
+impl Eq for PreparationRequest {}
+
+impl std::hash::Hash for PreparationRequest {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.generation.hash(state);
+        self.files.hash(state);
+    }
+}
+
+#[derive(Default)]
+pub(super) struct PreparationState {
+    pub(super) request: Option<Arc<PreparationRequest>>,
+    pub(super) coordinator: Arc<crate::audio::preparation::PreparationCoordinator>,
+    pub(super) generation: u64,
+    pub(super) done: usize,
+    pub(super) total: usize,
+    pub(super) failures: Vec<(String, String)>,
 }
 
 pub(super) fn preparation_builder(
@@ -23,13 +49,10 @@ pub(super) fn preparation_builder(
         for (id, path) in &request.files {
             let id = id.clone();
             let path = path.clone();
-            let result =
-                tokio::task::spawn_blocking(move || crate::audio::preparation::prepare(&path))
-                    .await
-                    .map_err(|error| error.to_string())
-                    .and_then(|result| result.map_err(|error| error.to_string()));
+            let failure_path = path.clone();
+            let result = request.coordinator.prepare(&path).await;
             if let Err(error) = &result {
-                failures.push((id.clone(), error.clone()));
+                failures.push((failure_path.display().to_string(), error.clone()));
             }
             if tx
                 .send(Message::LibraryPreparationItem {
@@ -54,22 +77,23 @@ pub(super) fn preparation_builder(
 
 impl HonkHonk {
     pub(super) fn start_library_preparation(&mut self) {
-        self.preparation = None;
-        self.preparation_done = 0;
-        self.preparation_total = self.sounds.len();
-        self.preparation_failures.clear();
+        self.preparation.request = None;
+        self.preparation.done = 0;
+        self.preparation.total = self.sounds.len();
+        self.preparation.failures.clear();
         if self.sounds.is_empty() {
             return;
         }
-        self.preparation_generation = self.preparation_generation.wrapping_add(1);
-        let generation = self.preparation_generation;
-        self.preparation = Some(Arc::new(PreparationRequest {
+        self.preparation.generation = self.preparation.generation.wrapping_add(1);
+        let generation = self.preparation.generation;
+        self.preparation.request = Some(Arc::new(PreparationRequest {
             generation,
             files: self
                 .sounds
                 .iter()
                 .map(|sound| (sound.id.clone(), sound.path.clone()))
                 .collect(),
+            coordinator: Arc::clone(&self.preparation.coordinator),
         }));
     }
 
@@ -77,18 +101,35 @@ impl HonkHonk {
         &mut self,
         generation: u64,
         id: String,
-        result: Result<crate::audio::CachedPcm, String>,
+        result: Result<Arc<crate::audio::preparation::PreparedAudio>, String>,
     ) {
-        if self.preparation.as_ref().map(|request| request.generation) != Some(generation) {
+        if self
+            .preparation
+            .request
+            .as_ref()
+            .map(|request| request.generation)
+            != Some(generation)
+        {
             return;
         }
-        if let Ok(pcm) = result {
+        if let Ok(prepared) = result {
+            let current_path = self
+                .sounds
+                .iter()
+                .find(|sound| sound.id == id)
+                .map(|sound| sound.path.as_path());
+            if prepared.has_source_identity()
+                && current_path.is_some_and(|path| !prepared.matches_path(path))
+            {
+                self.preparation.done = self.preparation.done.saturating_add(1);
+                return;
+            }
             self.now_playing
-                .cache_envelope(&id, pcm.samples.as_ref(), pcm.channels);
-            let evicted = self.audio_store.insert_pcm(id, Arc::new(pcm));
+                .cache_envelope_arc(&id, Arc::clone(&prepared.envelope));
+            let evicted = self.audio_store.insert_pcm(id, Arc::clone(&prepared.pcm));
             self.evict_waveform_envelopes(evicted);
         }
-        self.preparation_done = self.preparation_done.saturating_add(1);
+        self.preparation.done = self.preparation.done.saturating_add(1);
     }
 
     pub(super) fn library_preparation_finished(
@@ -96,14 +137,20 @@ impl HonkHonk {
         generation: u64,
         failures: Vec<(String, String)>,
     ) {
-        if self.preparation.as_ref().map(|request| request.generation) != Some(generation) {
+        if self
+            .preparation
+            .request
+            .as_ref()
+            .map(|request| request.generation)
+            != Some(generation)
+        {
             return;
         }
-        self.preparation_failures = failures;
-        self.preparation = None;
-        if self.preparation_failures.is_empty() {
+        self.preparation.failures = failures;
+        self.preparation.request = None;
+        if self.preparation.failures.is_empty() {
             tracing::info!(
-                count = self.preparation_total,
+                count = self.preparation.total,
                 "library preparation complete"
             );
         } else {
@@ -113,25 +160,39 @@ impl HonkHonk {
 
     fn notify_preparation_failures(&mut self) {
         tracing::warn!(
-            count = self.preparation_failures.len(),
+            count = self.preparation.failures.len(),
             "library preparation found unreadable files"
         );
-        let details = self
-            .preparation_failures
-            .iter()
-            .map(|(id, error)| format!("{id}: {error}"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        self.log_preparation_failures();
         self.notices.push(
-            crate::app::notices::Notice::warning("Some sounds could not be prepared", details),
+            crate::app::notices::Notice::warning(
+                "Some sounds could not be prepared",
+                self.preparation_failure_details(),
+            ),
             std::time::Instant::now(),
         );
     }
 
+    fn preparation_failure_details(&self) -> String {
+        self.preparation
+            .failures
+            .iter()
+            .map(|(id, error)| format!("{id}: {error}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn log_preparation_failures(&self) {
+        for (file, error) in &self.preparation.failures {
+            tracing::warn!(file = %file, error = %error, "library preparation failed");
+        }
+    }
+
     pub(crate) fn library_preparation_progress(&self) -> Option<(usize, usize)> {
         self.preparation
+            .request
             .as_ref()
-            .map(|_| (self.preparation_done, self.preparation_total))
+            .map(|_| (self.preparation.done, self.preparation.total))
     }
 }
 
@@ -152,8 +213,12 @@ mod tests {
             category: "test".into(),
         });
         app.start_library_preparation();
-        let generation = app.preparation.as_ref().unwrap().generation;
-        app.library_preparation_item(generation.wrapping_sub(1), "missing".into(), Ok(test_pcm()));
+        let generation = app.preparation.request.as_ref().unwrap().generation;
+        app.library_preparation_item(
+            generation.wrapping_sub(1),
+            "missing".into(),
+            Ok(test_prepared()),
+        );
         assert_eq!(app.library_preparation_progress(), Some((0, 1)));
     }
 
@@ -170,21 +235,68 @@ mod tests {
             category: "test".into(),
         });
         app.start_library_preparation();
-        let generation = app.preparation.as_ref().unwrap().generation;
-        app.library_preparation_item(generation, "ready".into(), Ok(test_pcm()));
+        let generation = app.preparation.request.as_ref().unwrap().generation;
+        app.library_preparation_item(generation, "ready".into(), Ok(test_prepared()));
 
         assert!(app.audio_store.get_pcm("ready").is_some());
         assert!(app.now_playing.envelope("ready").is_some());
         assert_eq!(app.library_preparation_progress(), Some((1, 1)));
     }
 
-    fn test_pcm() -> crate::audio::CachedPcm {
-        crate::audio::CachedPcm {
+    #[test]
+    fn mixed_results_continue_and_emit_one_end_summary() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds.push(crate::state::SoundEntry {
+            id: "broken".into(),
+            name: "broken".into(),
+            path: "/tmp/broken.wav".into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: None,
+            modified_ms: None,
+            category: "test".into(),
+        });
+        app.start_library_preparation();
+        let generation = app.preparation.request.as_ref().unwrap().generation;
+        app.library_preparation_item(generation, "broken".into(), Err("corrupt".into()));
+        app.library_preparation_finished(generation, vec![("broken".into(), "corrupt".into())]);
+
+        assert!(app.preparation.request.is_none());
+        assert_eq!(app.notices.len(), 1);
+        assert!(app.notices.front().unwrap().notice.body.contains("corrupt"));
+    }
+
+    #[test]
+    fn stale_completion_after_rescan_to_empty_is_ignored() {
+        let mut app = HonkHonk::new_for_test();
+        app.sounds.push(crate::state::SoundEntry {
+            id: "old".into(),
+            name: "old".into(),
+            path: "/tmp/old.wav".into(),
+            format: crate::state::AudioFormat::Wav,
+            duration_ms: None,
+            modified_ms: None,
+            category: "test".into(),
+        });
+        app.start_library_preparation();
+        let generation = app.preparation.request.as_ref().unwrap().generation;
+        app.sounds.clear();
+        app.start_library_preparation();
+        app.library_preparation_item(generation, "old".into(), Ok(test_prepared()));
+        app.library_preparation_finished(generation, vec![("old".into(), "late".into())]);
+
+        assert!(app.preparation.request.is_none());
+        assert!(app.audio_store.get_pcm("old").is_none());
+        assert!(app.notices.is_empty());
+    }
+
+    fn test_prepared() -> Arc<crate::audio::preparation::PreparedAudio> {
+        let pcm = crate::audio::CachedPcm {
             analysis: Default::default(),
             samples: Arc::new(vec![0.0]),
             sample_rate: 8_000,
             channels: 1,
             duration: std::time::Duration::from_millis(1),
-        }
+        };
+        crate::audio::preparation::wrap_for_test(pcm)
     }
 }

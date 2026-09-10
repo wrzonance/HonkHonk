@@ -65,7 +65,7 @@ fn duration_scan_builder(
 
 impl HonkHonk {
     fn preparation_subscription(&self) -> Option<Subscription<Message>> {
-        self.preparation.as_ref().map(|request| {
+        self.preparation.request.as_ref().map(|request| {
             Subscription::run_with(Arc::clone(request), preparation::preparation_builder)
         })
     }

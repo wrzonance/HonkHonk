@@ -51,6 +51,10 @@ impl NowPlaying {
         });
     }
 
+    pub(crate) fn cache_envelope_arc(&mut self, id: &str, envelope: Arc<Envelope>) {
+        self.envelopes.entry(id.to_owned()).or_insert(envelope);
+    }
+
     /// Starts the now-playing lifecycle for decoded PCM. The envelope is cached
     /// before per-sound volume is applied, so waveform shape is stable across
     /// volume edits.

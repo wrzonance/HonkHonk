@@ -109,7 +109,7 @@ fn re_pressing_same_sound_keeps_playhead_alive() {
         generation: app.play_generation,
         voice_id: app.play_generation,
         id: "wav1".into(),
-        result: Ok(to_pcm(&decoded)),
+        result: Ok(crate::audio::preparation::wrap_for_test(to_pcm(&decoded))),
         gain: 1.0,
         effects: crate::audio::effects::EffectSettings::default(),
         mode: PlayMode::Concurrent,

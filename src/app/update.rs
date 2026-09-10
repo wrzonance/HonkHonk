@@ -348,7 +348,7 @@ impl HonkHonk {
                 gain,
                 effects,
                 mode,
-            } => self.handle_decoded(
+            } => self.handle_prepared_decoded(
                 id,
                 result,
                 playback::PlaybackDispatch {
