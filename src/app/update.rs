@@ -21,6 +21,21 @@ impl HonkHonk {
                 generation,
                 result,
             } => self.editor_fingerprint_ready(id, generation, result),
+            Message::LibraryPreparationItem {
+                generation,
+                id,
+                result,
+            } => {
+                self.library_preparation_item(generation, id, result);
+                Task::none()
+            }
+            Message::LibraryPreparationFinished {
+                generation,
+                failures,
+            } => {
+                self.library_preparation_finished(generation, failures);
+                Task::none()
+            }
             Message::Import(message) => self.update_import(message),
             Message::NoOp => Task::none(),
             Message::ShowMacros => self.show_macros(),

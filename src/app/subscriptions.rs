@@ -64,6 +64,12 @@ fn duration_scan_builder(
 }
 
 impl HonkHonk {
+    fn preparation_subscription(&self) -> Option<Subscription<Message>> {
+        self.preparation.as_ref().map(|request| {
+            Subscription::run_with(Arc::clone(request), preparation::preparation_builder)
+        })
+    }
+
     pub fn subscription(&self) -> Subscription<Message> {
         let shortcuts = Subscription::run(shortcuts_stream_sub_none);
 
@@ -110,6 +116,10 @@ impl HonkHonk {
                 std::sync::Arc::clone(&self.duration_scan_pairs),
                 duration_scan_builder,
             ));
+        }
+
+        if let Some(subscription) = self.preparation_subscription() {
+            subs.push(subscription);
         }
 
         // Vsync-paced playhead animation — subscribed ONLY while a sound plays so

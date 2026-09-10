@@ -44,6 +44,7 @@ pub(crate) mod notices;
 mod panels;
 mod playback;
 mod preferences;
+mod preparation;
 mod processing;
 #[cfg(test)]
 mod processing_tests;
@@ -189,6 +190,11 @@ pub struct HonkHonk {
     audio_store: crate::audio::AudioStore,
     pending_play_ids: HashSet<u64>,
     pending_decodes: HashMap<String, playback::PendingDecode>,
+    preparation: Option<Arc<preparation::PreparationRequest>>,
+    preparation_generation: u64,
+    preparation_done: usize,
+    preparation_total: usize,
+    preparation_failures: Vec<(String, String)>,
     /// Persisted macro collection (#165).
     macros: crate::state::MacroStore,
     /// Active live macro capture, if recording is enabled (#167).

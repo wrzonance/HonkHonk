@@ -67,6 +67,7 @@ impl HonkHonk {
         self.refresh_filtered_sounds();
         self.reconcile_playback_with_library();
         self.durations_loaded = false;
+        self.start_library_preparation();
     }
 }
 

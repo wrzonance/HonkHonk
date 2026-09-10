@@ -30,6 +30,15 @@ pub enum Message {
         generation: u64,
         result: Result<String, String>,
     },
+    LibraryPreparationItem {
+        generation: u64,
+        id: String,
+        result: Result<crate::audio::CachedPcm, String>,
+    },
+    LibraryPreparationFinished {
+        generation: u64,
+        failures: Vec<(String, String)>,
+    },
     Import(super::import::ImportMessage),
     NoOp,
     ShowMacros,

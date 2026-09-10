@@ -228,7 +228,7 @@ impl HonkHonk {
         self.sounds.iter().any(|sound| sound.id == id)
     }
 
-    fn evict_waveform_envelopes(&mut self, ids: Vec<String>) {
+    pub(super) fn evict_waveform_envelopes(&mut self, ids: Vec<String>) {
         for id in ids {
             self.now_playing.remove_envelope(&id);
         }
