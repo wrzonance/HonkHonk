@@ -64,7 +64,7 @@ iced_test = "=0.14.0"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
 # block_on for the headless wgpu device setup in the grid_render bench — avoids
 # pulling a full async runtime into a bench. License: MIT OR Apache-2.0.
-pollster = "0.4"
+pollster = "1.0"
 # Iced internals the grid_render bench drives directly for a headless render
 # baseline (layout via UserInterface, per-renderer rasterization). All are
 # already in the dependency graph at these exact versions (transitive deps of
