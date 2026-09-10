@@ -100,8 +100,22 @@ fn metadata_from(
     Some((sample_rate, channels))
 }
 
-fn valid_signal_spec(spec: symphonia::core::audio::SignalSpec) -> bool {
-    spec.rate > 0 && spec.channels.count() > 0
+fn record_frame_metadata(
+    rate: u32,
+    channel_count: usize,
+    frames: usize,
+    sample_rate: &mut Option<u32>,
+    channels: &mut Option<u16>,
+) -> Result<bool, AudioError> {
+    if frames == 0 {
+        return Ok(false);
+    }
+    if rate == 0 || channel_count == 0 {
+        return Err(AudioError::MissingCodecParams);
+    }
+    sample_rate.get_or_insert(rate);
+    channels.get_or_insert(channel_count as u16);
+    Ok(true)
 }
 
 /// Decoded PCM plus the rate / channel count observed in the first decoded
@@ -139,18 +153,22 @@ fn decode_packets(
         }
         let decoded = decoder.decode(&packet).map_err(AudioError::Decode)?;
         let spec = *decoded.spec();
-        if !valid_signal_spec(spec) {
-            return Err(AudioError::MissingCodecParams);
-        }
-        sample_rate.get_or_insert(spec.rate);
-        channels.get_or_insert(spec.channels.count() as u16);
-        append_decoded(
-            decoded,
-            spec,
-            max_samples,
-            &mut all_samples,
-            &mut sample_buf,
+        let observed = record_frame_metadata(
+            spec.rate,
+            spec.channels.count(),
+            decoded.frames(),
+            &mut sample_rate,
+            &mut channels,
         )?;
+        if observed {
+            append_decoded(
+                decoded,
+                spec,
+                max_samples,
+                &mut all_samples,
+                &mut sample_buf,
+            )?;
+        }
     }
 
     Ok(DecodedFrames {
@@ -193,7 +211,7 @@ fn append_decoded(
 
 #[cfg(test)]
 mod tests {
-    use super::{DecodedFrames, metadata_from};
+    use super::{DecodedFrames, metadata_from, record_frame_metadata};
 
     #[test]
     fn invalid_header_metadata_is_replaced_by_frame_metadata() {
@@ -204,5 +222,25 @@ mod tests {
         };
 
         assert_eq!(metadata_from(Some(0), Some(0), &decoded), Some((48_000, 2)));
+    }
+
+    #[test]
+    fn empty_frame_does_not_poison_metadata_for_following_audio() {
+        let mut sample_rate = None;
+        let mut channels = None;
+
+        assert!(!record_frame_metadata(0, 0, 0, &mut sample_rate, &mut channels).unwrap());
+        assert!(record_frame_metadata(48_000, 2, 1, &mut sample_rate, &mut channels).unwrap());
+        assert_eq!(sample_rate, Some(48_000));
+        assert_eq!(channels, Some(2));
+    }
+
+    #[test]
+    fn nonempty_frame_without_metadata_is_rejected() {
+        let mut sample_rate = None;
+        let mut channels = None;
+
+        assert!(record_frame_metadata(0, 2, 1, &mut sample_rate, &mut channels).is_err());
+        assert!(record_frame_metadata(48_000, 0, 1, &mut sample_rate, &mut channels).is_err());
     }
 }
