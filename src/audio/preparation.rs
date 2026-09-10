@@ -263,10 +263,16 @@ mod tests {
     async fn cancelled_caller_does_not_strand_or_duplicate_producer() {
         let calls = Arc::new(AtomicUsize::new(0));
         let calls_for_loader = Arc::clone(&calls);
+        let (started_sender, started_receiver) = std::sync::mpsc::channel();
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let release_for_loader = Arc::clone(&release);
         let coordinator = Arc::new(PreparationCoordinator::new_with_loader(
             move |_path, identity| {
                 calls_for_loader.fetch_add(1, Ordering::SeqCst);
-                std::thread::sleep(std::time::Duration::from_millis(25));
+                started_sender
+                    .send(())
+                    .expect("test loader is still active");
+                release_for_loader.wait();
                 Ok(prepared(identity))
             },
         ));
@@ -276,11 +282,29 @@ mod tests {
             let path = path.clone();
             tokio::spawn(async move { coordinator.prepare(&path).await })
         };
+        tokio::task::spawn_blocking(move || {
+            started_receiver
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("producer should reach controlled barrier");
+        })
+        .await
+        .expect("producer start task should join");
         first.abort();
-        let result = timeout(Duration::from_secs(2), coordinator.prepare(&path))
-            .await
-            .expect("cancelled producer must still complete")
-            .expect("loader result");
+        let second = {
+            let coordinator = Arc::clone(&coordinator);
+            let path = path.clone();
+            tokio::spawn(async move { coordinator.prepare(&path).await })
+        };
+        tokio::task::yield_now().await;
+        let release_task = tokio::task::spawn_blocking(move || release.wait());
+        let result = timeout(Duration::from_secs(2), async {
+            let (result, _) = tokio::join!(second, release_task);
+            result
+        })
+        .await
+        .expect("cancelled producer must still complete")
+        .expect("subscriber task should join")
+        .expect("loader result");
         assert_eq!(result.pcm.samples.len(), 1);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
