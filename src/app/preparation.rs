@@ -50,7 +50,11 @@ pub(super) fn preparation_builder(
             let id = id.clone();
             let path = path.clone();
             let failure_path = path.clone();
-            let result = request.coordinator.prepare(&path).await;
+            let result = request
+                .coordinator
+                .prepare(&path)
+                .await
+                .map_err(|error| error.to_string());
             if let Err(error) = &result {
                 failures.push((failure_path.display().to_string(), error.clone()));
             }
@@ -118,9 +122,11 @@ impl HonkHonk {
                 .iter()
                 .find(|sound| sound.id == id)
                 .map(|sound| sound.path.as_path());
-            if prepared.has_source_identity()
-                && current_path.is_some_and(|path| !prepared.matches_path(path))
-            {
+            let Some(current_path) = current_path else {
+                self.preparation.done = self.preparation.done.saturating_add(1);
+                return;
+            };
+            if prepared.has_source_identity() && !prepared.matches_path(current_path) {
                 self.preparation.done = self.preparation.done.saturating_add(1);
                 return;
             }

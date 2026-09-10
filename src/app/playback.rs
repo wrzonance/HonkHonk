@@ -97,7 +97,12 @@ impl HonkHonk {
         coordinator: Arc<crate::audio::preparation::PreparationCoordinator>,
     ) -> Task<Message> {
         Task::perform(
-            async move { coordinator.prepare(&path).await },
+            async move {
+                coordinator
+                    .prepare(&path)
+                    .await
+                    .map_err(|error| error.to_string())
+            },
             move |result| Message::Decoded {
                 generation: dispatch.generation,
                 voice_id: dispatch.voice_id,

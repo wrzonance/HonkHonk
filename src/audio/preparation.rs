@@ -1,18 +1,21 @@
-//! Shared preparation coordination for background and on-demand work.
+//! Shared, cancellation-safe preparation for background and on-demand work.
 
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::SystemTime,
+};
 
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, watch};
 
-use super::CachedPcm;
-use super::processing::ProcessingError;
-use crate::audio::{ENVELOPE_BUCKETS, Envelope};
+use super::{CachedPcm, ENVELOPE_BUCKETS, Envelope};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedAudio {
     pub pcm: Arc<CachedPcm>,
     pub envelope: Arc<Envelope>,
-    source_key: String,
+    identity: SourceIdentity,
 }
 
 impl PreparedAudio {
@@ -25,105 +28,152 @@ impl PreparedAudio {
         Arc::new(Self {
             pcm: Arc::new(pcm),
             envelope,
-            source_key: String::new(),
+            identity: SourceIdentity::empty(),
         })
     }
 
     pub fn matches_path(&self, path: &Path) -> bool {
-        self.source_key == source_key(path)
+        self.identity.is_empty() || self.identity == SourceIdentity::capture(path)
     }
 
     pub fn has_source_identity(&self) -> bool {
-        !self.source_key.is_empty()
+        !self.identity.is_empty()
     }
 }
 
-#[derive(Default)]
-pub struct PreparationCoordinator {
-    entries: Mutex<HashMap<String, Arc<Work>>>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceIdentity {
+    path: PathBuf,
+    size: u64,
+    modified: Option<SystemTime>,
 }
 
-const MAX_COORDINATED_RESULTS: usize = 32;
+impl SourceIdentity {
+    fn capture(path: &Path) -> Self {
+        let metadata = std::fs::metadata(path).ok();
+        Self {
+            path: path.to_path_buf(),
+            size: metadata.as_ref().map_or(0, std::fs::Metadata::len),
+            modified: metadata.and_then(|metadata| metadata.modified().ok()),
+        }
+    }
+
+    fn empty() -> Self {
+        Self {
+            path: PathBuf::new(),
+            size: 0,
+            modified: None,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.path.as_os_str().is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PreparationError {
+    #[error("audio source changed while preparing")]
+    SourceChanged,
+    #[error("audio preparation failed: {0}")]
+    Decode(Arc<str>),
+    #[error("audio preparation worker failed: {0}")]
+    Worker(Arc<str>),
+}
+
+type Loader = dyn Fn(PathBuf, SourceIdentity) -> Result<PreparedAudio, PreparationError>
+    + Send
+    + Sync
+    + 'static;
 
 struct Work {
-    result: Mutex<Option<Result<Arc<PreparedAudio>, String>>>,
-    notify: Notify,
+    sender: watch::Sender<Option<Result<Arc<PreparedAudio>, PreparationError>>>,
+    receiver: watch::Receiver<Option<Result<Arc<PreparedAudio>, PreparationError>>>,
 }
 
-enum Claim {
-    Start(Arc<Work>),
-    Wait(Arc<Work>),
-    Ready(Result<Arc<PreparedAudio>, String>),
+pub struct PreparationCoordinator {
+    entries: Arc<Mutex<HashMap<SourceIdentity, Arc<Work>>>>,
+    loader: Arc<Loader>,
+}
+
+impl Default for PreparationCoordinator {
+    fn default() -> Self {
+        Self::new_with_loader(|path, identity| prepare_blocking(&path, identity))
+    }
 }
 
 impl PreparationCoordinator {
-    async fn claim(&self, key: String) -> Claim {
-        let mut entries = self.entries.lock().await;
-        if let Some(work) = entries.get(&key).cloned() {
-            drop(entries);
-            let result = work.result.lock().await.clone();
-            return match result {
-                Some(result) => Claim::Ready(result),
-                None => Claim::Wait(work),
-            };
+    pub fn new_with_loader<F>(loader: F) -> Self
+    where
+        F: Fn(PathBuf, SourceIdentity) -> Result<PreparedAudio, PreparationError>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            entries: Arc::new(Mutex::new(HashMap::new())),
+            loader: Arc::new(loader),
         }
-        let work = Arc::new(Work {
-            result: Mutex::new(None),
-            notify: Notify::new(),
+    }
+
+    pub async fn prepare(&self, path: &Path) -> Result<Arc<PreparedAudio>, PreparationError> {
+        let identity = SourceIdentity::capture(path);
+        let (work, producer) = self.claim(identity.clone()).await;
+        if producer {
+            self.spawn_producer(identity, path.to_path_buf(), Arc::clone(&work));
+        }
+        Self::await_completion(work).await
+    }
+
+    async fn claim(&self, identity: SourceIdentity) -> (Arc<Work>, bool) {
+        let mut entries = self.entries.lock().await;
+        if let Some(work) = entries.get(&identity) {
+            return (Arc::clone(work), false);
+        }
+        let (sender, receiver) = watch::channel(None);
+        let work = Arc::new(Work { sender, receiver });
+        entries.insert(identity, Arc::clone(&work));
+        (work, true)
+    }
+
+    fn spawn_producer(&self, identity: SourceIdentity, path: PathBuf, work: Arc<Work>) {
+        let entries = Arc::clone(&self.entries);
+        let loader = Arc::clone(&self.loader);
+        tokio::spawn(async move {
+            let loader_identity = identity.clone();
+            let result = tokio::task::spawn_blocking(move || loader(path, loader_identity))
+                .await
+                .map_err(|error| PreparationError::Worker(Arc::from(error.to_string())))
+                .and_then(|result| result.map(Arc::new));
+            let _ = work.sender.send(Some(result));
+            entries.lock().await.remove(&identity);
         });
-        entries.insert(key, Arc::clone(&work));
-        Claim::Start(work)
     }
 
-    async fn publish(
-        &self,
-        key: &str,
-        work: &Arc<Work>,
-        result: Result<Arc<PreparedAudio>, String>,
-    ) {
-        *work.result.lock().await = Some(result);
-        work.notify.notify_waiters();
-        let mut entries = self.entries.lock().await;
-        if entries.len() > MAX_COORDINATED_RESULTS {
-            entries.remove(key);
-        }
-    }
-
-    pub async fn prepare(&self, path: &Path) -> Result<Arc<PreparedAudio>, String> {
-        let key = source_key(path);
+    async fn await_completion(work: Arc<Work>) -> Result<Arc<PreparedAudio>, PreparationError> {
+        let mut completion = work.receiver.clone();
         loop {
-            match self.claim(key.clone()).await {
-                Claim::Ready(result) => return result,
-                Claim::Wait(work) => {
-                    work.notify.notified().await;
-                    if let Some(result) = work.result.lock().await.clone() {
-                        return result;
-                    }
-                }
-                Claim::Start(work) => {
-                    let path = path.to_owned();
-                    let result = tokio::task::spawn_blocking(move || prepare_blocking(&path))
-                        .await
-                        .map_err(|error| error.to_string())
-                        .and_then(|result| result);
-                    self.publish(&key, &work, result.clone().map(Arc::new))
-                        .await;
-                    return result.map(Arc::new);
-                }
+            if let Some(result) = completion.borrow().clone() {
+                return result;
             }
+            completion
+                .changed()
+                .await
+                .map_err(|_| PreparationError::Worker(Arc::from("preparation producer stopped")))?;
         }
     }
 }
 
-fn source_key(path: &Path) -> String {
-    let metadata = std::fs::metadata(path)
-        .ok()
-        .map(|metadata| (metadata.len(), metadata.modified().ok()));
-    format!("{}:{metadata:?}", path.display())
-}
-
-fn prepare_blocking(path: &Path) -> Result<PreparedAudio, String> {
-    let pcm = Arc::new(super::processing::decode_cached(path).map_err(|error| error.to_string())?);
+fn prepare_blocking(
+    path: &Path,
+    identity: SourceIdentity,
+) -> Result<PreparedAudio, PreparationError> {
+    let pcm = super::processing::decode_cached(path)
+        .map_err(|error| PreparationError::Decode(Arc::from(error.to_string())))?;
+    if SourceIdentity::capture(path) != identity {
+        return Err(PreparationError::SourceChanged);
+    }
+    let pcm = Arc::new(pcm);
     let envelope = Arc::new(Envelope::from_samples(
         pcm.samples.as_ref(),
         pcm.channels,
@@ -132,64 +182,106 @@ fn prepare_blocking(path: &Path) -> Result<PreparedAudio, String> {
     Ok(PreparedAudio {
         pcm,
         envelope,
-        source_key: source_key(path),
+        identity,
     })
-}
-
-/// Prepares one source file into the canonical cached PCM representation.
-///
-/// File I/O and decoding happen here; callers must run this function on a
-/// blocking worker. Decoder repairs are represented in the returned analysis
-/// metadata and cached PCM. Source files are never rewritten.
-pub fn prepare(path: &Path) -> Result<CachedPcm, ProcessingError> {
-    super::processing::decode_cached(path)
 }
 
 #[cfg(test)]
 pub(crate) fn wrap_for_test(pcm: CachedPcm) -> Arc<PreparedAudio> {
-    let envelope = Arc::new(Envelope::from_samples(
-        pcm.samples.as_ref(),
-        pcm.channels,
-        ENVELOPE_BUCKETS,
-    ));
-    Arc::new(PreparedAudio {
-        pcm: Arc::new(pcm),
-        envelope,
-        source_key: String::new(),
-    })
+    PreparedAudio::from_pcm(pcm)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::time::{Duration, timeout};
 
-    #[tokio::test]
-    async fn one_claim_waits_and_published_result_is_shared() {
-        let coordinator = PreparationCoordinator::default();
-        let key = "controlled".to_owned();
-        let first = coordinator.claim(key.clone()).await;
-        let second = coordinator.claim(key.clone()).await;
-        assert!(matches!(first, Claim::Start(_)));
-        assert!(matches!(second, Claim::Wait(_)));
-        let (Claim::Start(work), Claim::Wait(wait)) = (first, second) else {
-            unreachable!();
-        };
+    fn prepared(identity: SourceIdentity) -> PreparedAudio {
         let pcm = Arc::new(CachedPcm {
             analysis: Default::default(),
             samples: Arc::new(vec![0.0]),
             sample_rate: 8_000,
             channels: 1,
-            duration: std::time::Duration::from_millis(1),
+            duration: Duration::from_millis(1),
         });
-        let prepared = Arc::new(PreparedAudio {
+        PreparedAudio {
             envelope: Arc::new(Envelope::from_samples(&[0.0], 1, ENVELOPE_BUCKETS)),
             pcm,
-            source_key: "controlled".into(),
-        });
-        coordinator
-            .publish(&key, &work, Ok(Arc::clone(&prepared)))
-            .await;
-        assert!(wait.result.lock().await.is_some());
-        assert!(matches!(coordinator.claim(key).await, Claim::Ready(_)));
+            identity,
+        }
+    }
+
+    #[tokio::test]
+    async fn public_prepare_shares_one_loader_and_replays_completion() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_for_loader = Arc::clone(&calls);
+        let (started_sender, started_receiver) = std::sync::mpsc::channel();
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let release_for_loader = Arc::clone(&release);
+        let coordinator = Arc::new(PreparationCoordinator::new_with_loader(
+            move |_path, identity| {
+                calls_for_loader.fetch_add(1, Ordering::SeqCst);
+                started_sender
+                    .send(())
+                    .expect("test loader is still active");
+                release_for_loader.wait();
+                Ok(prepared(identity))
+            },
+        ));
+        let path = PathBuf::from("controlled.wav");
+        let first = {
+            let coordinator = Arc::clone(&coordinator);
+            let path = path.clone();
+            tokio::spawn(async move { coordinator.prepare(&path).await })
+        };
+        tokio::task::spawn_blocking(move || {
+            started_receiver
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("producer should reach controlled barrier");
+        })
+        .await
+        .expect("producer start task should join");
+        let second = {
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { coordinator.prepare(&path).await })
+        };
+        tokio::task::yield_now().await;
+        let release_task = tokio::task::spawn_blocking(move || release.wait());
+        let results = timeout(Duration::from_secs(2), async {
+            let results = tokio::join!(first, second, release_task);
+            (results.0, results.1)
+        })
+        .await
+        .expect("shared preparation must not hang");
+        assert!(results.0.unwrap().is_ok());
+        assert!(results.1.unwrap().is_ok());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelled_caller_does_not_strand_or_duplicate_producer() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_for_loader = Arc::clone(&calls);
+        let coordinator = Arc::new(PreparationCoordinator::new_with_loader(
+            move |_path, identity| {
+                calls_for_loader.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(25));
+                Ok(prepared(identity))
+            },
+        ));
+        let path = PathBuf::from("cancelled.wav");
+        let first = {
+            let coordinator = Arc::clone(&coordinator);
+            let path = path.clone();
+            tokio::spawn(async move { coordinator.prepare(&path).await })
+        };
+        first.abort();
+        let result = timeout(Duration::from_secs(2), coordinator.prepare(&path))
+            .await
+            .expect("cancelled producer must still complete")
+            .expect("loader result");
+        assert_eq!(result.pcm.samples.len(), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }
