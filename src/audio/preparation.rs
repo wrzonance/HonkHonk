@@ -32,8 +32,8 @@ impl PreparedAudio {
         })
     }
 
-    pub fn matches_path(&self, path: &Path) -> bool {
-        self.identity.is_empty() || self.identity == SourceIdentity::capture(path)
+    pub fn source_path(&self) -> Option<&Path> {
+        (!self.identity.is_empty()).then_some(self.identity.path.as_path())
     }
 
     pub fn has_source_identity(&self) -> bool {
@@ -117,10 +117,16 @@ impl PreparationCoordinator {
     }
 
     pub async fn prepare(&self, path: &Path) -> Result<Arc<PreparedAudio>, PreparationError> {
-        let identity = SourceIdentity::capture(path);
+        let path = path.to_path_buf();
+        let identity = tokio::task::spawn_blocking({
+            let path = path.clone();
+            move || SourceIdentity::capture(&path)
+        })
+        .await
+        .map_err(|error| PreparationError::Worker(Arc::from(error.to_string())))?;
         let (work, producer) = self.claim(identity.clone()).await;
         if producer {
-            self.spawn_producer(identity, path.to_path_buf(), Arc::clone(&work));
+            self.spawn_producer(identity, path, Arc::clone(&work));
         }
         Self::await_completion(work).await
     }
@@ -189,6 +195,20 @@ fn prepare_blocking(
 #[cfg(test)]
 pub(crate) fn wrap_for_test(pcm: CachedPcm) -> Arc<PreparedAudio> {
     PreparedAudio::from_pcm(pcm)
+}
+
+#[cfg(test)]
+pub(crate) fn wrap_for_test_at(pcm: CachedPcm, path: &Path) -> Arc<PreparedAudio> {
+    let envelope = Arc::new(Envelope::from_samples(
+        pcm.samples.as_ref(),
+        pcm.channels,
+        ENVELOPE_BUCKETS,
+    ));
+    Arc::new(PreparedAudio {
+        pcm: Arc::new(pcm),
+        envelope,
+        identity: SourceIdentity::capture(path),
+    })
 }
 
 #[cfg(test)]

@@ -152,13 +152,12 @@ impl HonkHonk {
         }
         match result {
             Ok(prepared) => {
-                if prepared.has_source_identity()
-                    && self
-                        .sounds
-                        .iter()
-                        .find(|sound| sound.id == id)
-                        .is_some_and(|sound| !prepared.matches_path(&sound.path))
-                {
+                let source_changed = self
+                    .sounds
+                    .iter()
+                    .find(|sound| sound.id == id)
+                    .and_then(|sound| prepared.source_path().map(|path| path != sound.path));
+                if source_changed == Some(true) {
                     self.clear_owned_optimistic_ui(&id, dispatch);
                     return Task::none();
                 }

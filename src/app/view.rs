@@ -192,10 +192,10 @@ impl HonkHonk {
         if let Some(banner) = self.view_shortcuts_banner(t) {
             top = top.push(banner);
         }
+        let mut top = top.push(header);
         if let Some(banner) = self.view_preparation_banner(t) {
             top = top.push(banner);
         }
-        let top = top.push(header);
 
         // Inset the grid from the overlay scrollbar (10px, drawn over content) so
         // the last tile column is never clipped by it.
