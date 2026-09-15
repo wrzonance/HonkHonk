@@ -251,7 +251,7 @@ mod tests {
                     .await
                     .get(identity)
                     .map_or(0, |work| work.sender.receiver_count().saturating_sub(1));
-                if joined >= callers {
+                if joined == callers {
                     return;
                 }
                 tokio::time::sleep(Duration::from_millis(1)).await;
