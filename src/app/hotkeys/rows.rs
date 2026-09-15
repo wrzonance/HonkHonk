@@ -32,6 +32,7 @@ pub(crate) struct HotkeyRow {
     pub(crate) display_name: String,
     pub(crate) filename: String,
     pub(crate) tag: String,
+    pub(crate) tags: Vec<String>,
     pub(crate) duration_ms: Option<u64>,
     pub(crate) modified_ms: Option<u64>,
     pub(crate) added_ms: Option<u64>,
@@ -74,6 +75,7 @@ fn sound_row(state: &HonkHonk, slot_index: u8, trigger: &str, path: &Path) -> Ho
             display_name: MISSING_SOUND_LABEL.to_owned(),
             filename,
             tag: String::new(),
+            tags: Vec::new(),
             duration_ms: None,
             modified_ms: None,
             added_ms: None,
@@ -89,6 +91,7 @@ fn sound_row(state: &HonkHonk, slot_index: u8, trigger: &str, path: &Path) -> Ho
         display_name: resolved_display_name(custom_name, &sound.name),
         filename,
         tag: sound.category.clone(),
+        tags: state.sound_meta.get(&sound.id).tags,
         duration_ms: sound.duration_ms,
         modified_ms: sound.modified_ms,
         added_ms: state.sound_meta.added_ms(&sound.id),
@@ -105,6 +108,7 @@ fn macro_row(state: &HonkHonk, slot_index: u8, trigger: &str, id: &str) -> Hotke
         display_name: resolved_display_name(macro_name, DELETED_MACRO_LABEL),
         filename: String::new(),
         tag: String::new(),
+        tags: Vec::new(),
         duration_ms: None,
         modified_ms: None,
         added_ms: None,
@@ -119,6 +123,7 @@ fn unassigned_row(slot_index: u8, trigger: &str) -> HotkeyRow {
         display_name: UNASSIGNED_LABEL.to_owned(),
         filename: String::new(),
         tag: String::new(),
+        tags: Vec::new(),
         duration_ms: None,
         modified_ms: None,
         added_ms: None,
@@ -141,10 +146,12 @@ fn file_name(path: &Path) -> String {
 }
 
 /// The fields a type-to-filter query matches against: customized name, file
-/// name, and tag/folder — per #199's acceptance text. The trigger itself is
+/// name, folder, and each assigned tag independently. The trigger itself is
 /// deliberately not searchable.
-pub(super) fn hotkey_haystacks(row: &HotkeyRow) -> [&str; 3] {
-    [&row.display_name, &row.filename, &row.tag]
+pub(super) fn hotkey_haystacks(row: &HotkeyRow) -> impl Iterator<Item = &str> {
+    [row.display_name.as_str(), &row.filename, &row.tag]
+        .into_iter()
+        .chain(row.tags.iter().map(String::as_str))
 }
 
 impl SortKey<HotkeyRow> for SlotSortKey {

@@ -8,10 +8,6 @@ use crate::ui::list_controls::sort::SortLabel;
 /// Sort key for slot-oriented lists (hotkey bindings today, slot manager
 /// next). Mirrors `sorting::SoundSortKey`'s id/label/ordering shape.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[allow(
-    dead_code,
-    reason = "foundation type for #199; wired into hotkeys.rs by follow-up tasks"
-)]
 pub enum SlotSortKey {
     #[default]
     SlotNumber,
@@ -22,10 +18,6 @@ pub enum SlotSortKey {
     Added,
 }
 
-#[allow(
-    dead_code,
-    reason = "foundation type for #199; wired into hotkeys.rs by follow-up tasks"
-)]
 impl SlotSortKey {
     pub(super) const ALL: [Self; 6] = [
         Self::SlotNumber,
@@ -47,6 +39,17 @@ impl SlotSortKey {
         }
     }
 
+    /// Kept private (not `pub(super)`) on purpose: each consumer module
+    /// (`hotkeys.rs`, `slots.rs`) does its own `ALL.into_iter().find` scan
+    /// instead of calling this directly, so outside of its own round-trip
+    /// tests this associated function is unreachable from production code.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "round-trip-tested here; production callers do their own ALL-scan"
+        )
+    )]
     fn from_id(id: &str) -> Option<Self> {
         match id {
             "slot" => Some(Self::SlotNumber),

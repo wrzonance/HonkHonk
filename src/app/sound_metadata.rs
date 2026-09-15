@@ -1,7 +1,23 @@
-use super::{FAVORITES_TAB, HonkHonk};
+use super::{FAVORITES_TAB, HonkHonk, Message};
 use crate::state::SoundMeta;
+use iced::Task;
 
 impl HonkHonk {
+    pub(super) fn open_sound_editor(&mut self, sound_id: String) -> Task<Message> {
+        let meta = self.sound_meta.get(&sound_id);
+        let name_override = meta.display_name.clone().unwrap_or_default();
+        let vol = meta.volume;
+        // Clear the context menu so the editor overlay surfaces immediately.
+        self.context_menu = None;
+        self.context_menu_pos = None;
+        self.editor_sound_id = Some(sound_id);
+        self.editor_draft_name = name_override;
+        self.editor_draft_tags = meta.tags.join(", ");
+        self.editor_draft_volume = vol;
+        self.processing_ui.draft = meta.processing;
+        self.load_editor_fingerprint(self.editor_sound_id.clone().unwrap_or_default())
+    }
+
     pub(super) fn toggle_sound_favorite(&mut self, sound_id: &str) {
         let favorites_filter_active = self.active_category.as_deref() == Some(FAVORITES_TAB);
         let is_favorite = self.sound_meta.toggle_favorite(sound_id);
@@ -28,22 +44,32 @@ impl HonkHonk {
         let previous_meta = self.sound_meta.get(&sound_id);
         let display_name = self.editor_display_name();
         let display_name_changed = previous_meta.display_name != display_name;
+        let tags = self
+            .editor_draft_tags
+            .split(',')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let tags_changed = previous_meta.tags != tags;
         self.sound_meta.set(
             sound_id,
             SoundMeta {
+                processing: self.processing_ui.draft,
                 volume: self.editor_draft_volume,
                 display_name,
+                tags,
                 ..previous_meta
             },
         );
         self.persist_sound_metadata();
-        if display_name_changed
-            && (!self.filter.query().is_empty() || self.sound_sort.key().uses_display_name())
+        if tags_changed
+            || (display_name_changed
+                && (!self.filter.query().is_empty() || self.sound_sort.key().uses_display_name()))
         {
             self.refresh_filtered_sounds();
         }
         self.editor_sound_id = None;
         self.editor_draft_name.clear();
+        self.editor_draft_tags.clear();
         self.editor_draft_volume = 1.0;
     }
 
@@ -52,7 +78,7 @@ impl HonkHonk {
         (!display_name.is_empty()).then(|| display_name.to_owned())
     }
 
-    fn persist_sound_metadata(&self) {
+    pub(super) fn persist_sound_metadata(&self) {
         if !self.persist {
             return;
         }

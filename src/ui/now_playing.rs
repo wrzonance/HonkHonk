@@ -42,6 +42,19 @@ pub struct PlaybackStart<'a> {
 }
 
 impl NowPlaying {
+    /// Caches a waveform envelope for PCM prepared before playback starts.
+    /// Existing playback envelopes are retained so a concurrent on-demand
+    /// result cannot replace the shape currently shown to the user.
+    pub(crate) fn cache_envelope(&mut self, id: &str, samples: &[f32], channels: u16) {
+        self.envelopes.entry(id.to_owned()).or_insert_with(|| {
+            Arc::new(Envelope::from_samples(samples, channels, ENVELOPE_BUCKETS))
+        });
+    }
+
+    pub(crate) fn cache_envelope_arc(&mut self, id: &str, envelope: Arc<Envelope>) {
+        self.envelopes.entry(id.to_owned()).or_insert(envelope);
+    }
+
     /// Starts the now-playing lifecycle for decoded PCM. The envelope is cached
     /// before per-sound volume is applied, so waveform shape is stable across
     /// volume edits.
@@ -56,9 +69,7 @@ impl NowPlaying {
         self.active_id = Some(id.to_owned());
         self.playhead = Some(PlayheadClock::new(duration, now));
         self.display_progress = 0.0;
-        self.envelopes.entry(id.to_owned()).or_insert_with(|| {
-            Arc::new(Envelope::from_samples(samples, channels, ENVELOPE_BUCKETS))
-        });
+        self.cache_envelope(id, samples, channels);
         self.sync_active();
     }
 

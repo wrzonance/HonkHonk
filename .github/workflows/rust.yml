@@ -134,6 +134,79 @@ jobs:
             exit 1
           fi
 
+  # ─── MSRV ───────────────────────────────────────────────────────────
+  # Compiles against the exact toolchain named by package.rust-version, so
+  # the declared floor is exercised, not just asserted. Complements
+  # tests/msrv_matches_dependency_graph.rs, which checks the *dependency*
+  # side of the MSRV contract; this job checks the *source* side. Not part
+  # of branch protection's required checks (only `build` is required) — see
+  # the PR description for why this intentionally isn't wired in there.
+  msrv:
+    name: MSRV (build)
+    runs-on: ubuntu-latest
+    steps:
+      # This job only reads the repo -- it never pushes -- so the GITHUB_TOKEN
+      # must not be persisted into .git/config for later steps to pick up.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Read declared MSRV from Cargo.toml
+        id: read-msrv
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Scoped to the `[package]` table: a bare `^rust-version` grep would
+          # also match a `[workspace.package]` (or any other) table's key and
+          # silently install a toolchain `[package]` never declared. Require
+          # the `=` too, so a hypothetical `rust-version-foo` key cannot
+          # satisfy the prefix match and feed a bogus toolchain downstream.
+          LINE=$(awk '
+            /^\[/ { in_package = ($0 ~ /^\[package\][[:space:]]*$/); next }
+            in_package && /^rust-version[[:space:]]*=/ { print; exit }
+          ' Cargo.toml)
+          if [ -z "$LINE" ]; then
+            echo "::error::Cargo.toml has no package.rust-version line"
+            exit 1
+          fi
+          VERSION=$(echo "$LINE" | cut -d'"' -f2)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::could not parse a valid rust-version from: $LINE (expected a double-quoted MAJOR.MINOR[.PATCH] value)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain (MSRV)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ steps.read-msrv.outputs.version }}
+          components: clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+            libpipewire-0.3-dev libwayland-dev pkg-config
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: "msrv"
+
+      # --locked: the MSRV toolchain must never re-resolve Cargo.lock, which
+      # would silently require regenerating the Flatpak cargo-sources.json.
+      # No --all-targets: dev-dependencies are not bound by the advertised
+      # floor (see issue #226), so only the lib/bin targets are checked.
+      - name: cargo check (MSRV)
+        run: cargo check --locked
+
+      # Advisory only: clippy's lint inventory differs across compiler
+      # versions, so a clippy-only failure here is not proof of an actual
+      # MSRV source violation and must not gate the job.
+      - name: cargo clippy (MSRV, advisory)
+        continue-on-error: true
+        run: cargo clippy -- -D warnings
+
   # ─── LOC Check ──────────────────────────────────────────────────────
   # Only runs on pull requests — measures LOC delta vs base branch.
   loc-check:

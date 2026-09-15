@@ -200,7 +200,7 @@ fn decode_repairs_dead_stereo_lane_before_returning_pcm() {
     assert_eq!(audio.channels, 2);
     assert_eq!(audio.samples.len(), input_frames.len() * 2);
     assert_eq!(audio.duration, std::time::Duration::from_millis(50));
-    for frame in audio.samples.chunks_exact(2) {
+    for frame in audio.samples.as_chunks::<2>().0 {
         assert_eq!(
             frame[0].to_bits(),
             frame[1].to_bits(),
@@ -297,4 +297,43 @@ fn decode_mono_m4a_succeeds() {
     assert_eq!(audio.sample_rate, 48000);
     assert_eq!(audio.channels, 1);
     assert!(!audio.samples.is_empty(), "samples should not be empty");
+}
+
+#[test]
+fn decode_probes_audio_content_when_extension_is_wrong() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mislabeled = dir.path().join("clip.mp3");
+    std::fs::copy(Path::new("tests/fixtures/sine_mono.wav"), &mislabeled)
+        .expect("copy WAV fixture");
+
+    let audio = decode(&mislabeled).expect("content probe should decode mislabeled WAV");
+
+    assert_eq!(audio.sample_rate, 48_000);
+    assert_eq!(audio.channels, 1);
+    assert!(!audio.samples.is_empty());
+}
+
+#[test]
+fn decode_rejects_zero_rate_wav_without_panicking() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("zero-rate.wav");
+    let mut wav = Vec::from(&b"RIFF"[..]);
+    wav.extend_from_slice(&40_u32.to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&0_u32.to_le_bytes());
+    wav.extend_from_slice(&0_u32.to_le_bytes());
+    wav.extend_from_slice(&2_u16.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&4_u32.to_le_bytes());
+    wav.extend_from_slice(&0_i16.to_le_bytes());
+    wav.extend_from_slice(&0_i16.to_le_bytes());
+    std::fs::write(&path, wav).expect("write malformed WAV");
+
+    let result = std::panic::catch_unwind(|| decode(&path));
+    assert!(result.is_ok(), "malformed audio must not panic");
+    assert!(result.expect("panic already checked").is_err());
 }

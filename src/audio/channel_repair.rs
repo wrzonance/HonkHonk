@@ -41,9 +41,13 @@ fn is_valid_stereo(samples: &[f32], sample_rate: u32, channels: u16) -> bool {
 }
 
 fn channel_peaks(samples: &[f32]) -> [f32; 2] {
-    samples.chunks_exact(2).fold([0.0_f32; 2], |peaks, frame| {
-        [peaks[0].max(frame[0].abs()), peaks[1].max(frame[1].abs())]
-    })
+    samples
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .fold([0.0_f32; 2], |peaks, frame| {
+            [peaks[0].max(frame[0].abs()), peaks[1].max(frame[1].abs())]
+        })
 }
 
 fn has_live_block(samples: &[f32], sample_rate: u32, lane: usize) -> bool {
@@ -74,7 +78,9 @@ fn sample_energy(sample: f32) -> f64 {
 
 fn window_energy(samples: &[f32], lane: usize, window_start: usize, window_frames: usize) -> f64 {
     samples[window_start * 2..(window_start + window_frames) * 2]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|frame| sample_energy(frame[lane]))
         .sum()
 }
@@ -105,7 +111,7 @@ fn energy_is_live(energy: f64, frames: usize) -> bool {
 
 fn copy_live_lane(samples: &mut [f32], live_lane: usize) {
     let dead_lane = 1 - live_lane;
-    for frame in samples.chunks_exact_mut(2) {
+    for frame in samples.as_chunks_mut::<2>().0 {
         frame[dead_lane] = frame[live_lane];
     }
 }

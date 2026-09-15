@@ -7,7 +7,7 @@
 //! of compounding the already-frozen `mod.rs`, and gives future features the
 //! same escape hatch rather than defaulting back to `mod.rs`.
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use iced::Point;
 
@@ -23,7 +23,26 @@ use super::notices::{Notice, NoticeId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    GlobalProcessingChanged(crate::audio::processing::GlobalProcessing),
+    SoundProcessingChanged(crate::audio::processing::SoundProcessing),
+    AudioFingerprintReady {
+        id: String,
+        generation: u64,
+        result: Result<String, String>,
+    },
+    LibraryPreparationItem {
+        generation: u64,
+        id: String,
+        result: Result<Arc<crate::audio::preparation::PreparedAudio>, String>,
+    },
+    LibraryPreparationFinished {
+        generation: u64,
+        failures: Vec<(String, String)>,
+    },
+    Import(super::import::ImportMessage),
     NoOp,
+    ShowMacros,
+    MacroEditor(super::macro_editor::EditorMessage),
     ToggleVisibility,
     Quit,
     TrayEvent(TrayEvent),
@@ -57,6 +76,7 @@ pub enum Message {
     ToggleSoundSortMenu,
     ToggleSoundSortDirection,
     SelectSoundSort(&'static str),
+    ToggleSoundTagGrouping,
     DismissSoundSortMenu,
     // Settings → Shortcuts list controls (#199): filter query and sort chip,
     // independent of the tiles view's messages above.
@@ -65,6 +85,13 @@ pub enum Message {
     ToggleHotkeySortDirection,
     SelectHotkeySort(&'static str),
     DismissHotkeySortMenu,
+    // Slot manager list controls (#198): filter query and sort chip,
+    // independent of the tiles view's and Shortcuts list's messages above.
+    SlotSearchChanged(String),
+    ToggleSlotSortMenu,
+    ToggleSlotSortDirection,
+    SelectSlotSort(&'static str),
+    DismissSlotSortMenu,
     /// Seeds the active filter from an otherwise-unhandled printable keypress.
     TypeToFilter(String),
     /// Routes an uncaptured Escape through overlay and filter staging.
@@ -142,6 +169,7 @@ pub enum Message {
     OpenSoundEditor(String),
     CloseSoundEditor,
     SoundEditorNameChanged(String),
+    SoundEditorTagsChanged(String),
     SoundEditorVolumeChanged(String, f32),
     SaveSoundMeta(String),
     /// A background decode completed for play generation `generation`. Applied
@@ -150,7 +178,7 @@ pub enum Message {
         generation: u64,
         voice_id: u64,
         id: String,
-        result: Result<crate::audio::CachedPcm, String>,
+        result: Result<Arc<crate::audio::preparation::PreparedAudio>, String>,
         gain: f32,
         effects: crate::audio::effects::EffectSettings,
         mode: PlayMode,

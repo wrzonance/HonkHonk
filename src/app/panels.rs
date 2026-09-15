@@ -9,6 +9,7 @@ use crate::ui::side_panel::{PanelTransition, panel_geometry};
 
 impl HonkHonk {
     pub(super) fn tick_frame(&mut self, now: Instant) {
+        self.tick_macro_preview(now);
         self.now_playing.tick(now);
         self.panel_progress = self.effects_panel.tick(now);
         if self.visible && self.config.panel_animations {
@@ -72,6 +73,8 @@ impl HonkHonk {
     pub(super) fn frame_subscription_needed(&self) -> bool {
         self.visible
             && (self.playing.is_some()
+                || self.macro_playback.is_some()
+                || self.macro_editor.preview_start.is_some()
                 || self.effects_panel.is_animating()
                 || self.panel_flourish.is_animating())
     }

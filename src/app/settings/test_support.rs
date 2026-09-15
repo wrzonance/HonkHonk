@@ -3,6 +3,7 @@ use iced::widget::Id;
 use iced_test::simulator;
 
 use crate::app::{HonkHonk, Message};
+use crate::test_lock::gui_lock;
 
 pub(super) struct GuiHarness {
     pub(super) app: HonkHonk,
@@ -17,6 +18,7 @@ impl GuiHarness {
 
     pub(super) fn click(&mut self, label: &str) -> usize {
         let messages = {
+            let _gui = gui_lock();
             let mut ui = simulator(self.app.view());
             ui.click(label)
                 .unwrap_or_else(|error| panic!("clicking {label:?} failed: {error}"));
@@ -27,6 +29,7 @@ impl GuiHarness {
 
     pub(super) fn tap_key(&mut self, target: Id, key: Key) -> usize {
         let messages = {
+            let _gui = gui_lock();
             let mut ui = simulator(self.app.view());
             ui.click(target.clone())
                 .unwrap_or_else(|error| panic!("focusing {target:?} failed: {error}"));
@@ -38,6 +41,7 @@ impl GuiHarness {
 
     pub(super) fn typewrite(&mut self, target: Id, text: &str) -> usize {
         let messages = {
+            let _gui = gui_lock();
             let mut ui = simulator(self.app.view());
             ui.click(target.clone())
                 .unwrap_or_else(|error| panic!("focusing {target:?} failed: {error}"));
@@ -48,11 +52,13 @@ impl GuiHarness {
     }
 
     pub(super) fn find(&self, label: &str) -> bool {
+        let _gui = gui_lock();
         let mut ui = simulator(self.app.view());
         ui.find(label).is_ok()
     }
 
     pub(super) fn find_id(&self, id: Id) -> bool {
+        let _gui = gui_lock();
         let mut ui = simulator(self.app.view());
         ui.find(id).is_ok()
     }
