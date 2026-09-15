@@ -232,6 +232,35 @@ mod tests {
         }
     }
 
+    /// Blocks until `callers` `prepare()` calls have joined the in-flight
+    /// entry for `identity`. The `Work` entry holds one receiver itself; every
+    /// caller awaiting completion clones one more, so the joined count is
+    /// `receiver_count() - 1`. Releasing the loader before this point lets the
+    /// producer finish and drop the entry first, which turns the late caller
+    /// into a second producer (#264).
+    async fn wait_for_joined_callers(
+        coordinator: &PreparationCoordinator,
+        identity: &SourceIdentity,
+        callers: usize,
+    ) {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let joined = coordinator
+                    .entries
+                    .lock()
+                    .await
+                    .get(identity)
+                    .map_or(0, |work| work.sender.receiver_count().saturating_sub(1));
+                if joined == callers {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("callers should join the in-flight preparation");
+    }
+
     #[tokio::test]
     async fn public_prepare_shares_one_loader_and_replays_completion() {
         let calls = Arc::new(AtomicUsize::new(0));
@@ -264,9 +293,10 @@ mod tests {
         .expect("producer start task should join");
         let second = {
             let coordinator = Arc::clone(&coordinator);
+            let path = path.clone();
             tokio::spawn(async move { coordinator.prepare(&path).await })
         };
-        tokio::task::yield_now().await;
+        wait_for_joined_callers(&coordinator, &SourceIdentity::capture(&path), 2).await;
         let release_task = tokio::task::spawn_blocking(move || release.wait());
         let results = timeout(Duration::from_secs(2), async {
             let results = tokio::join!(first, second, release_task);
@@ -310,12 +340,16 @@ mod tests {
         .await
         .expect("producer start task should join");
         first.abort();
+        // Let the runtime drop the aborted caller (and its completion
+        // receiver) before counting joined callers, so only the live second
+        // caller can satisfy the wait below.
+        assert!(first.await.is_err_and(|error| error.is_cancelled()));
         let second = {
             let coordinator = Arc::clone(&coordinator);
             let path = path.clone();
             tokio::spawn(async move { coordinator.prepare(&path).await })
         };
-        tokio::task::yield_now().await;
+        wait_for_joined_callers(&coordinator, &SourceIdentity::capture(&path), 1).await;
         let release_task = tokio::task::spawn_blocking(move || release.wait());
         let result = timeout(Duration::from_secs(2), async {
             let (result, _) = tokio::join!(second, release_task);
