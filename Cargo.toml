@@ -72,7 +72,7 @@ pollster = "0.4"
 # the bench tracks whatever `iced` resolves to.
 iced_runtime = "=0.14.0"
 iced_wgpu = "=0.14.0"
-iced_tiny_skia = "=0.14.0"
+iced_tiny_skia = "=0.14.1"
 iced_core = "=0.14.0"
 iced_graphics = "=0.14.0"
 tiny-skia = "=0.11.4"
