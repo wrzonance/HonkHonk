@@ -340,6 +340,10 @@ mod tests {
         .await
         .expect("producer start task should join");
         first.abort();
+        // Let the runtime drop the aborted caller (and its completion
+        // receiver) before counting joined callers, so only the live second
+        // caller can satisfy the wait below.
+        assert!(first.await.is_err_and(|error| error.is_cancelled()));
         let second = {
             let coordinator = Arc::clone(&coordinator);
             let path = path.clone();
