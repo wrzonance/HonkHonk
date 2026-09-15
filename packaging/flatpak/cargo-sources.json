@@ -2966,27 +2966,27 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/lofty/lofty-0.24.0.crate",
-        "sha256": "dec4feeff6c7d75093278133a06e827d7af6d2bfe20b0f331f9d10338a5ec7ca",
-        "dest": "cargo/vendor/lofty-0.24.0"
+        "url": "https://static.crates.io/crates/lofty/lofty-0.25.2.crate",
+        "sha256": "615d6334c1196e2f23f2708455bf8d71c374818cad7c34adaa0f8f885abf5d7c",
+        "dest": "cargo/vendor/lofty-0.25.2"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"dec4feeff6c7d75093278133a06e827d7af6d2bfe20b0f331f9d10338a5ec7ca\", \"files\": {}}",
-        "dest": "cargo/vendor/lofty-0.24.0",
+        "contents": "{\"package\": \"615d6334c1196e2f23f2708455bf8d71c374818cad7c34adaa0f8f885abf5d7c\", \"files\": {}}",
+        "dest": "cargo/vendor/lofty-0.25.2",
         "dest-filename": ".cargo-checksum.json"
     },
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/lofty_attr/lofty_attr-0.12.0.crate",
-        "sha256": "458ace39169e4b83c4f77ae3d42d5d1d11c422feef590219a97c973d3b524557",
-        "dest": "cargo/vendor/lofty_attr-0.12.0"
+        "url": "https://static.crates.io/crates/lofty_attr/lofty_attr-0.13.0.crate",
+        "sha256": "fdbca1b60ba7cea959ffc84ac27f3dbdbacd6dfda168c7eabbc00e48654bb9fd",
+        "dest": "cargo/vendor/lofty_attr-0.13.0"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"458ace39169e4b83c4f77ae3d42d5d1d11c422feef590219a97c973d3b524557\", \"files\": {}}",
-        "dest": "cargo/vendor/lofty_attr-0.12.0",
+        "contents": "{\"package\": \"fdbca1b60ba7cea959ffc84ac27f3dbdbacd6dfda168c7eabbc00e48654bb9fd\", \"files\": {}}",
+        "dest": "cargo/vendor/lofty_attr-0.13.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
