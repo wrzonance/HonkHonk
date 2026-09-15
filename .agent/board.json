@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "owner": "wrzonance",
+  "project": {
+    "number": 8,
+    "id": "PVT_kwDOEMq2wc4BbSx7",
+    "title": "HonkHonk"
+  },
+  "statusField": {
+    "id": "PVTSSF_lADOEMq2wc4BbSx7zhWEQuc",
+    "name": "Status",
+    "options": {
+      "Backlog": "f75ad846",
+      "Ready": "08afe404",
+      "In progress": "47fc9ee4",
+      "In review": "4cc61d42",
+      "Done": "98236657"
+    }
+  },
+  "generatedAt": "2026-09-01T21:43:17Z",
+  "fingerprint": "sha256:4b15ed0055d58e0ef6f1dfd5f2f384efd3f454357178bc96fd2b7c61d2bbfa29"
+}

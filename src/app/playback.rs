@@ -82,26 +82,26 @@ impl HonkHonk {
                 dispatch,
             },
         );
-        Self::decode_task(id, path, dispatch)
+        Self::decode_task(
+            id,
+            path,
+            dispatch,
+            Arc::clone(&self.preparation.coordinator),
+        )
     }
 
     fn decode_task(
         id: String,
         path: std::path::PathBuf,
         dispatch: PlaybackDispatch,
+        coordinator: Arc<crate::audio::preparation::PreparationCoordinator>,
     ) -> Task<Message> {
         Task::perform(
             async move {
-                tokio::task::spawn_blocking(move || crate::audio::decode(&path))
+                coordinator
+                    .prepare(&path)
                     .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r.map_err(|e| e.to_string()))
-                    .map(|d| crate::audio::CachedPcm {
-                        samples: std::sync::Arc::new(d.samples),
-                        sample_rate: d.sample_rate,
-                        channels: d.channels,
-                        duration: d.duration,
-                    })
+                    .map_err(|error| error.to_string())
             },
             move |result| Message::Decoded {
                 generation: dispatch.generation,
@@ -123,10 +123,21 @@ impl HonkHonk {
         clippy::cognitive_complexity,
         reason = "decode landing owns stale-generation, cache, playback, and UI cleanup invariants"
     )]
+    #[cfg(test)]
     pub(super) fn handle_decoded(
         &mut self,
         id: String,
-        result: Result<crate::audio::CachedPcm, String>,
+        pcm: Result<crate::audio::CachedPcm, String>,
+        dispatch: PlaybackDispatch,
+    ) -> Task<Message> {
+        let result = pcm.map(crate::audio::preparation::PreparedAudio::from_pcm);
+        self.handle_prepared_decoded(id, result, dispatch)
+    }
+
+    pub(super) fn handle_prepared_decoded(
+        &mut self,
+        id: String,
+        result: Result<Arc<crate::audio::preparation::PreparedAudio>, String>,
         dispatch: PlaybackDispatch,
     ) -> Task<Message> {
         let Some(pending) = self.pending_decode_for(&id, dispatch) else {
@@ -140,8 +151,19 @@ impl HonkHonk {
             return Task::none();
         }
         match result {
-            Ok(pcm) => {
-                let pcm = std::sync::Arc::new(pcm);
+            Ok(prepared) => {
+                let source_changed = self
+                    .sounds
+                    .iter()
+                    .find(|sound| sound.id == id)
+                    .and_then(|sound| prepared.source_path().map(|path| path != sound.path));
+                if source_changed == Some(true) {
+                    self.clear_owned_optimistic_ui(&id, dispatch);
+                    return Task::none();
+                }
+                self.now_playing
+                    .cache_envelope_arc(&id, Arc::clone(&prepared.envelope));
+                let pcm = Arc::clone(&prepared.pcm);
                 let evicted = self
                     .audio_store
                     .insert_pcm(id.clone(), std::sync::Arc::clone(&pcm));
@@ -156,6 +178,7 @@ impl HonkHonk {
                     .map(|s| s.path.display().to_string())
                     .unwrap_or_else(|| id.clone()); // fall back to id if rescanned away
                 tracing::error!(file = %file, error = %e, "decode failed");
+                self.playback_error(&file, &e);
                 self.clear_owned_optimistic_ui(&id, dispatch);
             }
         }
@@ -233,7 +256,7 @@ impl HonkHonk {
         self.sounds.iter().any(|sound| sound.id == id)
     }
 
-    fn evict_waveform_envelopes(&mut self, ids: Vec<String>) {
+    pub(super) fn evict_waveform_envelopes(&mut self, ids: Vec<String>) {
         for id in ids {
             self.now_playing.remove_envelope(&id);
         }
@@ -255,6 +278,7 @@ impl HonkHonk {
         dispatch: PlaybackDispatch,
     ) {
         let owns_ui = dispatch.generation == self.play_generation;
+        self.adopt_audio_identity(id, &pcm);
         if owns_ui {
             self.now_playing.start(now_playing::PlaybackStart {
                 id,
@@ -266,13 +290,14 @@ impl HonkHonk {
         }
         if let Some(ref audio) = self.audio {
             audio.send(AudioCommand::Play {
+                processing: self.voice_processing(id, &pcm),
                 voice_id: dispatch.voice_id,
                 sound_id: id.to_string(),
                 samples: std::sync::Arc::clone(&pcm.samples),
                 sample_rate: pcm.sample_rate,
                 channels: pcm.channels,
                 generation: dispatch.generation,
-                gain: dispatch.gain,
+                gain: self.sound_meta.volume_for(id),
                 effects: dispatch.effects,
                 mode: dispatch.mode,
             });

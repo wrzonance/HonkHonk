@@ -4,6 +4,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 mod persistence;
+mod processing;
+use crate::audio::processing::SoundProcessing;
+use processing::AudioPreferences;
 
 const META_FILE_NAME: &str = "sound_meta.json";
 const CONFIG_DIR_NAME: &str = "honkhonk";
@@ -69,6 +72,17 @@ fn validate_graphic_ref(filename: &str) -> Result<(), GraphicRefError> {
 /// Keyed by sound ID (deterministic hex hash of file path).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SoundMeta {
+    #[serde(default)]
+    pub processing: SoundProcessing,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<u8>,
+    /// User tags, normalized on input; absent in older metadata files.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "deserialize_tags"
+    )]
+    pub tags: Vec<String>,
     /// Star / unstar: included in "Favorites" filtered view.
     #[serde(default)]
     pub favorite: bool,
@@ -92,9 +106,12 @@ impl Default for SoundMeta {
     fn default() -> Self {
         Self {
             favorite: false,
+            processing: SoundProcessing::default(),
+            color: None,
             volume: 1.0,
             display_name: None,
             assigned_graphic: None,
+            tags: Vec::new(),
         }
     }
 }
@@ -102,15 +119,20 @@ impl Default for SoundMeta {
 impl SoundMeta {
     pub fn is_default(&self) -> bool {
         !self.favorite
+            && self.processing == SoundProcessing::default()
+            && self.color.is_none()
             && (self.volume - 1.0).abs() < f32::EPSILON
             && self.display_name.is_none()
             && self.assigned_graphic.is_none()
+            && self.tags.is_empty()
     }
 }
 
 /// In-memory store for all sound metadata, backed by a JSON file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundMetaStore {
+    fingerprints: HashMap<String, String>,
+    audio: HashMap<String, AudioPreferences>,
     custom: HashMap<String, SoundMeta>,
     added: BTreeMap<String, u64>,
     writable: bool,
@@ -120,6 +142,8 @@ impl Default for SoundMetaStore {
     fn default() -> Self {
         Self {
             custom: HashMap::new(),
+            fingerprints: HashMap::new(),
+            audio: HashMap::new(),
             added: BTreeMap::new(),
             writable: true,
         }
@@ -145,12 +169,27 @@ impl SoundMetaStore {
     }
 
     /// Upserts metadata for a sound. Removes the entry if it becomes default.
-    pub fn set(&mut self, id: String, meta: SoundMeta) {
+    pub fn set(&mut self, id: String, mut meta: SoundMeta) {
+        meta.tags = normalize_tags(meta.tags);
+        meta.processing = meta.processing.sanitized();
+        meta.volume = if meta.volume.is_finite() {
+            meta.volume.clamp(0.0, 2.0)
+        } else {
+            1.0
+        };
+        self.share_audio_preferences(&id, &meta);
         if meta.is_default() {
             self.custom.remove(&id);
         } else {
             self.custom.insert(id, meta);
         }
+    }
+
+    /// Replaces tags, normalizing whitespace and case-insensitive duplicates.
+    pub fn set_tags(&mut self, id: &str, tags: Vec<String>) {
+        let mut meta = self.get(id);
+        meta.tags = tags;
+        self.set(id.to_owned(), meta);
     }
 
     /// Toggles the favorite flag for a sound, returning the new value.
@@ -235,3 +274,15 @@ impl SoundMetaStore {
 
 #[cfg(test)]
 mod tests;
+
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    tags.into_iter()
+        .map(|tag| tag.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|tag| !tag.is_empty() && seen.insert(tag.to_lowercase()))
+        .collect()
+}
+
+fn deserialize_tags<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    Vec::<String>::deserialize(deserializer).map(normalize_tags)
+}
