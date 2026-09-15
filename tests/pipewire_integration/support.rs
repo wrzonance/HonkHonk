@@ -18,6 +18,7 @@ pub(super) fn play_command_with_mode(
     mode: PlayMode,
 ) -> AudioCommand {
     AudioCommand::Play {
+        processing: Default::default(),
         voice_id: generation,
         sound_id: sound_id.into(),
         samples,
@@ -38,6 +39,7 @@ pub(super) fn play_command_with_format(
     generation: u64,
 ) -> AudioCommand {
     AudioCommand::Play {
+        processing: Default::default(),
         voice_id: generation,
         sound_id: sound_id.into(),
         samples,

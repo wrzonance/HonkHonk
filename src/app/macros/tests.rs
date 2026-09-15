@@ -24,6 +24,7 @@ fn sound(id: &str, path: &str) -> SoundEntry {
 
 fn warm_pcm() -> Arc<CachedPcm> {
     Arc::new(CachedPcm {
+        analysis: Default::default(),
         samples: Arc::new(vec![0.0_f32; 16]),
         sample_rate: 48_000,
         channels: 1,

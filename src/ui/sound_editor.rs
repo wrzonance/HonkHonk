@@ -15,11 +15,14 @@ use crate::ui::theme::{self, Hh, Theme};
 
 /// View context passed in from app.rs.
 pub struct EditorCtx<'a> {
+    pub processing: crate::audio::processing::SoundProcessing,
+    pub loading_audio: bool,
     pub sound: &'a SoundEntry,
     /// Snapshot of the current persisted meta (favorite flag etc.).
     pub meta: SoundMeta,
     /// Current draft display name (held in app state while the editor is open).
     pub draft_name: &'a str,
+    pub draft_tags: &'a str,
     /// Current draft volume (held in app state while the editor is open).
     pub draft_volume: f32,
 }
@@ -73,11 +76,26 @@ fn view_sheet<'a>(ctx: EditorCtx<'a>, t: Theme) -> Element<'a, Message> {
     let volume_row = view_volume_row(draft_volume, sound_id.clone(), t);
     let footer = view_footer(sound_id, t);
 
-    let body = column![header, name_row, volume_row, footer]
-        .spacing(0)
-        .width(Length::Fixed(560.0));
+    let body = column![
+        header,
+        name_row,
+        view_tags_row(ctx.draft_tags, t),
+        if ctx.loading_audio {
+            text("Loading audio preferences…").into()
+        } else {
+            volume_row
+        },
+        container(crate::ui::audio_processing::sound(
+            ctx.processing,
+            ctx.loading_audio
+        ))
+        .padding([8, 24]),
+        footer
+    ]
+    .spacing(0)
+    .width(Length::Fixed(560.0));
 
-    container(body)
+    container(iced::widget::scrollable(body).height(Length::Fill))
         .style(move |_| container::Style {
             background: Some(theme::bg_color(t.bg())),
             border: theme::tile_border(t.hairline(), 1.0),
@@ -167,6 +185,22 @@ fn view_name_row<'a>(draft_name: &'a str, t: Theme) -> Element<'a, Message> {
         ..Default::default()
     })
     .width(Length::Fill)
+    .into()
+}
+
+fn view_tags_row<'a>(draft: &'a str, t: Theme) -> Element<'a, Message> {
+    column![
+        text("Tags").size(theme::font::LABEL).color(t.ink()),
+        text("Separate tags with commas. Leave blank to remove all tags.")
+            .size(theme::font::LABEL)
+            .color(t.ink_dim()),
+        text_input("Meme, Airhorn", draft)
+            .on_input(Message::SoundEditorTagsChanged)
+            .padding([theme::space::SM, theme::space::MD])
+            .size(theme::font::BODY),
+    ]
+    .spacing(theme::space::XS)
+    .padding([theme::space::MD, theme::space::LG])
     .into()
 }
 

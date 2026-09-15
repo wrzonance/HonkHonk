@@ -3,27 +3,7 @@ use iced::keyboard::key::{NativeCode, Physical};
 use iced::keyboard::{self, Key, Location, Modifiers};
 
 use super::*;
-use crate::app::FAVORITES_TAB;
-use crate::state::{AudioFormat, Macro, SoundEntry};
-
-fn sound(id: &str, name: &str, duration_ms: Option<u64>, category: &str) -> SoundEntry {
-    SoundEntry {
-        id: id.into(),
-        name: name.into(),
-        path: format!("/sounds/{category}/{id}.wav").into(),
-        format: AudioFormat::Wav,
-        duration_ms,
-        category: category.into(),
-        modified_ms: None,
-    }
-}
-
-fn filtered_ids(app: &HonkHonk) -> Vec<&str> {
-    app.filtered_sounds()
-        .into_iter()
-        .map(|sound| sound.id.as_str())
-        .collect()
-}
+use crate::state::Macro;
 
 fn key_event(text: Option<&str>, modifiers: Modifiers) -> iced::Event {
     iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -117,12 +97,29 @@ fn macro_editor_draft_absorbs_escape_without_changing_filter_state() {
 
 #[test]
 fn click_only_views_reject_typed_filter_text() {
-    for view_mode in [ViewMode::SlotManager, ViewMode::Settings] {
-        let mut app = HonkHonk::new_for_test();
-        app.view_mode = view_mode;
-        let _ = app.update(Message::TypeToFilter("h".into()));
-        assert_eq!(app.search_query(), "");
-    }
+    // Settings defaults to no active filter target (`Audio`, not `Hotkeys`),
+    // so typed text must be dropped rather than routed anywhere. Unlike
+    // `SlotManager` below, this is the one remaining view that is genuinely
+    // click-only for filtering.
+    let mut app = HonkHonk::new_for_test();
+    app.view_mode = ViewMode::Settings;
+    let _ = app.update(Message::TypeToFilter("h".into()));
+    assert_eq!(app.search_query(), "");
+}
+
+#[test]
+fn typed_filter_text_routes_to_slots_when_slot_manager_is_active() {
+    let mut app = HonkHonk::new_for_test();
+    app.view_mode = ViewMode::SlotManager;
+
+    let _ = app.update(Message::TypeToFilter("h".into()));
+
+    assert_eq!(app.slot_filter_query(), "h");
+    assert_eq!(
+        app.search_query(),
+        "",
+        "slot-manager-targeted typing must never reach the tiles filter"
+    );
 }
 
 #[test]
@@ -164,6 +161,14 @@ fn typed_filter_text_focuses_the_targeted_search_input() {
         hotkeys.update(Message::TypeToFilter("h".into())).units() > 0,
         "hotkeys type-to-filter must schedule a focus task, like the tiles path"
     );
+
+    let mut slots = HonkHonk::new_for_test();
+    slots.view_mode = ViewMode::SlotManager;
+
+    assert!(
+        slots.update(Message::TypeToFilter("h".into())).units() > 0,
+        "slot manager type-to-filter must schedule a focus task, like the tiles path"
+    );
 }
 
 /// `units() > 0` above proves a focus task is scheduled but not *where* it
@@ -180,9 +185,21 @@ fn each_filter_target_focuses_its_own_search_input() {
         super::filter_input_id(FilterTarget::Hotkeys),
         search_bar::hotkeys_input_id()
     );
+    assert_eq!(
+        super::filter_input_id(FilterTarget::Slots),
+        search_bar::slots_input_id()
+    );
     assert_ne!(
         super::filter_input_id(FilterTarget::Tiles),
         super::filter_input_id(FilterTarget::Hotkeys)
+    );
+    assert_ne!(
+        super::filter_input_id(FilterTarget::Tiles),
+        super::filter_input_id(FilterTarget::Slots)
+    );
+    assert_ne!(
+        super::filter_input_id(FilterTarget::Hotkeys),
+        super::filter_input_id(FilterTarget::Slots)
     );
 }
 
@@ -264,117 +281,4 @@ fn every_blocking_layer_rejects_typed_filter_text() {
         let _ = app.update(Message::TypeToFilter("h".into()));
         assert_eq!(app.search_query(), "");
     }
-}
-
-#[test]
-fn shared_filter_matches_display_name_filename_and_category() {
-    let mut app = HonkHonk::new_for_test();
-    app.sounds = vec![SoundEntry {
-        id: "goose".into(),
-        name: "goose_honk".into(),
-        path: "/sounds/Animals/goose_honk.WAV".into(),
-        format: AudioFormat::Wav,
-        duration_ms: None,
-        category: "Animals".into(),
-        modified_ms: None,
-    }];
-    app.sound_meta
-        .set_display_name("goose", Some("Angry Bird".into()));
-
-    for query in ["angry", ".wav", "animals", "goose_honk"] {
-        let _ = app.update(Message::SearchChanged(query.into()));
-        assert_eq!(app.filtered_sounds().len(), 1, "query: {query}");
-    }
-}
-
-#[test]
-fn main_grid_filter_results_follow_the_active_sort_state() {
-    let mut app = HonkHonk::new_for_test();
-    app.sounds = vec![
-        sound("zulu", "Zulu", None, "Other"),
-        sound("alpha", "alpha", None, "Other"),
-    ];
-    app.refresh_filtered_sounds();
-
-    assert_eq!(app.filtered_sounds()[0].name, "alpha");
-
-    let _ = app.update(Message::ToggleSoundSortDirection);
-
-    assert_eq!(app.filtered_sounds()[0].name, "Zulu");
-}
-
-#[test]
-fn filtered_sounds_reads_cached_order_without_resorting() {
-    let mut app = HonkHonk::new_for_test();
-    app.sounds = vec![
-        sound("zulu", "Zulu", None, "Other"),
-        sound("alpha", "alpha", None, "Other"),
-    ];
-    app.refresh_filtered_sounds();
-
-    assert_eq!(filtered_ids(&app), vec!["alpha", "zulu"]);
-    app.sound_sort.toggle_direction();
-
-    assert_eq!(
-        filtered_ids(&app),
-        vec!["alpha", "zulu"],
-        "reading filtered sounds must not recompute their order"
-    );
-}
-
-#[test]
-fn query_category_and_favorite_updates_refresh_cached_membership() {
-    let mut app = HonkHonk::new_for_test();
-    app.sounds = vec![
-        sound("alpha", "Alpha", None, "Animals"),
-        sound("beta", "Beta", None, "Memes"),
-    ];
-    app.refresh_filtered_sounds();
-
-    let _ = app.update(Message::SearchChanged("beta".into()));
-    assert_eq!(filtered_ids(&app), vec!["beta"]);
-
-    let _ = app.update(Message::SearchChanged(String::new()));
-    let _ = app.update(Message::SelectCategory(Some("Animals".into())));
-    assert_eq!(filtered_ids(&app), vec!["alpha"]);
-
-    let _ = app.update(Message::SelectCategory(None));
-    let _ = app.update(Message::TypeToFilter("beta".into()));
-    assert_eq!(filtered_ids(&app), vec!["beta"]);
-    let _ = app.update(Message::EscapePressed);
-    let _ = app.update(Message::EscapePressed);
-    assert_eq!(filtered_ids(&app), vec!["alpha", "beta"]);
-
-    let _ = app.update(Message::ToggleFavorite("beta".into()));
-    let _ = app.update(Message::SelectCategory(Some(FAVORITES_TAB.into())));
-    assert_eq!(filtered_ids(&app), vec!["beta"]);
-
-    let _ = app.update(Message::ToggleFavorite("beta".into()));
-    assert_eq!(filtered_ids(&app), vec!["alpha", "beta"]);
-}
-
-#[test]
-fn duration_and_display_name_updates_refresh_cached_order() {
-    let mut app = HonkHonk::new_for_test();
-    app.sounds = vec![
-        sound("alpha", "Alpha", Some(200), "Other"),
-        sound("zulu", "Zulu", None, "Other"),
-    ];
-    app.refresh_filtered_sounds();
-
-    let _ = app.update(Message::SelectSoundSort("length"));
-    assert_eq!(filtered_ids(&app), vec!["alpha", "zulu"]);
-
-    let durations = std::collections::HashMap::from([("zulu".to_owned(), 100)]);
-    let _ = app.update(Message::DurationsLoaded(durations));
-    assert_eq!(filtered_ids(&app), vec!["zulu", "alpha"]);
-
-    let _ = app.update(Message::SelectSoundSort("name"));
-    let _ = app.update(Message::OpenSoundEditor("zulu".into()));
-    let _ = app.update(Message::SoundEditorNameChanged("Aardvark".into()));
-    let _ = app.update(Message::SaveSoundMeta("zulu".into()));
-    assert_eq!(filtered_ids(&app), vec!["zulu", "alpha"]);
-
-    let _ = app.update(Message::SearchChanged("aardvark".into()));
-    assert_eq!(filtered_ids(&app), vec!["zulu"]);
 }

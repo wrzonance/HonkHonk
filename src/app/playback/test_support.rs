@@ -25,6 +25,7 @@ pub(super) fn sound(id: &str) -> SoundEntry {
 
 pub(super) fn pcm(samples: usize) -> crate::audio::CachedPcm {
     crate::audio::CachedPcm {
+        analysis: Default::default(),
         samples: Arc::new(vec![0.0_f32; samples]),
         sample_rate: 48_000,
         channels: 1,
