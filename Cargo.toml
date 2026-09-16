@@ -25,7 +25,7 @@ serde_json = "1"
 # K-weighted gated loudness measurement; existing effects do not measure LUFS.
 ebur128 = "0.1"
 # Stable content identity; std's hashes are not durable fingerprints.
-sha2 = "0.10"
+sha2 = "0.11"
 directories = "6"
 walkdir = "2"
 pipewire = "0.10"
