@@ -5358,6 +5358,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-codec-alac/symphonia-codec-alac-0.6.1.crate",
+        "sha256": "920a78f96f3cf62932d0c497959c0cc2100ef36b03c7ca1417b260f432a482d8",
+        "dest": "cargo/vendor/symphonia-codec-alac-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"920a78f96f3cf62932d0c497959c0cc2100ef36b03c7ca1417b260f432a482d8\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-codec-alac-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-codec-pcm/symphonia-codec-pcm-0.5.5.crate",
         "sha256": "4e89d716c01541ad3ebe7c91ce4c8d38a7cf266a3f7b2f090b108fb0cb031d95",
         "dest": "cargo/vendor/symphonia-codec-pcm-0.5.5"
