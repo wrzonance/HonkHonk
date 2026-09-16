@@ -4513,6 +4513,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/regex-lite/regex-lite-0.1.9.crate",
+        "sha256": "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973",
+        "dest": "cargo/vendor/regex-lite-0.1.9"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973\", \"files\": {}}",
+        "dest": "cargo/vendor/regex-lite-0.1.9",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/regex-syntax/regex-syntax-0.8.11.crate",
         "sha256": "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4",
         "dest": "cargo/vendor/regex-syntax-0.8.11"
@@ -5215,6 +5228,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia/symphonia-0.6.1.crate",
+        "sha256": "a7edef6a96b696d4e0cab5ee9ebb7ca155ed95f30a6b45bbb8b97d2727f02424",
+        "dest": "cargo/vendor/symphonia-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"a7edef6a96b696d4e0cab5ee9ebb7ca155ed95f30a6b45bbb8b97d2727f02424\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-bundle-flac/symphonia-bundle-flac-0.5.5.crate",
         "sha256": "c91565e180aea25d9b80a910c546802526ffd0072d0b8974e3ebe59b686c9976",
         "dest": "cargo/vendor/symphonia-bundle-flac-0.5.5"
@@ -5223,6 +5249,19 @@
         "type": "inline",
         "contents": "{\"package\": \"c91565e180aea25d9b80a910c546802526ffd0072d0b8974e3ebe59b686c9976\", \"files\": {}}",
         "dest": "cargo/vendor/symphonia-bundle-flac-0.5.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-bundle-flac/symphonia-bundle-flac-0.6.1.crate",
+        "sha256": "6405d5c34ff6f8f7ca08a4101efe66d21e180f7322ef9359900a0e55698a7892",
+        "dest": "cargo/vendor/symphonia-bundle-flac-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"6405d5c34ff6f8f7ca08a4101efe66d21e180f7322ef9359900a0e55698a7892\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-bundle-flac-0.6.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -5241,6 +5280,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-bundle-mp3/symphonia-bundle-mp3-0.6.1.crate",
+        "sha256": "98ea5ffc8716bff677dfb3b01b420c7b758de901a72b8c330bf2040ab74b4add",
+        "dest": "cargo/vendor/symphonia-bundle-mp3-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"98ea5ffc8716bff677dfb3b01b420c7b758de901a72b8c330bf2040ab74b4add\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-bundle-mp3-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-codec-aac/symphonia-codec-aac-0.5.5.crate",
         "sha256": "4c263845aa86881416849c1729a54c7f55164f8b96111dba59de46849e73a790",
         "dest": "cargo/vendor/symphonia-codec-aac-0.5.5"
@@ -5249,6 +5301,19 @@
         "type": "inline",
         "contents": "{\"package\": \"4c263845aa86881416849c1729a54c7f55164f8b96111dba59de46849e73a790\", \"files\": {}}",
         "dest": "cargo/vendor/symphonia-codec-aac-0.5.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-codec-aac/symphonia-codec-aac-0.6.1.crate",
+        "sha256": "f5bf8e39552d34a3c4c98333370e62f48c92456d2e814f273b5c3ad7c4a5f45c",
+        "dest": "cargo/vendor/symphonia-codec-aac-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"f5bf8e39552d34a3c4c98333370e62f48c92456d2e814f273b5c3ad7c4a5f45c\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-codec-aac-0.6.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -5267,6 +5332,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-codec-adpcm/symphonia-codec-adpcm-0.6.1.crate",
+        "sha256": "445932ecb0c59362fde9c082dd63a75380650c5077fdb8b80b8cac850442a74c",
+        "dest": "cargo/vendor/symphonia-codec-adpcm-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"445932ecb0c59362fde9c082dd63a75380650c5077fdb8b80b8cac850442a74c\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-codec-adpcm-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-codec-alac/symphonia-codec-alac-0.5.5.crate",
         "sha256": "8413fa754942ac16a73634c9dfd1500ed5c61430956b33728567f667fdd393ab",
         "dest": "cargo/vendor/symphonia-codec-alac-0.5.5"
@@ -5275,6 +5353,19 @@
         "type": "inline",
         "contents": "{\"package\": \"8413fa754942ac16a73634c9dfd1500ed5c61430956b33728567f667fdd393ab\", \"files\": {}}",
         "dest": "cargo/vendor/symphonia-codec-alac-0.5.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-codec-alac/symphonia-codec-alac-0.6.1.crate",
+        "sha256": "920a78f96f3cf62932d0c497959c0cc2100ef36b03c7ca1417b260f432a482d8",
+        "dest": "cargo/vendor/symphonia-codec-alac-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"920a78f96f3cf62932d0c497959c0cc2100ef36b03c7ca1417b260f432a482d8\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-codec-alac-0.6.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -5293,6 +5384,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-codec-pcm/symphonia-codec-pcm-0.6.1.crate",
+        "sha256": "e04ba75686acbe43542fdd374571195f0530c0b7785ca25cc6840e9c6c4b6eea",
+        "dest": "cargo/vendor/symphonia-codec-pcm-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"e04ba75686acbe43542fdd374571195f0530c0b7785ca25cc6840e9c6c4b6eea\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-codec-pcm-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-codec-vorbis/symphonia-codec-vorbis-0.5.5.crate",
         "sha256": "f025837c309cd69ffef572750b4a2257b59552c5399a5e49707cc5b1b85d1c73",
         "dest": "cargo/vendor/symphonia-codec-vorbis-0.5.5"
@@ -5306,6 +5410,32 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-codec-vorbis/symphonia-codec-vorbis-0.6.1.crate",
+        "sha256": "73d90b4fcf796137cc683c538282804ff9629f8ad9dbfd881fcbba331ac4e986",
+        "dest": "cargo/vendor/symphonia-codec-vorbis-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"73d90b4fcf796137cc683c538282804ff9629f8ad9dbfd881fcbba331ac4e986\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-codec-vorbis-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-common/symphonia-common-0.6.1.crate",
+        "sha256": "2acc3fcc18ec9b8cdd48614e259c4cf0d27b71d41e5d9b120b42c5adab12d7c4",
+        "dest": "cargo/vendor/symphonia-common-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"2acc3fcc18ec9b8cdd48614e259c4cf0d27b71d41e5d9b120b42c5adab12d7c4\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-common-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-core/symphonia-core-0.5.5.crate",
         "sha256": "ea00cc4f79b7f6bb7ff87eddc065a1066f3a43fe1875979056672c9ef948c2af",
         "dest": "cargo/vendor/symphonia-core-0.5.5"
@@ -5314,6 +5444,19 @@
         "type": "inline",
         "contents": "{\"package\": \"ea00cc4f79b7f6bb7ff87eddc065a1066f3a43fe1875979056672c9ef948c2af\", \"files\": {}}",
         "dest": "cargo/vendor/symphonia-core-0.5.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-core/symphonia-core-0.6.1.crate",
+        "sha256": "01c412864d599d4750d0c3d684d7e093ec05e5309681ef5252cc1096a437f6e0",
+        "dest": "cargo/vendor/symphonia-core-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"01c412864d599d4750d0c3d684d7e093ec05e5309681ef5252cc1096a437f6e0\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-core-0.6.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -5345,6 +5488,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-format-isomp4/symphonia-format-isomp4-0.6.1.crate",
+        "sha256": "0e681a70e1870d34e02abf1dbc51e4267c3f1827801474e8870be8c689fc4dc3",
+        "dest": "cargo/vendor/symphonia-format-isomp4-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"0e681a70e1870d34e02abf1dbc51e4267c3f1827801474e8870be8c689fc4dc3\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-format-isomp4-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-format-mkv/symphonia-format-mkv-0.5.5.crate",
         "sha256": "122d786d2c43a49beb6f397551b4a050d8229eaa54c7ddf9ee4b98899b8742d0",
         "dest": "cargo/vendor/symphonia-format-mkv-0.5.5"
@@ -5353,6 +5509,19 @@
         "type": "inline",
         "contents": "{\"package\": \"122d786d2c43a49beb6f397551b4a050d8229eaa54c7ddf9ee4b98899b8742d0\", \"files\": {}}",
         "dest": "cargo/vendor/symphonia-format-mkv-0.5.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-format-mkv/symphonia-format-mkv-0.6.1.crate",
+        "sha256": "d015c5c0558864665894b3f4cbd95e10abb01b9c868e751c72670f326a56360e",
+        "dest": "cargo/vendor/symphonia-format-mkv-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"d015c5c0558864665894b3f4cbd95e10abb01b9c868e751c72670f326a56360e\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-format-mkv-0.6.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -5371,6 +5540,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-format-ogg/symphonia-format-ogg-0.6.1.crate",
+        "sha256": "0b5495e7f7e3c7035328d82b6d6e377eef289bb0c4105bdeb557fc93a833f994",
+        "dest": "cargo/vendor/symphonia-format-ogg-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"0b5495e7f7e3c7035328d82b6d6e377eef289bb0c4105bdeb557fc93a833f994\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-format-ogg-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-format-riff/symphonia-format-riff-0.5.5.crate",
         "sha256": "c2d7c3df0e7d94efb68401d81906eae73c02b40d5ec1a141962c592d0f11a96f",
         "dest": "cargo/vendor/symphonia-format-riff-0.5.5"
@@ -5384,6 +5566,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-format-riff/symphonia-format-riff-0.6.1.crate",
+        "sha256": "1ff70929083a8c1a5f6cd7c904b6071c7914ad04739b510c2f7239dfc9b7dabe",
+        "dest": "cargo/vendor/symphonia-format-riff-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"1ff70929083a8c1a5f6cd7c904b6071c7914ad04739b510c2f7239dfc9b7dabe\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-format-riff-0.6.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/symphonia-metadata/symphonia-metadata-0.5.5.crate",
         "sha256": "36306ff42b9ffe6e5afc99d49e121e0bd62fe79b9db7b9681d48e29fa19e6b16",
         "dest": "cargo/vendor/symphonia-metadata-0.5.5"
@@ -5392,6 +5587,19 @@
         "type": "inline",
         "contents": "{\"package\": \"36306ff42b9ffe6e5afc99d49e121e0bd62fe79b9db7b9681d48e29fa19e6b16\", \"files\": {}}",
         "dest": "cargo/vendor/symphonia-metadata-0.5.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/symphonia-metadata/symphonia-metadata-0.6.1.crate",
+        "sha256": "83713a97705d77bdef7cdbc0768fd6e5a54e4cd7e48d60a806ae85639e2c87c6",
+        "dest": "cargo/vendor/symphonia-metadata-0.6.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"83713a97705d77bdef7cdbc0768fd6e5a54e4cd7e48d60a806ae85639e2c87c6\", \"files\": {}}",
+        "dest": "cargo/vendor/symphonia-metadata-0.6.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
