@@ -9,6 +9,7 @@ const FIXTURES: &[&str] = &[
     "sine_mono.mp3",
     "sine_mono.m4a",
     "sine_stereo.m4a",
+    "sine_mono_alac.m4a",
 ];
 
 #[test]

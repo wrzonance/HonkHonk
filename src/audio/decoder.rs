@@ -141,7 +141,18 @@ fn decode_packets(
     let mut all_samples: Vec<f32> = Vec::new();
     let mut sample_rate: Option<u32> = None;
     let mut channels: Option<u16> = None;
-    while let Some(packet) = format.next_packet().map_err(AudioError::Decode)? {
+    loop {
+        let packet = match format.next_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
+            // Preserve playable packets from truncated media, as in Symphonia 0.5.
+            Err(symphonia::core::errors::Error::IoError(ref error))
+                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(error) => return Err(AudioError::Decode(error)),
+        };
         if packet.track_id != track_id {
             continue;
         }
