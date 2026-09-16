@@ -1,12 +1,12 @@
 use std::path::Path;
 use std::time::Duration;
 
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::audio::GenericAudioBufferRef;
+use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 use super::{channel_repair::repair_dead_stereo_channel, error::AudioError};
 
@@ -38,19 +38,24 @@ fn decode_limited_inner(path: &Path, max_samples: usize) -> Result<DecodedAudio,
         hint.with_extension(ext);
     }
 
-    let probed = symphonia::default::get_probe()
-        .format(
+    let mut format = symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
         .map_err(AudioError::UnsupportedFormat)?;
 
-    let mut format = probed.format;
-
-    let track = format.default_track().ok_or(AudioError::NoTrack)?;
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or(AudioError::NoTrack)?;
     let track_id = track.id;
+    let params = track
+        .codec_params
+        .as_ref()
+        .and_then(|params| params.audio())
+        .ok_or(AudioError::MissingCodecParams)?;
 
     // Seed rate / channels from the track header where present. Some containers
     // (notably AAC-in-MP4 / `.m4a`) omit `channels` — and rarely the rate — from
@@ -58,14 +63,14 @@ fn decode_limited_inner(path: &Path, max_samples: usize) -> Result<DecodedAudio,
     // only resolved once the first frame is decoded. We fall back to the decoded
     // frame's spec below so such files are not rejected with
     // `MissingCodecParams` (#153).
-    let header_rate = track.codec_params.sample_rate;
-    let header_channels = track.codec_params.channels.map(|ch| ch.count() as u16);
+    let header_rate = params.sample_rate;
+    let header_channels = params.channels.as_ref().map(|ch| ch.count() as u16);
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(AudioError::DecoderInit)?;
 
-    let decoded = decode_packets(&mut format, &mut decoder, track_id, max_samples)?;
+    let decoded = decode_packets(format.as_mut(), decoder.as_mut(), track_id, max_samples)?;
 
     // Header value wins when valid; otherwise use the first decoded frame.
     let (sample_rate, channels) = metadata_from(header_rate, header_channels, &decoded)
@@ -119,7 +124,7 @@ fn record_frame_metadata(
 }
 
 /// Decoded PCM plus the rate / channel count observed in the first decoded
-/// frame's `SignalSpec`, used to backfill metadata the container header omitted
+/// frame's `AudioSpec`, used to backfill metadata the container header omitted
 /// (#153). `sample_rate` / `channels` are `None` only when no frame decoded.
 struct DecodedFrames {
     samples: Vec<f32>,
@@ -128,46 +133,29 @@ struct DecodedFrames {
 }
 
 fn decode_packets(
-    format: &mut Box<dyn symphonia::core::formats::FormatReader>,
-    decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
+    format: &mut dyn FormatReader,
+    decoder: &mut dyn AudioDecoder,
     track_id: u32,
     max_samples: usize,
 ) -> Result<DecodedFrames, AudioError> {
     let mut all_samples: Vec<f32> = Vec::new();
-    let mut sample_buf: Option<SampleBuffer<f32>> = None;
     let mut sample_rate: Option<u32> = None;
     let mut channels: Option<u16> = None;
-    loop {
-        let packet = match format.next_packet() {
-            Ok(p) => p,
-            Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                break;
-            }
-            Err(e) => return Err(AudioError::Decode(e)),
-        };
-
-        if packet.track_id() != track_id {
+    while let Some(packet) = format.next_packet().map_err(AudioError::Decode)? {
+        if packet.track_id != track_id {
             continue;
         }
         let decoded = decoder.decode(&packet).map_err(AudioError::Decode)?;
-        let spec = *decoded.spec();
+        let spec = decoded.spec();
         let observed = record_frame_metadata(
-            spec.rate,
-            spec.channels.count(),
+            spec.rate(),
+            spec.channels().count(),
             decoded.frames(),
             &mut sample_rate,
             &mut channels,
         )?;
         if observed {
-            append_decoded(
-                decoded,
-                spec,
-                max_samples,
-                &mut all_samples,
-                &mut sample_buf,
-            )?;
+            append_decoded(decoded, max_samples, &mut all_samples)?;
         }
     }
 
@@ -179,33 +167,23 @@ fn decode_packets(
 }
 
 fn append_decoded(
-    decoded: symphonia::core::audio::AudioBufferRef<'_>,
-    spec: symphonia::core::audio::SignalSpec,
+    decoded: GenericAudioBufferRef<'_>,
     max_samples: usize,
     all_samples: &mut Vec<f32>,
-    sample_buf: &mut Option<SampleBuffer<f32>>,
 ) -> Result<(), AudioError> {
     let frames = decoded.frames();
     if frames == 0 {
         return Ok(());
     }
     let sample_count = frames
-        .checked_mul(spec.channels.count())
+        .checked_mul(decoded.spec().channels().count())
         .ok_or(AudioError::SampleLimit)?;
     if sample_count > max_samples.saturating_sub(all_samples.len()) {
         return Err(AudioError::SampleLimit);
     }
-    if sample_buf
-        .as_ref()
-        .is_none_or(|buffer| sample_count > buffer.capacity())
-    {
-        *sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, spec));
-    }
-    let Some(buffer) = sample_buf.as_mut() else {
-        return Err(AudioError::MissingCodecParams);
-    };
-    buffer.copy_interleaved_ref(decoded);
-    all_samples.extend_from_slice(buffer.samples());
+    let start = all_samples.len();
+    all_samples.resize(start + sample_count, 0.0);
+    decoded.copy_to_slice_interleaved(&mut all_samples[start..]);
     Ok(())
 }
 
