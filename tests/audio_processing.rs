@@ -35,6 +35,20 @@ fn content_identity_is_sha256_and_independent_of_path() {
 }
 
 #[test]
+fn content_identity_preserves_lowercase_hex_and_zero_padding() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("leading-zero.wav");
+    std::fs::write(&path, b"c4").unwrap();
+
+    let identity = fingerprint(&path).unwrap();
+    assert_eq!(identity.len(), 64);
+    assert_eq!(
+        identity,
+        "0012a3fa000c5dc26ee658c3c58e12cecd58d6455cec3d5621f0c787675b38aa"
+    );
+}
+
+#[test]
 fn linked_dynamics_limits_peaks_and_preserves_stereo_balance() {
     let mut dynamics = Dynamics::default();
     let mut samples = [2.0, 1.0].repeat(4800);
