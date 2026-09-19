@@ -44,10 +44,11 @@ modules:
           /app/bin/honkhonk
       # Install .desktop entry — rewrite Icon= to the full app-id in a scratch
       # copy so we never mutate assets/honkhonk.desktop (deb/appimage packaging
-      # asserts it stays generic; see tests/packaging/deb_validate.sh).
+      # asserts it stays generic; see tests/packaging/deb_validate.sh). Keep
+      # the copy in the build directory: each command has a separate /tmp.
       - sed 's/^Icon=honkhonk$/Icon=io.github.wrzonance.HonkHonk/'
-          assets/honkhonk.desktop > /tmp/io.github.wrzonance.HonkHonk.desktop
-      - install -Dm644 /tmp/io.github.wrzonance.HonkHonk.desktop
+          assets/honkhonk.desktop > io.github.wrzonance.HonkHonk.desktop
+      - install -Dm644 io.github.wrzonance.HonkHonk.desktop
           /app/share/applications/io.github.wrzonance.HonkHonk.desktop
       # Install the full app-id-named icon set (all sizes + scalable + symbolic).
       # Create the theme dir first and copy the CONTENTS into it: a bare
