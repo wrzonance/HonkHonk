@@ -17,12 +17,6 @@
       "enabled": false
     },
     {
-      "description": "symphonia 0.6 is a breaking decoder-API migration; hold until #261 lands",
-      "matchManagers": ["cargo"],
-      "matchPackageNames": ["symphonia"],
-      "allowedVersions": "<0.6"
-    },
-    {
       "description": "sha2 0.11 (digest 0.11) drops LowerHex on the output array; hold until #266 lands",
       "matchManagers": ["cargo"],
       "matchPackageNames": ["sha2"],
