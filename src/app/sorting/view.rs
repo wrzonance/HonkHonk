@@ -11,7 +11,7 @@ impl HonkHonk {
         theme: theme::Theme,
     ) -> Option<Element<'_, Message>> {
         let anchor = self.sort_menu_anchor?;
-        Some(sort::view_sort_menu_overlay(
+        Some(sort::view_sort_menu_with_grouping(
             sort::SortMenu {
                 state: self.sound_sort,
                 options: &SoundSortKey::ALL,
@@ -21,6 +21,7 @@ impl HonkHonk {
             },
             |key| Message::SelectSoundSort(key.id()),
             Message::DismissSoundSortMenu,
+            Some((self.sound_tags_grouped(), Message::ToggleSoundTagGrouping)),
         ))
     }
 }

@@ -1,6 +1,8 @@
+pub mod audio_processing;
 pub mod effects_panel;
 pub mod effects_panel_view;
 pub mod list_controls;
+pub mod macros;
 pub mod notice;
 pub mod now_playing;
 pub mod playhead;

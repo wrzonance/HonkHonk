@@ -22,13 +22,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# K-weighted gated loudness measurement; existing effects do not measure LUFS.
+ebur128 = "0.1"
+# Stable content identity; std's hashes are not durable fingerprints.
+sha2 = "0.10"
 directories = "6"
 walkdir = "2"
-pipewire = "0.9"
+pipewire = "0.10"
 ashpd = { version = "0.13", features = ["global_shortcuts", "raw-window-handle", "file_chooser"] }
 zbus = "5"
 url = "2"  # RFC-8089 file URI parsing for pick_directory() ashpd file chooser result
-lofty = "0.24"
+lofty = "0.25"
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
 anyhow = "1.0.102"
 # Phase 4B voice effects DSP framework (ADR-006). Added in issue #30 (PR 1 of 6)
@@ -45,6 +49,9 @@ pitch_shift = "2.1.0"
 default = []
 pipewire-test = []
 
+[patch.crates-io]
+winit = { path = "vendor/winit" }
+
 [dev-dependencies]
 tempfile = "3"
 # Official headless interaction harness shipped with Iced. It exercises the
@@ -54,10 +61,10 @@ iced_test = "=0.14.0"
 # Bench harness for the sound-grid render baseline (ADR-009). Criterion is the
 # de-facto Rust micro-benchmark standard; stdlib #[bench] is nightly-only.
 # License: Apache-2.0 OR MIT (cargo-deny clean).
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 # block_on for the headless wgpu device setup in the grid_render bench — avoids
 # pulling a full async runtime into a bench. License: MIT OR Apache-2.0.
-pollster = "0.4"
+pollster = "1.0"
 # Iced internals the grid_render bench drives directly for a headless render
 # baseline (layout via UserInterface, per-renderer rasterization). All are
 # already in the dependency graph at these exact versions (transitive deps of
@@ -65,7 +72,7 @@ pollster = "0.4"
 # the bench tracks whatever `iced` resolves to.
 iced_runtime = "=0.14.0"
 iced_wgpu = "=0.14.0"
-iced_tiny_skia = "=0.14.0"
+iced_tiny_skia = "=0.14.1"
 iced_core = "=0.14.0"
 iced_graphics = "=0.14.0"
 tiny-skia = "=0.11.4"

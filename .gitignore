@@ -76,3 +76,8 @@ sounds/
 
 # Subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
+
+# AgentKit declarations are trunk-carried; runtime state remains local.
+.agent/*
+!.agent/config.env
+!.agent/board.json

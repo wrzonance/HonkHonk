@@ -68,10 +68,12 @@ pub enum EngineErrorEvent {
 
 #[derive(Error, Debug)]
 pub enum AudioError {
-    #[error("failed to open audio file")]
+    #[error("decoded audio exceeds the import sample limit")]
+    SampleLimit,
+    #[error("failed to open audio file: {0}")]
     FileOpen(#[source] std::io::Error),
 
-    #[error("unsupported audio format")]
+    #[error("unsupported audio format: {0}")]
     UnsupportedFormat(#[source] symphonia::core::errors::Error),
 
     #[error("no audio track found in file")]
@@ -80,10 +82,13 @@ pub enum AudioError {
     #[error("missing codec parameters (sample rate or channels)")]
     MissingCodecParams,
 
-    #[error("failed to create audio decoder")]
+    #[error("audio decoder rejected malformed input")]
+    DecoderPanic,
+
+    #[error("failed to create audio decoder: {0}")]
     DecoderInit(#[source] symphonia::core::errors::Error),
 
-    #[error("decode error")]
+    #[error("decode error: {0}")]
     Decode(#[source] symphonia::core::errors::Error),
 
     #[error("failed to initialize PipeWire: {0}")]
