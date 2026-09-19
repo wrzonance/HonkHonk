@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.89"
 license = "MIT"
 description = "Wayland-native Linux soundboard"
-repository = "https://github.com/thewrz/HonkHonk"
+repository = "https://github.com/wrzonance/HonkHonk"
 
 [lints.clippy]
 cognitive_complexity = "warn"

@@ -1,4 +1,4 @@
-app-id: io.github.thewrz.HonkHonk
+app-id: io.github.wrzonance.HonkHonk
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
@@ -28,9 +28,10 @@ finish-args:
   - --talk-name=org.kde.StatusNotifierWatcher
   # Sound library: read-only access to user's music folder
   - --filesystem=xdg-music:ro
-  # User config and data dirs (XDG paths used by honkhonk)
-  - --filesystem=xdg-config/honkhonk:create
-  - --filesystem=xdg-data/honkhonk:create
+  # NOTE: no xdg-config/xdg-data grants. Flatpak redirects the XDG base dirs to
+  # ~/.var/app/<app-id>/, which is what `directories::ProjectDirs` resolves to
+  # inside the sandbox — the app never reads the host ~/.config/honkhonk, so
+  # granting it would widen the sandbox without changing behavior.
 
 modules:
   - name: honkhonk
@@ -41,15 +42,24 @@ modules:
       # Install binary — /app/bin is on PATH inside the sandbox
       - install -Dm755 target/x86_64-unknown-linux-gnu/release/honkhonk
           /app/bin/honkhonk
-      # Install .desktop entry — /app/share is in XDG_DATA_DIRS
-      - install -Dm644 assets/honkhonk.desktop
-          /app/share/applications/io.github.thewrz.HonkHonk.desktop
-      # Install icon
-      - install -Dm644 assets/icons/hicolor/256x256/apps/honkhonk.png
-          /app/share/icons/hicolor/256x256/apps/honkhonk.png
+      # Install .desktop entry — rewrite Icon= to the full app-id in a scratch
+      # copy so we never mutate assets/honkhonk.desktop (deb/appimage packaging
+      # asserts it stays generic; see tests/packaging/deb_validate.sh). Keep
+      # the copy in the build directory: each command has a separate /tmp.
+      - sed 's/^Icon=honkhonk$/Icon=io.github.wrzonance.HonkHonk/'
+          assets/honkhonk.desktop > io.github.wrzonance.HonkHonk.desktop
+      - install -Dm644 io.github.wrzonance.HonkHonk.desktop
+          /app/share/applications/io.github.wrzonance.HonkHonk.desktop
+      # Install the full app-id-named icon set (all sizes + scalable + symbolic).
+      # Create the theme dir first and copy the CONTENTS into it: a bare
+      # `cp -r hicolor /app/share/icons/` collapses the theme level to
+      # /app/share/icons/64x64/... when /app/share/icons does not yet exist,
+      # and the icons are then never found.
+      - install -d /app/share/icons/hicolor
+      - cp -r assets/icons/generated/hicolor/. /app/share/icons/hicolor/
       # Install AppStream metainfo
-      - install -Dm644 packaging/flatpak/io.github.thewrz.HonkHonk.metainfo.xml
-          /app/share/metainfo/io.github.thewrz.HonkHonk.metainfo.xml
+      - install -Dm644 packaging/flatpak/io.github.wrzonance.HonkHonk.metainfo.xml
+          /app/share/metainfo/io.github.wrzonance.HonkHonk.metainfo.xml
       # NOTE (issue #49): the persistent PipeWire conf.d drop-in is NOT installed
       # in the Flatpak. The sandbox cannot write host PipeWire config, and the
       # app talks to PipeWire via the pulseaudio socket. The app's first-run

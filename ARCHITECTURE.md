@@ -381,7 +381,7 @@ honkhonk/
 │   └── fixtures/            # Short audio files for decode tests
 ├── packaging/
 │   ├── flatpak/
-│   │   └── io.github.thewrz.HonkHonk.yml
+│   │   └── io.github.wrzonance.HonkHonk.yml
 │   ├── aur/
 │   │   └── PKGBUILD
 │   ├── debian/
@@ -575,7 +575,7 @@ Portal-based apps work naturally in Flatpak's sandbox.
 
 ```yaml
 # Flatpak manifest key points
-app-id: io.github.thewrz.HonkHonk
+app-id: io.github.wrzonance.HonkHonk
 runtime: org.freedesktop.Platform
 sdk: org.freedesktop.Sdk
 finish-args:
