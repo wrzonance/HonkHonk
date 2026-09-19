@@ -17,12 +17,6 @@
       "enabled": false
     },
     {
-      "description": "sha2 0.11 (digest 0.11) drops LowerHex on the output array; hold until #266 lands",
-      "matchManagers": ["cargo"],
-      "matchPackageNames": ["sha2"],
-      "allowedVersions": "<0.11"
-    },
-    {
       "matchManagers": ["github-actions"],
       "labels": ["ci"],
       "commitMessagePrefix": "chore(ci):",

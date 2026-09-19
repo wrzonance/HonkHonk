@@ -54,7 +54,13 @@ pub fn fingerprint(path: &Path) -> Result<String, ProcessingError> {
         }
         hash.update(&buffer[..count]);
     }
-    Ok(format!("{:x}", hash.finalize()))
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut identity = String::with_capacity(64);
+    for byte in hash.finalize() {
+        identity.push(char::from(HEX[usize::from(byte >> 4)]));
+        identity.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    Ok(identity)
 }
 
 /// Integrated K-weighted, gated loudness towards -18 LUFS, with at most 12 dB
