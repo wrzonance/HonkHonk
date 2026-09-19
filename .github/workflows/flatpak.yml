@@ -51,7 +51,7 @@ jobs:
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: honkhonk-flatpak-${{ github.ref_name }}
+          name: honkhonk-flatpak-${{ github.sha }}
           path: honkhonk.flatpak
 
       - name: Attach Flatpak to GitHub Release
