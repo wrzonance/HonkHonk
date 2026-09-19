@@ -33,7 +33,7 @@ class FlatpakInstallTest(unittest.TestCase):
                     continue
                 result = subprocess.run(
                     [
-                        "bwrap", "--unshare-net",
+                        "bwrap",
                         "--ro-bind", "/usr", "/usr", "--ro-bind", "/bin", "/bin",
                         "--ro-bind", "/lib", "/lib", "--ro-bind-try", "/lib64", "/lib64",
                         "--bind", str(build), "/build", "--bind", str(app), "/app",
