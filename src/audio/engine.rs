@@ -89,6 +89,7 @@ struct EngineCtx {
     monitor_target: Rc<RefCell<Option<String>>>,
     mixer: Rc<RefCell<super::mixer::Mixer>>,
     router: Rc<RefCell<Router>>,
+    stream_watcher: Rc<streams::StreamWatcher>,
 }
 
 fn setup_completion_timer(

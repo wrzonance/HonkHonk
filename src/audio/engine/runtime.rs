@@ -60,5 +60,6 @@ fn engine_context(
         monitor_target: Rc::new(RefCell::new(monitor_device)),
         mixer,
         router: setup.routing.router.clone(),
+        stream_watcher: setup.stream_watcher.clone(),
     })
 }

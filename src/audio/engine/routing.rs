@@ -70,7 +70,7 @@ impl RoutingRuntime {
                 ..
             } => router.on_port_added(id, node_id, channel, direction),
             StreamEvent::PortRemoved { id } => router.on_port_removed(id),
-            StreamEvent::SourceUpdated { .. } => {}
+            StreamEvent::SourceUpdated { .. } | StreamEvent::SourceLevelChanged { .. } => {}
         }
     }
 

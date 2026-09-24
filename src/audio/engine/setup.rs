@@ -12,7 +12,7 @@ pub(super) struct RoutingSetup {
     _sink: pipewire::node::Node,
     _source: Option<pipewire::node::Node>,
     _graph_watcher: GraphWatcher,
-    _stream_watcher: streams::StreamWatcher,
+    pub stream_watcher: Rc<streams::StreamWatcher>,
     _feedback_monitor: FeedbackMonitor,
 }
 
@@ -62,7 +62,7 @@ impl RoutingSetup {
             _sink: sink,
             _source: source,
             _graph_watcher: graph_watcher,
-            _stream_watcher: stream_watcher,
+            stream_watcher: Rc::new(stream_watcher),
             _feedback_monitor: feedback_monitor,
         })
     }

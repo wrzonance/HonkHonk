@@ -195,3 +195,78 @@ fn microphone_feedback_updates_control_and_blocks_cooldown_reenable() {
             .any(|command| matches!(command, AudioCommand::SetMicPassthrough(true)))
     );
 }
+
+fn identified(id: u32, pid: u32) -> StreamEvent {
+    StreamEvent::SourceAdded {
+        id,
+        name: "Browser".into(),
+        app_name: Some("Browser".into()),
+        app_binary: Some("browser".into()),
+        app_pid: Some(pid),
+        icon: None,
+        media_name: None,
+    }
+}
+
+#[test]
+fn source_levels_default_and_restore_across_process_and_node_restarts() {
+    let mut app = app();
+    let _ = app.handle_audio_event(AudioEvent::Stream(identified(8, 100)));
+    assert_eq!(app.mixer.sources[&8].level.volume, 1.0);
+    app.config.mixer_safe_mode = false;
+    let _ = app.handle_audio_event(AudioEvent::RoutingChanged {
+        node_id: 8,
+        enabled: true,
+    });
+    change(&mut app, MixerMessage::Volume(8, 0.4));
+    change(&mut app, MixerMessage::Mute(8, true));
+    assert_eq!(app.mixer.sources[&8].level.volume, 0.4);
+    assert!(app.mixer.sources[&8].level.muted);
+    let saved = serde_json::to_string(&app.config).unwrap();
+    let mut restored = HonkHonk::new_for_test();
+    restored.config = serde_json::from_str(&saved).unwrap();
+    restored.audio = Some(crate::audio::test_handle().0);
+    let _ = restored.handle_audio_event(AudioEvent::Stream(identified(19, 200)));
+    let _ = restored.handle_audio_event(AudioEvent::RoutingChanged {
+        node_id: 19,
+        enabled: true,
+    });
+    assert!(
+        matches!(restored.audio.as_ref().unwrap().sent_commands().last(),
+        Some(AudioCommand::Router(RouterCommand::SetSourceLevel { source_node_id: 19, level }))
+        if level.volume == 0.4 && level.muted)
+    );
+}
+
+#[test]
+fn level_controls_ignore_unrouted_unknown_and_monitor_sources() {
+    let mut app = app();
+    for id in [7, 999] {
+        change(&mut app, MixerMessage::Volume(id, 0.2));
+        change(&mut app, MixerMessage::Mute(id, true));
+    }
+    app.config.mixer_safe_mode = false;
+    app.mixer.sources.get_mut(&7).unwrap().enabled = true;
+    app.mixer.sources.get_mut(&7).unwrap().monitor = true;
+    change(&mut app, MixerMessage::Mute(7, true));
+    assert!(app.audio.as_ref().unwrap().sent_commands().is_empty());
+    assert!(app.config.source_levels.is_empty());
+}
+
+#[test]
+fn server_levels_update_display_without_destroying_saved_preference() {
+    let mut app = app();
+    let _ = app.handle_audio_event(AudioEvent::Stream(identified(8, 1)));
+    app.config.mixer_safe_mode = false;
+    app.mixer.sources.get_mut(&8).unwrap().enabled = true;
+    change(&mut app, MixerMessage::Volume(8, 0.6));
+    let saved = app.config.source_levels.clone();
+    let _ = app.handle_audio_event(AudioEvent::Stream(StreamEvent::SourceLevelChanged {
+        id: 8,
+        volume: Some(0.3),
+        muted: Some(true),
+    }));
+    assert_eq!(app.mixer.sources[&8].level.volume, 0.3);
+    assert!(app.mixer.sources[&8].level.muted);
+    assert_eq!(app.config.source_levels, saved);
+}

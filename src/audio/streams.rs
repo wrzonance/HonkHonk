@@ -7,10 +7,8 @@
 //! per-stream volume work (#29) can reconnect intent across stream
 //! destroy/recreate cycles.
 //!
-//! This module is observation-only. It does NOT:
-//! - render any UI (issue #28),
-//! - create links / route audio (issue #27),
-//! - manipulate stream volume / mute (issue #29).
+//! Observes streams and exposes node-wide volume/mute Props control (#29).
+//! Routing and safety decisions remain owned by the router.
 //!
 //! It owns an independent registry listener attached to the same
 //! `pipewire::core::CoreRc` already managed by `audio::engine`.
@@ -25,6 +23,9 @@ use std::sync::mpsc;
 use pipewire::spa::utils::dict::DictRef;
 
 use super::error::{AudioError, WatcherError};
+
+mod volume;
+pub use volume::SourceLevel;
 
 const STREAM_OUTPUT_AUDIO: &str = "Stream/Output/Audio";
 
@@ -57,6 +58,12 @@ pub enum StreamEvent {
     },
     /// A previously tracked node was destroyed.
     SourceRemoved { id: u32 },
+    /// Server-reported node Props, including changes made by other clients.
+    SourceLevelChanged {
+        id: u32,
+        volume: Option<f32>,
+        muted: Option<bool>,
+    },
     /// Tracked node's transient state changed (e.g. current track title).
     /// Reserved for future `node.info` change events (#28 will consume).
     SourceUpdated { id: u32, media_name: Option<String> },
@@ -256,6 +263,7 @@ fn bind_and_track_node(
 
     let id = global.id;
     let tx_info = tx.clone();
+    let tx_param = tx.clone();
     let emitted_added = Rc::new(RefCell::new(false));
     let emitted_added_clone = emitted_added.clone();
 
@@ -264,7 +272,15 @@ fn bind_and_track_node(
         .info(move |info| {
             on_node_info(id, info, &emitted_added_clone, &tx_info);
         })
+        .param(move |_, kind, _, _, pod| {
+            if kind == pipewire::spa::param::ParamType::Props
+                && let Some(event) = pod.and_then(|pod| volume::observe(id, pod.as_bytes()))
+            {
+                let _ = tx_param.send(event);
+            }
+        })
         .register();
+    node.subscribe_params(&[pipewire::spa::param::ParamType::Props]);
 
     tracked.borrow_mut().insert(
         id,

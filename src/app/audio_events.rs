@@ -25,7 +25,7 @@ impl HonkHonk {
                 self.mixer.mic_cooldown = Some(Instant::now() + Duration::from_secs(2));
                 self.persist_config();
             }
-            AudioEvent::Stream(event) => self.mixer.stream(event, Instant::now()),
+            AudioEvent::Stream(event) => self.mixer_stream(event),
             AudioEvent::FeedbackDetected { suspected_source } => {
                 self.mixer
                     .feedback(suspected_source.as_ref(), Instant::now());
@@ -40,6 +40,9 @@ impl HonkHonk {
             }
             AudioEvent::RoutingChanged { node_id, enabled } => {
                 self.mixer.routed(node_id, enabled);
+                if enabled {
+                    self.restore_source_level(node_id);
+                }
             }
             AudioEvent::Ready => self.audio_ready(),
             AudioEvent::PlaybackStarted {

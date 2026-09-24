@@ -86,6 +86,23 @@ fn router_command(ctx: &EngineCtx, cmd: super::super::router::RouterCommand) {
         RouterCommand::UnrouteSource { source_node_id } => {
             router.handle_command_unroute_source(source_node_id)
         }
+        RouterCommand::SetSourceLevel {
+            source_node_id,
+            level,
+        } => {
+            if let Err(reason) = router.check_source_control(source_node_id) {
+                let _ = ctx.evt_tx.send(AudioEvent::RouteRejected {
+                    node_id: source_node_id,
+                    reason,
+                });
+            } else if let Err(error) = ctx.stream_watcher.set_level(source_node_id, level) {
+                let _ = ctx
+                    .evt_tx
+                    .send(AudioEvent::Error(EngineErrorEvent::Routing {
+                        detail: format!("source {source_node_id} volume: {error}"),
+                    }));
+            }
+        }
         RouterCommand::SetSafeMode(enabled) => router.set_safe_mode(enabled),
         RouterCommand::UndoRoutingChange => router.restore_last_change(),
         RouterCommand::UnrouteAll => router.handle_command_unroute_all(),
