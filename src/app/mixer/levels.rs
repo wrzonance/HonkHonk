@@ -6,30 +6,47 @@ impl HonkHonk {
             StreamEvent::SourceAdded { id, .. } => Some(*id),
             _ => None,
         };
+        let first_observation = match &event {
+            StreamEvent::SourceLevelChanged { id, .. } => self
+                .mixer
+                .sources
+                .get(id)
+                .filter(|source| !source.level_observed)
+                .map(|_| *id),
+            _ => None,
+        };
         self.mixer.stream(event, Instant::now());
-        if let Some(id) = added {
-            let level = self.saved_source_level(id);
-            if let Some(source) = self.mixer.sources.get_mut(&id) {
-                source.level = level;
-            }
+        if let Some(id) = added
+            && let Some(level) = self.saved_source_level(id)
+            && let Some(source) = self.mixer.sources.get_mut(&id)
+        {
+            source.level = level;
+        }
+        if let Some(id) = first_observation {
+            self.restore_source_level(id);
         }
     }
 
-    fn saved_source_level(&self, id: u32) -> crate::audio::streams::SourceLevel {
+    fn saved_source_level(&self, id: u32) -> Option<crate::audio::streams::SourceLevel> {
         self.mixer
             .sources
             .get(&id)
             .and_then(|s| s.preference_key.as_ref())
             .and_then(|key| self.config.source_levels.get(key))
             .copied()
-            .unwrap_or_default()
-            .normalized()
+            .map(crate::audio::streams::SourceLevel::normalized)
     }
 
     pub(in crate::app) fn restore_source_level(&mut self, id: u32) {
-        let level = self.saved_source_level(id);
+        let Some(level) = self.saved_source_level(id) else {
+            return;
+        };
         if let Some(source) = self.mixer.sources.get_mut(&id) {
-            if !source.enabled || source.blocked(Instant::now()) || self.config.mixer_safe_mode {
+            if !source.enabled
+                || !source.level_observed
+                || source.blocked(Instant::now())
+                || self.config.mixer_safe_mode
+            {
                 return;
             }
             source.level = level;
@@ -45,6 +62,7 @@ impl HonkHonk {
             return;
         };
         if !source.enabled
+            || !source.level_observed
             || source.blocked(Instant::now())
             || self.config.mixer_safe_mode
             || volume.is_some_and(|v| !v.is_finite())

@@ -28,6 +28,7 @@ pub(crate) struct MixerState {
 
 pub(crate) struct MixerSource {
     pub level: crate::audio::streams::SourceLevel,
+    pub level_observed: bool,
     pub preference_key: Option<String>,
     pub name: String,
     pub media_name: Option<String>,
@@ -56,6 +57,7 @@ impl MixerState {
             } => self.source_added(id, name, media_name, preference_key(app_name, app_binary)),
             StreamEvent::SourceLevelChanged { id, volume, muted } => {
                 if let Some(source) = self.sources.get_mut(&id) {
+                    source.level_observed |= volume.is_some_and(f32::is_finite) && muted.is_some();
                     if let Some(v) = volume.filter(|v| v.is_finite()) {
                         source.level.volume = v.clamp(0.0, 1.0);
                     }
@@ -119,6 +121,7 @@ impl MixerState {
             id,
             MixerSource {
                 level: Default::default(),
+                level_observed: false,
                 preference_key,
                 name,
                 media_name,
@@ -151,6 +154,7 @@ impl MixerState {
         }
         if self.feedback_until.is_some_and(|until| until <= now) {
             self.feedback_until = None;
+            self.feedback_source = None;
         }
     }
 

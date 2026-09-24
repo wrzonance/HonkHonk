@@ -1,18 +1,20 @@
 //! Observe the existing sink monitor. No samples are written into the routing graph.
-use super::FeedbackDetector;
+use super::FeedbackObservation;
+use crate::audio::voices::VoicePool;
 use crate::audio::{AudioError, AudioEvent, EngineErrorEvent};
 use pipewire::{self as pw, spa};
-use std::{cell::Cell, rc::Rc, sync::mpsc};
+use std::{cell::RefCell, rc::Rc, sync::mpsc};
 
 pub(crate) struct FeedbackMonitor {
     _stream: pw::stream::StreamRc,
-    _listener: pw::stream::StreamListener<FeedbackDetector>,
+    _listener: pw::stream::StreamListener<()>,
 }
 
 impl FeedbackMonitor {
     pub fn start(
         core: pw::core::CoreRc,
-        pending: Rc<Cell<bool>>,
+        observation: Rc<RefCell<FeedbackObservation>>,
+        voices: Rc<RefCell<VoicePool>>,
         events: mpsc::Sender<AudioEvent>,
     ) -> Result<Self, AudioError> {
         let stream = pw::stream::StreamRc::new(
@@ -33,8 +35,10 @@ impl FeedbackMonitor {
         )
         .map_err(|e| AudioError::StreamCreation(format!("feedback observer: {e}")))?;
         let listener = stream
-            .add_local_listener_with_user_data(FeedbackDetector::new(48_000, 2))
-            .process(move |stream, detector| observe(stream, detector, &pending))
+            .add_local_listener_with_user_data(())
+            .process(move |stream, _| {
+                observe(stream, &mut observation.borrow_mut(), &voices.borrow())
+            })
             .state_changed(move |_, _, _, state| {
                 if let pw::stream::StreamState::Error(detail) = state {
                     let _ = events.send(AudioEvent::Error(EngineErrorEvent::FeedbackMonitor {
@@ -62,7 +66,7 @@ impl FeedbackMonitor {
     }
 }
 
-fn observe(stream: &pw::stream::Stream, detector: &mut FeedbackDetector, pending: &Cell<bool>) {
+fn observe(stream: &pw::stream::Stream, observation: &mut FeedbackObservation, voices: &VoicePool) {
     let Some(mut buffer) = stream.dequeue_buffer() else {
         return;
     };
@@ -82,7 +86,5 @@ fn observe(stream: &pw::stream::Stream, detector: &mut FeedbackDetector, pending
         .0
         .iter()
         .map(|b| f32::from_le_bytes(*b));
-    if detector.observe(samples) {
-        pending.set(true);
-    }
+    observation.observe(samples, voices);
 }

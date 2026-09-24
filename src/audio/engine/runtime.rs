@@ -53,7 +53,7 @@ fn engine_context(
     Ok(EngineCtx {
         registry_sink_id: setup.sink_id.clone(),
         core,
-        voices: Rc::new(RefCell::new(VoicePool::new())),
+        voices: setup.routing.voices.clone(),
         playback_streams: Rc::new(RefCell::new(PlaybackStreams::default())),
         evt_tx,
         engine_volume: Rc::new(Cell::new(1.0)),

@@ -23,11 +23,27 @@ fn low_level_resets_sustained_window_and_silence_does_not_trigger() {
 }
 
 #[test]
-fn growth_over_twelve_db_in_fifty_ms_triggers_but_ordinary_changes_do_not() {
+fn growth_requires_three_consecutive_windows_from_an_already_loud_baseline() {
     let mut detector = FeedbackDetector::new(48_000, 2);
-    assert!(!block(&mut detector, 0.1, 10));
+    assert!(!block(&mut detector, 0.11, 10));
     assert!(!block(&mut detector, 0.2, 10));
-    assert!(block(&mut detector, 0.45, 10));
+    assert!(!block(&mut detector, 0.45, 10));
+    assert!(block(&mut detector, 0.6, 10));
+}
+
+#[test]
+fn ordinary_quiet_to_loud_onset_does_not_trip() {
+    let mut detector = FeedbackDetector::new(48_000, 2);
+    assert!(!block(&mut detector, 0.02, 20));
+    assert!(!block(&mut detector, 0.7, 10));
+}
+
+#[test]
+fn plateau_breaks_consecutive_growth() {
+    let mut detector = FeedbackDetector::new(48_000, 2);
+    for amplitude in [0.11, 0.2, 0.2, 0.3, 0.5] {
+        assert!(!block(&mut detector, amplitude, 10));
+    }
 }
 
 #[test]

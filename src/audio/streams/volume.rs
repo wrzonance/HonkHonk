@@ -1,10 +1,11 @@
-//! Node-wide Props control; no gain processing or extra audio links.
+//! Node-wide Props control and conditional restoration on route teardown.
 use super::{StreamEvent, StreamWatcher};
-use pipewire::spa::{
-    self,
-    pod::{Object, Property, Value},
-};
+use pipewire::spa;
 use serde::{Deserialize, Serialize};
+mod control;
+mod props;
+pub(super) use control::NodeVolume;
+use props::Props;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -37,6 +38,8 @@ impl SourceLevel {
 pub enum VolumeError {
     #[error("source node is no longer available")]
     MissingNode,
+    #[error("source volume/mute Props have not been observed yet")]
+    Unobserved,
     #[error("could not serialize source volume Props: {0}")]
     Serialize(#[source] Box<dyn std::error::Error>),
     #[error("serialized volume Props are invalid")]
@@ -48,53 +51,26 @@ impl StreamWatcher {
     pub(crate) fn set_level(&self, id: u32, level: SourceLevel) -> Result<(), VolumeError> {
         let nodes = self._tracked_nodes.borrow();
         let tracked = nodes.get(&id).ok_or(VolumeError::MissingNode)?;
-        let bytes = encode(level)?;
-        let pod = spa::pod::Pod::from_bytes(&bytes).ok_or(VolumeError::InvalidPod)?;
-        tracked
-            ._node
-            .set_param(spa::param::ParamType::Props, 0, pod);
+        let bytes = tracked.volume.borrow_mut().set_level(level)?;
+        write_props(&tracked._node, &bytes)
+    }
+
+    pub(crate) fn restore_level(&self, id: u32) -> Result<(), VolumeError> {
+        let nodes = self._tracked_nodes.borrow();
+        let Some(tracked) = nodes.get(&id) else {
+            return Ok(());
+        };
+        if let Some(bytes) = tracked.volume.borrow_mut().release()? {
+            write_props(&tracked._node, &bytes)?;
+        }
         Ok(())
     }
 }
 
-fn encode(level: SourceLevel) -> Result<Vec<u8>, VolumeError> {
-    let level = level.normalized();
-    let value = Value::Object(Object {
-        type_: spa::utils::SpaTypes::ObjectParamProps.as_raw(),
-        id: spa::param::ParamType::Props.as_raw(),
-        properties: vec![
-            Property::new(spa::sys::SPA_PROP_volume, Value::Float(level.volume)),
-            Property::new(spa::sys::SPA_PROP_mute, Value::Bool(level.muted)),
-        ],
-    });
-    spa::pod::serialize::PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &value)
-        .map(|result| result.0.into_inner())
-        .map_err(|e| VolumeError::Serialize(Box::new(e)))
-}
-
-pub(super) fn observe(id: u32, bytes: &[u8]) -> Option<StreamEvent> {
-    let (_, Value::Object(object)) =
-        spa::pod::deserialize::PodDeserializer::deserialize_from::<Value>(bytes).ok()?
-    else {
-        return None;
-    };
-    if object.type_ != spa::utils::SpaTypes::ObjectParamProps.as_raw() {
-        return None;
-    }
-    let mut volume = None;
-    let mut muted = None;
-    for property in object.properties {
-        match (property.key, property.value) {
-            (spa::sys::SPA_PROP_volume, Value::Float(v)) if v.is_finite() => volume = Some(v),
-            (spa::sys::SPA_PROP_mute, Value::Bool(v)) => muted = Some(v),
-            _ => {}
-        }
-    }
-    (volume.is_some() || muted.is_some()).then_some(StreamEvent::SourceLevelChanged {
-        id,
-        volume,
-        muted,
-    })
+fn write_props(node: &pipewire::node::Node, bytes: &[u8]) -> Result<(), VolumeError> {
+    let pod = spa::pod::Pod::from_bytes(bytes).ok_or(VolumeError::InvalidPod)?;
+    node.set_param(spa::param::ParamType::Props, 0, pod);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -102,20 +78,22 @@ mod tests {
     use super::*;
     #[test]
     fn props_preserve_gain_when_muted_and_reject_malformed_observations() {
-        let bytes = encode(SourceLevel {
-            volume: 0.4,
-            muted: true,
-        })
+        let bytes = Props {
+            volume: Some(0.4),
+            muted: Some(true),
+            channels: None,
+        }
+        .encode()
         .unwrap();
         assert_eq!(
-            observe(7, &bytes),
+            NodeVolume::default().observe(7, &bytes),
             Some(super::super::StreamEvent::SourceLevelChanged {
                 id: 7,
                 volume: Some(0.4),
                 muted: Some(true),
             })
         );
-        assert_eq!(observe(7, &[0, 1]), None);
+        assert_eq!(NodeVolume::default().observe(7, &[0, 1]), None);
     }
     #[test]
     fn default_and_invalid_levels_are_bounded() {
@@ -136,3 +114,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "volume/control_tests.rs"]
+mod control_tests;

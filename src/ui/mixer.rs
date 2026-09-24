@@ -158,7 +158,8 @@ fn source_level<'a>(
     if !source.enabled {
         return column![].into();
     }
-    let enabled = !source.blocked(Instant::now()) && !app.config.mixer_safe_mode;
+    let enabled =
+        source.level_observed && !source.blocked(Instant::now()) && !app.config.mixer_safe_mode;
     let control = slider(0.0..=1.0, source.level.volume, move |v| {
         message(MixerMessage::Volume(id, v))
     })

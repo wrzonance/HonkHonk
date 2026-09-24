@@ -26,6 +26,7 @@ use super::error::{AudioError, WatcherError};
 
 mod volume;
 pub use volume::SourceLevel;
+pub(crate) use volume::VolumeError;
 
 const STREAM_OUTPUT_AUDIO: &str = "Stream/Output/Audio";
 
@@ -105,6 +106,7 @@ struct HandleGlobalCtx {
 /// Per-node bookkeeping: proxy keeps the bind alive, listener fires
 /// `node.info` once props arrive in full.
 struct TrackedNode {
+    volume: Rc<RefCell<volume::NodeVolume>>,
     _node: pipewire::node::Node,
     _listener: pipewire::node::NodeListener,
 }
@@ -264,6 +266,8 @@ fn bind_and_track_node(
     let id = global.id;
     let tx_info = tx.clone();
     let tx_param = tx.clone();
+    let volume = Rc::new(RefCell::new(volume::NodeVolume::default()));
+    let observed = volume.clone();
     let emitted_added = Rc::new(RefCell::new(false));
     let emitted_added_clone = emitted_added.clone();
 
@@ -274,7 +278,8 @@ fn bind_and_track_node(
         })
         .param(move |_, kind, _, _, pod| {
             if kind == pipewire::spa::param::ParamType::Props
-                && let Some(event) = pod.and_then(|pod| volume::observe(id, pod.as_bytes()))
+                && let Some(event) =
+                    pod.and_then(|pod| observed.borrow_mut().observe(id, pod.as_bytes()))
             {
                 let _ = tx_param.send(event);
             }
@@ -285,6 +290,7 @@ fn bind_and_track_node(
     tracked.borrow_mut().insert(
         id,
         TrackedNode {
+            volume,
             _node: node,
             _listener: listener,
         },

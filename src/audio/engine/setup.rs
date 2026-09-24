@@ -1,4 +1,4 @@
-use super::super::feedback::FeedbackMonitor;
+use super::super::feedback::{FeedbackMonitor, FeedbackObservation};
 use super::super::routing_graph::{GraphWatcher, RoutingGraph};
 use super::routing::RoutingRuntime;
 use super::*;
@@ -41,12 +41,18 @@ impl RoutingSetup {
             },
         )?);
         let (stream_watcher, stream_rx) = spawn_stream_watcher(&core)?;
+        let stream_watcher = Rc::new(stream_watcher);
         let (router_tx, router_rx) = mpsc::channel();
         let router = Rc::new(RefCell::new(Router::new(router_tx)));
         router.borrow_mut().use_graph(graph);
-        let feedback_pending = Rc::new(Cell::new(false));
-        let feedback_monitor =
-            FeedbackMonitor::start(core.clone(), feedback_pending.clone(), events.clone())?;
+        let observation = Rc::new(RefCell::new(FeedbackObservation::new()));
+        let voices = Rc::new(RefCell::new(VoicePool::new()));
+        let feedback_monitor = FeedbackMonitor::start(
+            core.clone(),
+            observation.clone(),
+            voices.clone(),
+            events.clone(),
+        )?;
         Ok(Self {
             routing: RoutingRuntime {
                 router,
@@ -54,7 +60,9 @@ impl RoutingSetup {
                 sink_ports,
                 core,
                 events,
-                feedback_pending,
+                observation,
+                voices,
+                stream_watcher: stream_watcher.clone(),
             },
             sink_id,
             stream_rx,
@@ -62,7 +70,7 @@ impl RoutingSetup {
             _sink: sink,
             _source: source,
             _graph_watcher: graph_watcher,
-            stream_watcher: Rc::new(stream_watcher),
+            stream_watcher,
             _feedback_monitor: feedback_monitor,
         })
     }
