@@ -64,6 +64,15 @@ fn duration_scan_builder(
 }
 
 impl HonkHonk {
+    fn mixer_subscription(&self) -> Subscription<Message> {
+        if self.mixer.needs_tick() {
+            iced::time::every(Duration::from_millis(50))
+                .map(|now| Message::Mixer(crate::ui::mixer::MixerMessage::Tick(now)))
+        } else {
+            Subscription::none()
+        }
+    }
+
     fn preparation_subscription(&self) -> Option<Subscription<Message>> {
         self.preparation.request.as_ref().map(|request| {
             Subscription::run_with(Arc::clone(request), preparation::preparation_builder)
@@ -109,7 +118,7 @@ impl HonkHonk {
             }
         });
 
-        let mut subs = vec![shortcuts, tray_poll, events];
+        let mut subs = vec![shortcuts, tray_poll, events, self.mixer_subscription()];
 
         if !self.durations_loaded {
             subs.push(Subscription::run_with(

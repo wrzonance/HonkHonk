@@ -49,6 +49,7 @@ impl RoutingRuntime {
 
     fn stream_event(&self, event: streams::StreamEvent) {
         use streams::StreamEvent;
+        let _ = self.events.send(AudioEvent::Stream(event.clone()));
         let mut router = self.router.borrow_mut();
         match event {
             StreamEvent::SourceAdded {
@@ -66,6 +67,7 @@ impl RoutingRuntime {
                 node_id,
                 channel,
                 direction,
+                ..
             } => router.on_port_added(id, node_id, channel, direction),
             StreamEvent::PortRemoved { id } => router.on_port_removed(id),
             StreamEvent::SourceUpdated { .. } => {}

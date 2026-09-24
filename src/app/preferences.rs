@@ -37,6 +37,13 @@ impl HonkHonk {
     }
 
     pub(super) fn change_mic_passthrough(&mut self, v: bool) -> Task<Message> {
+        if v && self
+            .mixer
+            .mic_cooldown
+            .is_some_and(|until| until > Instant::now())
+        {
+            return Task::none();
+        }
         let config = AppConfig {
             mic_passthrough: v,
             ..self.config.clone()

@@ -38,6 +38,9 @@ mod lifecycle;
 pub mod macro_editor;
 mod macros;
 mod message;
+pub(crate) mod mixer;
+#[cfg(test)]
+mod mixer_tests;
 #[cfg(test)]
 mod notice_tests;
 pub(crate) mod notices;
@@ -91,6 +94,7 @@ pub use crate::settings::SettingCategory as SettingsSection;
 pub const MIN_WINDOW_DIMENSION: f32 = 200.0;
 
 pub struct HonkHonk {
+    pub(crate) mixer: mixer::MixerState,
     processing_ui: processing::ProcessingUi,
     import: import::ImportState,
     visible: bool,

@@ -49,6 +49,8 @@ fn density_round_trips_through_json() {
 #[test]
 fn round_trip_serialize_deserialize() {
     let config = AppConfig {
+        mixer_safe_mode: true,
+        mixer_show_monitors: false,
         processing: Default::default(),
         sound_directories: vec![PathBuf::from("/tmp/sounds")],
         volume: 0.5,
@@ -78,6 +80,8 @@ fn save_and_load_from_path() {
     let path = dir.path().join("config.json");
 
     let config = AppConfig {
+        mixer_safe_mode: true,
+        mixer_show_monitors: false,
         processing: Default::default(),
         sound_directories: vec![PathBuf::from("/home/user/sounds")],
         volume: 0.7,

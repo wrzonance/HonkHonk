@@ -25,6 +25,7 @@ impl RegistryGuard {
             FeedbackSource { node_id: id, name }
         };
         self.apply_passthrough(false);
+        let _ = self.evt_tx.send(AudioEvent::MicrophoneFeedbackMuted);
         self.state.borrow_mut().mic_cooldown = Some(now + Duration::from_secs(2));
         Some(source)
     }

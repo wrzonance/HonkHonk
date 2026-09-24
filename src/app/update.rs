@@ -9,6 +9,7 @@ impl HonkHonk {
     )]
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Mixer(message) => self.update_mixer(message),
             Message::GlobalProcessingChanged(settings) => self.change_processing(settings),
             Message::SoundProcessingChanged(settings) => {
                 if !self.processing_ui.loading {
