@@ -25,22 +25,22 @@ impl RegistryGuard {
             FeedbackSource { node_id: id, name }
         };
         self.apply_passthrough(false);
+        let _ = self.evt_tx.send(AudioEvent::MicrophoneFeedbackMuted);
         self.state.borrow_mut().mic_cooldown = Some(now + Duration::from_secs(2));
         Some(source)
     }
 
     pub(super) fn cooling_down(&self) -> bool {
-        let state = self.state.borrow();
-        if state
-            .mic_cooldown
-            .is_some_and(|until| until > Instant::now())
-        {
-            if let Some(node_id) = state.mic_node_id {
-                let _ = self.evt_tx.send(AudioEvent::RouteRejected {
-                    node_id,
-                    reason: RouteRejection::Cooldown,
-                });
-            }
+        self.state
+            .borrow_mut()
+            .cooling_down(Instant::now(), &self.evt_tx)
+    }
+}
+
+impl RegistryState {
+    pub(super) fn cooling_down(&mut self, now: Instant, events: &mpsc::Sender<AudioEvent>) -> bool {
+        if self.mic_cooldown.is_some_and(|until| until > now) {
+            self.report_mic_rejection(RouteRejection::Cooldown, events);
             return true;
         }
         false

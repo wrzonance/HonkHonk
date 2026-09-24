@@ -29,6 +29,7 @@ pub(crate) struct NodeInfo {
     pub app: String,
     pub process: Option<u32>,
     pub client: Option<u32>,
+    pub link_group: String,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +59,15 @@ impl NodeInfo {
                     || (!self.app.is_empty() && self.app == other.app)
             }
         }
+    }
+
+    fn internally_connected(&self, other: &Self) -> bool {
+        // PipeWire's scalar node.link-group identifies coupled streams. Treat
+        // matching nonempty IDs as possible signal paths even across classes.
+        (!self.link_group.is_empty() && self.link_group == other.link_group)
+            || (self.class == "Stream/Input/Audio"
+                && other.class == "Stream/Output/Audio"
+                && self.same_application(other))
     }
 }
 
@@ -116,17 +126,11 @@ impl RoutingGraph {
                     .filter(|(from, _)| *from == id)
                     .map(|(_, to)| *to),
             );
-            if let Some(capture) = self
-                .nodes
-                .get(&id)
-                .filter(|n| n.class == "Stream/Input/Audio")
-            {
+            if let Some(node) = self.nodes.get(&id) {
                 pending.extend(
                     self.nodes
                         .iter()
-                        .filter(|(_, n)| {
-                            n.class == "Stream/Output/Audio" && capture.same_application(n)
-                        })
+                        .filter(|(_, n)| node.internally_connected(n))
                         .map(|(&id, _)| id),
                 );
             }

@@ -5,6 +5,16 @@ use super::{HonkHonk, Message};
 use crate::audio::{AudioEvent, EngineErrorEvent};
 
 #[test]
+fn microphone_feedback_mute_updates_passthrough_config() {
+    let mut app = HonkHonk::new_for_test();
+    app.config.mic_passthrough = true;
+    let _ = app.update(Message::AudioEvent(AudioEvent::MicrophoneFeedbackMuted));
+    assert!(!app.config.mic_passthrough);
+    let _ = app.update(Message::AudioEvent(AudioEvent::MicrophoneFeedbackMuted));
+    assert!(!app.config.mic_passthrough);
+}
+
+#[test]
 fn source_first_run_written_queues_persistent_notice() {
     let mut app = HonkHonk::new_for_test();
     assert!(app.notices().is_empty());

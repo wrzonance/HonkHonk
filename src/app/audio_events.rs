@@ -20,6 +20,10 @@ Select 'HonkHonk Mic' as your input in Discord/OBS."
 impl HonkHonk {
     pub(super) fn handle_audio_event(&mut self, event: AudioEvent) -> Task<Message> {
         match event {
+            AudioEvent::MicrophoneFeedbackMuted => {
+                self.config.mic_passthrough = false;
+                self.persist_config();
+            }
             AudioEvent::FeedbackDetected { suspected_source } => {
                 self.feedback_notice(suspected_source)
             }

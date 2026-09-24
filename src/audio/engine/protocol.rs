@@ -58,6 +58,8 @@ pub enum AudioCommand {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
+    /// The microphone route was disconnected by feedback protection.
+    MicrophoneFeedbackMuted,
     Ready,
     FeedbackDetected {
         suspected_source: Option<crate::audio::FeedbackSource>,

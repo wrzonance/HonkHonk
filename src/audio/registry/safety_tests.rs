@@ -60,6 +60,27 @@ fn microphone_enable_during_cooldown_retains_intent_for_legal_retry() {
 }
 
 #[test]
+fn enable_during_cooldown_and_rechecks_emit_one_rejection() {
+    let now = std::time::Instant::now();
+    let mut state = routable_state();
+    state.mic_cooldown = Some(now + std::time::Duration::from_secs(2));
+    let intent = Cell::new(false);
+    let (tx, rx) = mpsc::channel();
+    assert!(!request_passthrough(&intent, true, || state.cooling_down(now, &tx)));
+    for _ in 0..3 {
+        let reason = mic_pairs(&state, now).unwrap_err();
+        state.report_mic_rejection(reason, &tx);
+    }
+    assert_eq!(
+        rx.try_iter().collect::<Vec<_>>(),
+        vec![AudioEvent::RouteRejected {
+            node_id: 2,
+            reason: RouteRejection::Cooldown,
+        }]
+    );
+}
+
+#[test]
 fn removed_mic_ports_do_not_poison_recreated_routing() {
     let mut state = state();
     state.remove_global(20);
