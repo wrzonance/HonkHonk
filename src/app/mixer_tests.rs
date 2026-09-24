@@ -220,3 +220,66 @@ fn feedback_banner_expires_at_timeout_without_clearing_row_warning() {
     );
     assert!(!app.mixer.sources[&7].enabled);
 }
+
+fn port(id: u32, node_id: u32, monitor: bool) -> StreamEvent {
+    StreamEvent::PortAdded {
+        id,
+        node_id,
+        channel: "FL".into(),
+        direction: crate::audio::Direction::Output,
+        monitor,
+    }
+}
+
+#[test]
+fn last_monitor_port_removal_restores_routing_without_affecting_other_sources() {
+    let mut app = app();
+    let now = Instant::now();
+    app.mixer.stream(added(9), now);
+    for event in [
+        port(70, 7, true),
+        port(71, 7, true),
+        port(72, 7, false),
+        port(90, 9, true),
+    ] {
+        app.mixer.stream(event, now);
+    }
+    change(&mut app, MixerMessage::SafeMode(false));
+    app.mixer.stream(StreamEvent::PortRemoved { id: 72 }, now);
+    app.mixer.stream(StreamEvent::PortRemoved { id: 70 }, now);
+    change(&mut app, MixerMessage::Route(7));
+    assert!(app.mixer.sources[&7].monitor);
+    assert!(app.mixer.confirm.is_none());
+    app.mixer.stream(StreamEvent::PortRemoved { id: 71 }, now);
+    app.mixer.stream(StreamEvent::PortRemoved { id: 71 }, now);
+    assert!(!app.mixer.sources[&7].monitor);
+    assert!(app.mixer.sources[&9].monitor);
+    change(&mut app, MixerMessage::Route(7));
+    assert_eq!(app.mixer.confirm, Some(7));
+}
+
+#[test]
+fn monitor_port_removed_before_source_metadata_does_not_mark_source() {
+    let mut app = HonkHonk::new_for_test();
+    let now = Instant::now();
+    app.mixer.stream(port(70, 7, true), now);
+    app.mixer.stream(StreamEvent::PortRemoved { id: 70 }, now);
+    app.mixer.stream(added(7), now);
+    assert!(!app.mixer.sources[&7].monitor);
+}
+
+#[test]
+fn source_removal_cleans_all_monitor_port_mappings_before_node_id_reuse() {
+    let mut app = app();
+    let now = Instant::now();
+    app.mixer.stream(port(70, 7, true), now);
+    app.mixer.stream(port(71, 7, true), now);
+    app.mixer.stream(StreamEvent::SourceRemoved { id: 7 }, now);
+    app.mixer.stream(added(7), now);
+    assert!(!app.mixer.sources[&7].monitor);
+    app.mixer.stream(port(72, 7, true), now);
+    app.mixer.stream(StreamEvent::PortRemoved { id: 72 }, now);
+    assert!(!app.mixer.sources[&7].monitor);
+    app.mixer.stream(StreamEvent::PortRemoved { id: 70 }, now);
+    assert!(!app.mixer.sources[&7].monitor);
+}

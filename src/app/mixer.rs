@@ -1,5 +1,5 @@
 //! Mixer state owns presentation; the router remains the authority for safety.
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use super::{HonkHonk, Message};
@@ -19,7 +19,7 @@ pub(crate) struct MixerState {
     pub sources: BTreeMap<u32, MixerSource>,
     pub confirm: Option<u32>,
     pending_titles: BTreeMap<u32, (Instant, String)>,
-    monitor_nodes: BTreeSet<u32>,
+    monitor_ports: BTreeMap<u32, u32>,
     pub mic_cooldown: Option<Instant>,
     pub now: Option<Instant>,
     pub feedback_source: Option<String>,
@@ -69,7 +69,7 @@ impl MixerState {
             StreamEvent::SourceRemoved { id } => {
                 self.sources.remove(&id);
                 self.pending_titles.remove(&id);
-                self.monitor_nodes.remove(&id);
+                self.monitor_ports.retain(|_, node_id| *node_id != id);
                 if self.confirm == Some(id) {
                     self.confirm = None;
                 }
@@ -81,13 +81,23 @@ impl MixerState {
                 self.title_changed(id, title, now);
             }
             StreamEvent::PortAdded {
+                id,
                 node_id,
                 monitor: true,
                 ..
             } => {
-                self.monitor_added(node_id);
+                self.monitor_added(id, node_id);
             }
+            StreamEvent::PortRemoved { id } => self.port_removed(id),
             _ => {}
+        }
+    }
+
+    fn port_removed(&mut self, id: u32) {
+        if let Some(node_id) = self.monitor_ports.remove(&id)
+            && let Some(source) = self.sources.get_mut(&node_id)
+        {
+            source.monitor = self.monitor_ports.values().any(|node| *node == node_id);
         }
     }
 
@@ -100,8 +110,8 @@ impl MixerState {
         }
     }
 
-    fn monitor_added(&mut self, node_id: u32) {
-        self.monitor_nodes.insert(node_id);
+    fn monitor_added(&mut self, id: u32, node_id: u32) {
+        self.monitor_ports.insert(id, node_id);
         if let Some(source) = self.sources.get_mut(&node_id) {
             source.monitor = true;
         }
@@ -126,7 +136,7 @@ impl MixerState {
                 name,
                 media_name,
                 enabled: false,
-                monitor: self.monitor_nodes.contains(&id),
+                monitor: self.monitor_ports.values().any(|node| *node == id),
                 warning: None,
                 cooldown: None,
             },
