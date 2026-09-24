@@ -7,6 +7,9 @@ pub(super) fn handle(
     mainloop: &pipewire::main_loop::MainLoopRc,
     cmd: AudioCommand,
 ) {
+    if ctx.shutdown.borrow().active() {
+        return;
+    }
     match cmd {
         cmd @ (AudioCommand::Play { .. }
         | AudioCommand::StopVoice(_)
@@ -25,7 +28,7 @@ pub(super) fn handle(
         AudioCommand::Router(cmd) => router_command(ctx, cmd),
         AudioCommand::Shutdown => {
             let _ = ctx.voices.borrow_mut().stop_all();
-            mainloop.quit();
+            super::runtime::begin_shutdown(ctx, mainloop);
         }
         cmd @ (AudioCommand::SetEffectBypass { .. }
         | AudioCommand::SetEffectParam { .. }

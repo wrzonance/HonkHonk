@@ -47,6 +47,19 @@ pub enum VolumeError {
 }
 
 impl StreamWatcher {
+    pub(crate) fn restore_all_levels(&self) -> Vec<(u32, VolumeError)> {
+        let nodes = self._tracked_nodes.borrow();
+        restore_levels(
+            nodes
+                .iter()
+                .map(|(id, tracked)| (*id, tracked.volume.as_ref())),
+            |id, bytes| {
+                let tracked = nodes.get(&id).ok_or(VolumeError::MissingNode)?;
+                write_props(&tracked._node, bytes)
+            },
+        )
+    }
+
     /// Caller must first verify the node still has an active, safe route.
     pub(crate) fn set_level(&self, id: u32, level: SourceLevel) -> Result<(), VolumeError> {
         let nodes = self._tracked_nodes.borrow();
@@ -71,6 +84,22 @@ fn write_props(node: &pipewire::node::Node, bytes: &[u8]) -> Result<(), VolumeEr
     let pod = spa::pod::Pod::from_bytes(bytes).ok_or(VolumeError::InvalidPod)?;
     node.set_param(spa::param::ParamType::Props, 0, pod);
     Ok(())
+}
+
+fn restore_levels<'a>(
+    nodes: impl IntoIterator<Item = (u32, &'a std::cell::RefCell<NodeVolume>)>,
+    mut write: impl FnMut(u32, &[u8]) -> Result<(), VolumeError>,
+) -> Vec<(u32, VolumeError)> {
+    nodes
+        .into_iter()
+        .filter_map(|(id, state)| {
+            let result = state
+                .borrow_mut()
+                .release()
+                .and_then(|bytes| bytes.map_or(Ok(()), |bytes| write(id, &bytes)));
+            result.err().map(|error| (id, error))
+        })
+        .collect()
 }
 
 #[cfg(test)]

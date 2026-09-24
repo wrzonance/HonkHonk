@@ -41,6 +41,7 @@ pub fn spawn(
 ) -> Result<AudioHandle, AudioError> {
     let (cmd_tx, cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
+    let (completion_tx, completion_rx) = mpsc::channel();
 
     std::thread::Builder::new()
         .name("honkhonk-pw".into())
@@ -59,10 +60,11 @@ pub fn spawn(
                     detail: e.to_string(),
                 }));
             }
+            let _ = completion_tx.send(());
         })
         .map_err(AudioError::ThreadSpawn)?;
 
-    Ok(AudioHandle::from_parts(cmd_tx, evt_rx))
+    Ok(AudioHandle::from_parts(cmd_tx, evt_rx).with_completion(completion_rx))
 }
 
 fn query_default_source_name() -> Option<String> {
@@ -90,6 +92,7 @@ struct EngineCtx {
     mixer: Rc<RefCell<super::mixer::Mixer>>,
     router: Rc<RefCell<Router>>,
     stream_watcher: Rc<streams::StreamWatcher>,
+    shutdown: Rc<RefCell<runtime::Shutdown>>,
 }
 
 fn setup_completion_timer(

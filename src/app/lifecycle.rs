@@ -2,6 +2,11 @@
 
 use super::*;
 
+#[cfg(test)]
+thread_local! {
+    pub(super) static CONFIG_SAVES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl HonkHonk {
     pub(super) fn stop_all(&mut self) -> Task<Message> {
         self.import.preview = self.import.preview.wrapping_add(1);
@@ -52,6 +57,8 @@ impl HonkHonk {
     /// Persists the live config unless persistence is disabled (test fixtures
     /// set `persist = false` so `cargo test` never writes the real config file).
     pub(super) fn persist_config(&self) {
+        #[cfg(test)]
+        CONFIG_SAVES.with(|count| count.set(count.get() + 1));
         if self.persist
             && let Err(e) = self.config.save()
         {

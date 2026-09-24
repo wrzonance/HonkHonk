@@ -78,7 +78,9 @@ impl HonkHonk {
         let level = source.level;
         if let Some(key) = &source.preference_key {
             self.config.source_levels.insert(key.clone(), level);
-            self.persist_config();
+            if muted.is_some() {
+                self.persist_config();
+            }
         }
         self.send_router(RouterCommand::SetSourceLevel {
             source_node_id: id,
@@ -92,6 +94,42 @@ mod tests {
     use super::*;
     use crate::app::mixer_tests::{app, change};
     use crate::audio::AudioEvent;
+
+    #[test]
+    fn slider_release_saves_preferences_once() {
+        let mut app = app();
+        let saves = crate::app::lifecycle::CONFIG_SAVES.with(|count| count.get());
+        change(&mut app, MixerMessage::VolumeSave);
+        assert_eq!(
+            crate::app::lifecycle::CONFIG_SAVES.with(|c| c.get()),
+            saves + 1
+        );
+    }
+
+    #[test]
+    fn dragging_volume_updates_audio_and_preferences_without_saving() {
+        let mut app = app();
+        app.config.mixer_safe_mode = false;
+        let _ = app.handle_audio_event(AudioEvent::Stream(identified(8, 1)));
+        observe_level(&mut app, 8);
+        app.mixer.sources.get_mut(&8).unwrap().enabled = true;
+        let saves = crate::app::lifecycle::CONFIG_SAVES.with(|count| count.get());
+        for volume in [0.7, 0.6, 0.5] {
+            change(&mut app, MixerMessage::Volume(8, volume));
+        }
+        let key = app.mixer.sources[&8].preference_key.as_ref().unwrap();
+        assert_eq!(app.config.source_levels[key].volume, 0.5);
+        let commands = app.audio.as_ref().unwrap().sent_commands();
+        assert_eq!(commands.len(), 3);
+        assert!(matches!(commands.last(), Some(AudioCommand::Router(
+            RouterCommand::SetSourceLevel { level, .. })) if level.volume == 0.5));
+        assert_eq!(crate::app::lifecycle::CONFIG_SAVES.with(|c| c.get()), saves);
+        change(&mut app, MixerMessage::Mute(8, true));
+        assert_eq!(
+            crate::app::lifecycle::CONFIG_SAVES.with(|c| c.get()),
+            saves + 1
+        );
+    }
     fn identified(id: u32, pid: u32) -> StreamEvent {
         StreamEvent::SourceAdded {
             id,

@@ -214,6 +214,7 @@ impl HonkHonk {
         match message {
             MixerMessage::Tick(now) => self.mixer.tick(now),
             MixerMessage::Volume(id, volume) => self.set_source_level(id, Some(volume), None),
+            MixerMessage::VolumeSave => self.persist_config(),
             MixerMessage::Mute(id, muted) => self.set_source_level(id, None, Some(muted)),
             MixerMessage::SafeMode(enabled) => {
                 self.config.mixer_safe_mode = enabled;

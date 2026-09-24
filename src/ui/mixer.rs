@@ -9,6 +9,7 @@ use std::time::Instant;
 #[derive(Debug, Clone, PartialEq)]
 pub enum MixerMessage {
     Volume(u32, f32),
+    VolumeSave,
     Mute(u32, bool),
     SafeMode(bool),
     ShowMonitors(bool),
@@ -163,6 +164,7 @@ fn source_level<'a>(
     let control = slider(0.0..=1.0, source.level.volume, move |v| {
         message(MixerMessage::Volume(id, v))
     })
+    .on_release(message(MixerMessage::VolumeSave))
     .step(0.01_f32)
     .width(120);
     column![

@@ -1,5 +1,33 @@
 use super::*;
 
+#[test]
+fn shutdown_restores_muted_and_audible_leases_but_preserves_external_override() {
+    let original = props(0.4, Some(vec![0.8, 0.3]), false);
+    let nodes: Vec<_> = (0..4)
+        .map(|id| {
+            let mut state = NodeVolume::default();
+            observed(&mut state, &original);
+            if id != 3 {
+                state.set_level(level(0.2, id == 0)).unwrap();
+            }
+            if id == 2 {
+                observed(&mut state, &props(0.7, None, true));
+            }
+            (id, std::cell::RefCell::new(state))
+        })
+        .collect();
+    let mut writes = Vec::new();
+    let errors = restore_levels(nodes.iter().map(|(id, state)| (*id, state)), |id, bytes| {
+        writes.push((id, Props::decode(bytes).unwrap()));
+        Ok(())
+    });
+    assert!(errors.is_empty());
+    assert_eq!(writes, vec![(0, original.clone()), (1, original)]);
+    restore_levels(nodes.iter().map(|(id, state)| (*id, state)), |_, _| {
+        panic!("leases must be released exactly once")
+    });
+}
+
 fn props(volume: f32, channels: Option<Vec<f32>>, muted: bool) -> Props {
     Props {
         volume: Some(volume),
