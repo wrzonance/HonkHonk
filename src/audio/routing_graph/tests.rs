@@ -100,3 +100,51 @@ fn graph_walk_terminates_on_unrelated_cycles() {
     graph.links.insert(51, (4, 2));
     assert_eq!(graph.check(3, &[(30, 10)]), Ok(()));
 }
+
+fn set_group(graph: &mut RoutingGraph, node: u32, group: &str) {
+    let props = pipewire::properties::properties! { "node.link-group" => group };
+    graph.update_node(node, props.dict());
+}
+
+#[test]
+fn rejects_implicit_link_group_path_without_shared_application_identity() {
+    let mut graph = graph();
+    graph.links.insert(50, (2, 4));
+    // Coupled nodes need not have the capture/playback media classes.
+    graph.nodes.get_mut(&4).unwrap().class = "Audio/Sink".into();
+    set_group(&mut graph, 4, "loopback-123");
+    set_group(&mut graph, 3, "loopback-123");
+    assert_eq!(graph.check(3, &[(30, 10)]), Err(RouteRejection::Cycle));
+}
+
+#[test]
+fn unrelated_empty_and_absent_link_groups_do_not_create_paths() {
+    let mut graph = graph();
+    graph.links.insert(50, (2, 4));
+    assert_eq!(graph.check(3, &[(30, 10)]), Ok(()));
+    for (capture, playback) in [("one", "two"), ("", ""), ("one", "")] {
+        set_group(&mut graph, 4, capture);
+        set_group(&mut graph, 3, playback);
+        assert_eq!(graph.check(3, &[(30, 10)]), Ok(()));
+    }
+}
+
+#[test]
+fn group_updates_and_node_removal_clear_implicit_paths() {
+    let mut graph = graph();
+    graph.links.insert(50, (2, 4));
+    set_group(&mut graph, 4, "coupled");
+    set_group(&mut graph, 3, "coupled");
+    assert_eq!(graph.check(3, &[(30, 10)]), Err(RouteRejection::Cycle));
+    set_group(&mut graph, 3, "different");
+    assert_eq!(graph.check(3, &[(30, 10)]), Ok(()));
+    set_group(&mut graph, 3, "coupled");
+    set_group(&mut graph, 4, "");
+    assert_eq!(graph.check(3, &[(30, 10)]), Ok(()));
+    set_group(&mut graph, 4, "coupled");
+    graph.remove(4);
+    assert_eq!(graph.check(3, &[(30, 10)]), Ok(()));
+    graph.nodes.insert(4, NodeInfo::default());
+    graph.links.insert(50, (2, 4));
+    assert_eq!(graph.check(3, &[(30, 10)]), Ok(()));
+}

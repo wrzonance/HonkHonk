@@ -73,12 +73,13 @@ fn bind_node(
 }
 
 impl RoutingGraph {
-    fn update_node(&mut self, id: u32, props: &DictRef) {
+    pub(super) fn update_node(&mut self, id: u32, props: &DictRef) {
         let node = self.nodes.entry(id).or_default();
         for (key, value) in [
             ("node.name", &mut node.name),
             ("media.class", &mut node.class),
             ("application.name", &mut node.app),
+            ("node.link-group", &mut node.link_group),
         ] {
             if let Some(text) = props.get(key) {
                 *value = text.into();
