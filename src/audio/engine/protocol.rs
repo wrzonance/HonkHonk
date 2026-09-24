@@ -60,6 +60,7 @@ pub enum AudioCommand {
 pub enum AudioEvent {
     /// The microphone route was disconnected by feedback protection.
     MicrophoneFeedbackMuted,
+    Stream(crate::audio::StreamEvent),
     Ready,
     FeedbackDetected {
         suspected_source: Option<crate::audio::FeedbackSource>,

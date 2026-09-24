@@ -41,7 +41,7 @@ pub enum Direction {
 /// Optional `app_*` props are captured at first-seen time and remain
 /// stable for the lifetime of the producing process (per issue #26
 /// "Stable Identity Properties" rationale).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StreamEvent {
     /// A new `Stream/Output/Audio` node belonging to an external app
     /// has appeared. Emitted ONCE per node, after props are extracted.
@@ -66,6 +66,7 @@ pub enum StreamEvent {
         node_id: u32,
         channel: String,
         direction: Direction,
+        monitor: bool,
     },
     /// A previously seen port was destroyed.
     PortRemoved { id: u32 },
@@ -133,6 +134,15 @@ fn extract_pid(props: &DictRef) -> Option<u32> {
 
 fn extract_opt(props: &DictRef, key: &str) -> Option<String> {
     props.get(key).map(str::to_owned)
+}
+
+fn is_monitor(props: &DictRef) -> bool {
+    props.get("port.monitor") == Some("true")
+        || props
+            .get("port.name")
+            .unwrap_or("")
+            .split(['.', ':'])
+            .any(|part| part.starts_with("monitor_"))
 }
 
 /// Start a PipeWire registry watcher.
@@ -323,111 +333,9 @@ fn forward_port_event(
         node_id,
         channel,
         direction,
+        monitor: is_monitor(props),
     });
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use pipewire::properties::properties;
-
-    fn dict<F: FnOnce(&DictRef) -> R, R>(props: &pipewire::properties::PropertiesBox, f: F) -> R {
-        let d: &DictRef = props.as_ref();
-        f(d)
-    }
-
-    #[test]
-    fn is_own_node_matches_self_pid() {
-        let props = properties! { "application.process.id" => "4242" };
-        assert!(dict(&props, |d| is_own_node(d, 4242)));
-    }
-
-    #[test]
-    fn is_own_node_skips_when_pid_differs() {
-        let props = properties! { "application.process.id" => "4242" };
-        assert!(!dict(&props, |d| is_own_node(d, 9999)));
-    }
-
-    #[test]
-    fn is_own_node_fails_open_when_pid_missing() {
-        let props = properties! { "node.name" => "spotify" };
-        assert!(!dict(&props, |d| is_own_node(d, 4242)));
-    }
-
-    #[test]
-    fn is_own_node_fails_open_on_non_numeric_pid() {
-        let props = properties! { "application.process.id" => "not-a-number" };
-        assert!(!dict(&props, |d| is_own_node(d, 4242)));
-    }
-
-    #[test]
-    fn extract_name_uses_description_first() {
-        let props = properties! {
-            "node.description" => "Spotify Premium",
-            "node.nick" => "Spotify",
-            "node.name" => "spotify",
-        };
-        assert_eq!(dict(&props, extract_name), "Spotify Premium");
-    }
-
-    #[test]
-    fn extract_name_falls_back_to_nick() {
-        let props = properties! {
-            "node.nick" => "Spotify",
-            "node.name" => "spotify",
-        };
-        assert_eq!(dict(&props, extract_name), "Spotify");
-    }
-
-    #[test]
-    fn extract_name_falls_back_to_node_name() {
-        let props = properties! { "node.name" => "spotify" };
-        assert_eq!(dict(&props, extract_name), "spotify");
-    }
-
-    #[test]
-    fn extract_name_defaults_to_unknown_when_all_missing() {
-        let props = properties! { "media.class" => "Stream/Output/Audio" };
-        assert_eq!(dict(&props, extract_name), "unknown");
-    }
-
-    #[test]
-    fn extract_pid_parses_numeric() {
-        let props = properties! { "application.process.id" => "1234" };
-        assert_eq!(dict(&props, extract_pid), Some(1234));
-    }
-
-    #[test]
-    fn extract_pid_returns_none_when_missing() {
-        let props = properties! { "node.name" => "spotify" };
-        assert_eq!(dict(&props, extract_pid), None);
-    }
-
-    #[test]
-    fn extract_pid_returns_none_on_non_numeric() {
-        let props = properties! { "application.process.id" => "abc" };
-        assert_eq!(dict(&props, extract_pid), None);
-    }
-
-    #[test]
-    fn extract_opt_returns_value_when_present() {
-        let props = properties! { "application.name" => "Firefox" };
-        assert_eq!(
-            dict(&props, |d| extract_opt(d, "application.name")),
-            Some("Firefox".to_owned())
-        );
-    }
-
-    #[test]
-    fn extract_opt_returns_none_when_absent() {
-        let props = properties! { "node.name" => "x" };
-        assert_eq!(dict(&props, |d| extract_opt(d, "application.name")), None);
-    }
-
-    #[test]
-    fn direction_variants_are_distinct() {
-        // Pin the public enum surface so a future enum-shuffle review
-        // catches accidental variant reorder/removal.
-        assert_ne!(Direction::Input, Direction::Output);
-    }
-}
+mod tests;

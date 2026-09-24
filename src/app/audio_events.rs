@@ -22,18 +22,25 @@ impl HonkHonk {
         match event {
             AudioEvent::MicrophoneFeedbackMuted => {
                 self.config.mic_passthrough = false;
+                self.mixer.mic_cooldown = Some(Instant::now() + Duration::from_secs(2));
                 self.persist_config();
             }
+            AudioEvent::Stream(event) => self.mixer.stream(event, Instant::now()),
             AudioEvent::FeedbackDetected { suspected_source } => {
+                self.mixer
+                    .feedback(suspected_source.as_ref(), Instant::now());
                 self.feedback_notice(suspected_source)
             }
             AudioEvent::RouteRejected { node_id, reason } => {
+                self.mixer.rejected(node_id, reason, Instant::now());
                 self.notices.push(
                     Notice::warning("Route blocked", format!("Source {node_id}: {reason}")),
                     Instant::now(),
                 );
             }
-            AudioEvent::RoutingChanged { .. } => {}
+            AudioEvent::RoutingChanged { node_id, enabled } => {
+                self.mixer.routed(node_id, enabled);
+            }
             AudioEvent::Ready => self.audio_ready(),
             AudioEvent::PlaybackStarted {
                 sound_id,
@@ -79,6 +86,9 @@ impl HonkHonk {
     }
 
     fn audio_ready(&self) {
+        self.send_audio_commands([AudioCommand::Router(
+            crate::audio::RouterCommand::SetSafeMode(self.config.mixer_safe_mode),
+        )]);
         self.send_audio_commands([AudioCommand::SetDynamics(self.config.processing.dynamics)]);
         tracing::info!("audio engine ready");
         if let Some(ref audio) = self.audio {

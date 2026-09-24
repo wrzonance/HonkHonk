@@ -50,6 +50,10 @@ const DEFAULT_HEIGHT: u32 = 600;
 const SOUND_SUBDIR: &str = "HonkHonk";
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppConfig {
+    #[serde(default = "default_true")]
+    pub mixer_safe_mode: bool,
+    #[serde(default)]
+    pub mixer_show_monitors: bool,
     #[serde(default)]
     pub processing: crate::audio::processing::GlobalProcessing,
     pub sound_directories: Vec<PathBuf>,
@@ -91,6 +95,8 @@ impl Default for AppConfig {
             .collect();
 
         Self {
+            mixer_safe_mode: true,
+            mixer_show_monitors: false,
             processing: Default::default(),
             sound_directories,
             volume: DEFAULT_VOLUME,

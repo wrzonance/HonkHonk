@@ -23,6 +23,7 @@ use super::notices::{Notice, NoticeId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    Mixer(crate::ui::mixer::MixerMessage),
     GlobalProcessingChanged(crate::audio::processing::GlobalProcessing),
     SoundProcessingChanged(crate::audio::processing::SoundProcessing),
     AudioFingerprintReady {
