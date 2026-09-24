@@ -113,6 +113,7 @@ impl MixerState {
         }
         if self.feedback_until.is_some_and(|until| until <= now) {
             self.feedback_until = None;
+            self.feedback_source = None;
         }
     }
 

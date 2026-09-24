@@ -195,3 +195,28 @@ fn microphone_feedback_updates_control_and_blocks_cooldown_reenable() {
             .any(|command| matches!(command, AudioCommand::SetMicPassthrough(true)))
     );
 }
+
+#[test]
+fn feedback_banner_expires_at_timeout_without_clearing_row_warning() {
+    let mut app = app();
+    let now = Instant::now();
+    app.mixer.feedback(
+        Some(&crate::audio::FeedbackSource {
+            node_id: 7,
+            name: "Browser".into(),
+        }),
+        now,
+    );
+    app.mixer.tick(now + Duration::from_millis(1999));
+    assert_eq!(app.mixer.feedback_source.as_deref(), Some("Browser"));
+    assert!(app.mixer.feedback_until.is_some());
+    app.mixer.tick(now + Duration::from_secs(2));
+    assert!(app.mixer.feedback_source.is_none());
+    assert!(app.mixer.feedback_until.is_none());
+    assert!(!app.mixer.needs_tick());
+    assert_eq!(
+        app.mixer.sources[&7].warning,
+        Some(crate::audio::RouteRejection::Cooldown)
+    );
+    assert!(!app.mixer.sources[&7].enabled);
+}
