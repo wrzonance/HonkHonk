@@ -68,3 +68,30 @@ fn audio_error_event_queues_persistent_error_notice() {
     let _ = app.update(Message::DismissNotice(id));
     assert!(app.notices().is_empty());
 }
+
+#[test]
+fn feedback_warning_names_the_muted_source_and_route_action() {
+    let mut app = HonkHonk::new_for_test();
+    let _ = app.update(Message::AudioEvent(AudioEvent::FeedbackDetected {
+        suspected_source: Some(crate::audio::FeedbackSource {
+            node_id: 42,
+            name: "Discord".into(),
+        }),
+    }));
+    let notice = app.notices().front().expect("feedback warning");
+    assert_eq!(notice.notice.level, NoticeLevel::Warning);
+    assert!(notice.notice.body.contains("Discord was muted"));
+    assert!(notice.notice.body.contains("Check your audio routing"));
+}
+
+#[test]
+fn unsafe_route_rejection_is_visible() {
+    let mut app = HonkHonk::new_for_test();
+    let _ = app.update(Message::AudioEvent(AudioEvent::RouteRejected {
+        node_id: 42,
+        reason: crate::audio::RouteRejection::Cycle,
+    }));
+    let notice = app.notices().front().expect("routing warning");
+    assert_eq!(notice.notice.level, NoticeLevel::Warning);
+    assert!(notice.notice.body.contains("downstream"));
+}

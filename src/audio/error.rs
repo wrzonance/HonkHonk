@@ -14,6 +14,12 @@ pub enum WatcherError {
 /// Structured failure modes for the PipeWire router (issue #27).
 #[derive(Error, Debug)]
 pub enum RouterError {
+    #[error("route for node {node_id} rejected: {reason}")]
+    UnsafeRoute {
+        node_id: u32,
+        reason: super::routing_graph::RouteRejection,
+    },
+
     /// `core.create_object::<Link>()` failed for a specific port pair.
     #[error("failed to create link from src port {src_port} to sink port {sink_port}")]
     LinkCreation {
@@ -34,6 +40,10 @@ pub enum RouterError {
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum EngineErrorEvent {
+    #[error("feedback monitoring unavailable: {detail}")]
+    FeedbackMonitor { detail: String },
+    #[error("routing failed: {detail}")]
+    Routing { detail: String },
     #[error("{detail}")]
     EngineInitialization { detail: String },
 

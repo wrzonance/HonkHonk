@@ -59,6 +59,17 @@ pub enum AudioCommand {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
     Ready,
+    FeedbackDetected {
+        suspected_source: Option<crate::audio::FeedbackSource>,
+    },
+    RouteRejected {
+        node_id: u32,
+        reason: crate::audio::RouteRejection,
+    },
+    RoutingChanged {
+        node_id: u32,
+        enabled: bool,
+    },
     PlaybackStarted {
         sound_id: String,
         /// Echoes the `generation` of the `Play` this voice came from, mirroring
