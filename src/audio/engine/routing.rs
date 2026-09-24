@@ -1,5 +1,7 @@
 use super::super::registry::RegistryGuard;
 use super::*;
+use crate::audio::FeedbackSource;
+use crate::audio::feedback::FeedbackObservation;
 
 pub(super) struct RoutingRuntime {
     pub router: Rc<RefCell<Router>>,
@@ -7,7 +9,8 @@ pub(super) struct RoutingRuntime {
     pub sink_ports: Rc<RefCell<Vec<u32>>>,
     pub core: pipewire::core::CoreRc,
     pub events: mpsc::Sender<AudioEvent>,
-    pub feedback_pending: Rc<Cell<bool>>,
+    pub observation: Rc<RefCell<FeedbackObservation>>,
+    pub voices: Rc<RefCell<VoicePool>>,
 }
 
 impl RoutingRuntime {
@@ -16,7 +19,11 @@ impl RoutingRuntime {
         streams: &mpsc::Receiver<streams::StreamEvent>,
         events: &mpsc::Receiver<RouterEvent>,
     ) {
-        if self.feedback_pending.replace(false) {
+        if self
+            .observation
+            .borrow_mut()
+            .take_report(&self.voices.borrow())
+        {
             self.feedback();
         }
         self.registry.recheck_routes();
@@ -42,9 +49,7 @@ impl RoutingRuntime {
             Some(Suspect::Microphone) => self.registry.trip_feedback(now),
             None => None,
         };
-        let _ = self
-            .events
-            .send(AudioEvent::FeedbackDetected { suspected_source });
+        report_feedback(&self.events, suspected_source);
     }
 
     fn stream_event(&self, event: streams::StreamEvent) {
@@ -98,6 +103,14 @@ impl RoutingRuntime {
     }
 }
 
+fn report_feedback(events: &mpsc::Sender<AudioEvent>, suspected_source: Option<FeedbackSource>) {
+    if let Some(source) = suspected_source {
+        let _ = events.send(AudioEvent::FeedbackDetected {
+            suspected_source: Some(source),
+        });
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Suspect {
     Application(u32),
@@ -119,6 +132,21 @@ fn choose_suspect(
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn feedback_event_requires_a_source_that_was_actually_tripped() {
+        let (tx, rx) = mpsc::channel();
+        report_feedback(&tx, None);
+        assert!(rx.try_recv().is_err());
+        let source = FeedbackSource {
+            node_id: 2,
+            name: "Mic".into(),
+        };
+        report_feedback(&tx, Some(source.clone()));
+        assert!(matches!(rx.try_recv(), Ok(AudioEvent::FeedbackDetected {
+            suspected_source: Some(actual)
+        }) if actual == source));
+    }
 
     #[test]
     fn only_active_sources_can_be_suspected_and_latest_activation_wins() {

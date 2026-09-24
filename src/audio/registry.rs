@@ -66,11 +66,10 @@ impl RegistryGuard {
     }
 
     pub fn apply_passthrough(&self, enabled: bool) {
-        if enabled && self.cooling_down() {
+        if !request_passthrough(&self.mic_passthrough, enabled, || self.cooling_down()) {
             return;
         }
         let core = &self.core;
-        self.mic_passthrough.set(enabled);
         if enabled {
             let mut s = self.state.borrow_mut();
             let mut links = self.mic_links.borrow_mut();
@@ -120,6 +119,18 @@ impl RegistryGuard {
             try_create_mic_links(&mut s, core, &mut links, &self.evt_tx);
         }
     }
+}
+
+fn request_passthrough(
+    intent: &Cell<bool>,
+    enabled: bool,
+    cooling_down: impl FnOnce() -> bool,
+) -> bool {
+    intent.set(enabled);
+    if enabled && cooling_down() {
+        return false;
+    }
+    true
 }
 
 fn sink_names(state: &RegistryState) -> Vec<(String, String)> {

@@ -14,6 +14,51 @@ fn state() -> RegistryState {
     }
 }
 
+fn routable_state() -> RegistryState {
+    use crate::audio::routing_graph::{NodeInfo, PortInfo};
+    let state = state();
+    let mut graph = state.graph.borrow_mut();
+    for (id, name, class) in [
+        (1, "honkhonk-mix", "Audio/Sink"),
+        (2, "mic", "Audio/Source"),
+    ] {
+        graph.nodes.insert(
+            id,
+            NodeInfo {
+                name: name.into(),
+                class: class.into(),
+                ..Default::default()
+            },
+        );
+    }
+    for (id, node, input) in [(10, 1, true), (11, 1, true), (20, 2, false), (21, 2, false)] {
+        graph.ports.insert(
+            id,
+            PortInfo {
+                node,
+                input,
+                monitor: false,
+            },
+        );
+    }
+    drop(graph);
+    state
+}
+
+#[test]
+fn microphone_enable_during_cooldown_retains_intent_for_legal_retry() {
+    let now = std::time::Instant::now();
+    let until = now + std::time::Duration::from_secs(2);
+    let mut state = routable_state();
+    state.mic_cooldown = Some(until);
+    let intent = Cell::new(false);
+    assert!(!request_passthrough(&intent, true, || true));
+    assert!(intent.get());
+    assert_eq!(mic_pairs(&state, now), Err(RouteRejection::Cooldown));
+    assert!(intent.get());
+    assert_eq!(mic_pairs(&state, until), Ok(vec![(20, 10), (21, 11)]));
+}
+
 #[test]
 fn removed_mic_ports_do_not_poison_recreated_routing() {
     let mut state = state();

@@ -14,12 +14,12 @@ pub(super) fn drop_mic_links(state: &mut RegistryState, links: &mut Vec<pipewire
     state.mic_activated = None;
 }
 
-fn mic_pairs(state: &RegistryState) -> Result<Vec<(u32, u32)>, RouteRejection> {
+pub(super) fn mic_pairs(
+    state: &RegistryState,
+    now: std::time::Instant,
+) -> Result<Vec<(u32, u32)>, RouteRejection> {
     let node = state.mic_node_id.ok_or(RouteRejection::Unknown)?;
-    if state
-        .mic_cooldown
-        .is_some_and(|until| until > std::time::Instant::now())
-    {
+    if state.mic_cooldown.is_some_and(|until| until > now) {
         return Err(RouteRejection::Cooldown);
     }
     let pairs: Vec<_> = state
@@ -38,7 +38,7 @@ pub(super) fn try_create_mic_links(
     links: &mut Vec<pipewire::link::Link>,
     events: &mpsc::Sender<AudioEvent>,
 ) {
-    let pairs = match mic_pairs(state) {
+    let pairs = match mic_pairs(state, std::time::Instant::now()) {
         Ok(pairs) => pairs,
         Err(reason) => {
             drop_mic_links(state, links);
