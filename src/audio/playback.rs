@@ -27,7 +27,7 @@ pub struct PlaybackStream {
 const SPA_AUDIO_CHANNEL_FL: u32 = 3;
 const SPA_AUDIO_CHANNEL_FR: u32 = 4;
 
-fn build_audio_params(rate: u32, channels: u32) -> Vec<u8> {
+pub(crate) fn build_audio_params(rate: u32, channels: u32) -> Vec<u8> {
     let mut audio_info = spa::param::audio::AudioInfoRaw::new();
     audio_info.set_format(spa::param::audio::AudioFormat::F32LE);
     audio_info.set_rate(rate);

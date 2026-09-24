@@ -20,6 +20,20 @@ Select 'HonkHonk Mic' as your input in Discord/OBS."
 impl HonkHonk {
     pub(super) fn handle_audio_event(&mut self, event: AudioEvent) -> Task<Message> {
         match event {
+            AudioEvent::MicrophoneFeedbackMuted => {
+                self.config.mic_passthrough = false;
+                self.persist_config();
+            }
+            AudioEvent::FeedbackDetected { suspected_source } => {
+                self.feedback_notice(suspected_source)
+            }
+            AudioEvent::RouteRejected { node_id, reason } => {
+                self.notices.push(
+                    Notice::warning("Route blocked", format!("Source {node_id}: {reason}")),
+                    Instant::now(),
+                );
+            }
+            AudioEvent::RoutingChanged { .. } => {}
             AudioEvent::Ready => self.audio_ready(),
             AudioEvent::PlaybackStarted {
                 sound_id,
@@ -47,6 +61,21 @@ impl HonkHonk {
             }
         }
         Task::none()
+    }
+
+    fn feedback_notice(&mut self, source: Option<crate::audio::FeedbackSource>) {
+        let body = match source {
+            Some(source) => format!(
+                "Feedback detected — {} was muted. Check your audio routing.",
+                source.name
+            ),
+            None => {
+                "Feedback detected. Check your audio routing; no routed source could be identified."
+                    .into()
+            }
+        };
+        self.notices
+            .push(Notice::warning("Feedback detected", body), Instant::now());
     }
 
     fn audio_ready(&self) {

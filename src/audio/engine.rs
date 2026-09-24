@@ -7,10 +7,13 @@ use super::confd;
 use super::effects::EffectSettings;
 use super::error::{AudioError, EngineErrorEvent};
 use super::handle::AudioHandle;
+mod commands;
 mod nodes;
 mod playback_streams;
 mod protocol;
+mod routing;
 mod runtime;
+mod setup;
 #[cfg(test)]
 mod tests;
 use super::playback;
