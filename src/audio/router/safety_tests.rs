@@ -166,3 +166,43 @@ fn confirmed_cycle_disables_intent_and_reports_reason() {
         })
     )));
 }
+
+#[test]
+fn volume_control_requires_active_safe_route() {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let mut router = Router::new(tx);
+    assert!(router.check_source_control(7).is_err());
+    router.on_source_added(7, Some("Browser".into()), None, Some(123));
+    router.update_sink_ports(vec![20, 22]);
+    router.on_port_added(21, 7, "FL".into(), Direction::Output);
+    router.on_port_added(23, 7, "FR".into(), Direction::Output);
+    assert!(router.check_source_control(7).is_err());
+    router.route_source_test(7);
+    assert!(router.check_source_control(7).is_ok());
+    router.set_safe_mode(true);
+    assert!(router.check_source_control(7).is_err());
+}
+
+#[test]
+fn all_route_teardowns_emit_the_volume_restoration_event() {
+    for teardown in 0..4 {
+        let mut router = router();
+        let (tx, rx) = mpsc::channel();
+        router.evt_tx = tx;
+        router.route_source_test(3);
+        let _ = rx.try_iter().collect::<Vec<_>>();
+        match teardown {
+            0 => router.handle_command_unroute_source(3),
+            1 => router.set_safe_mode(true),
+            2 => {
+                router.trip_feedback(3, std::time::Instant::now());
+            }
+            _ => router.restore_last_change(),
+        }
+        assert!(!router.active_links.contains_key(&3));
+        assert!(
+            rx.try_iter()
+                .any(|event| matches!(event, RouterEvent::RouteDestroyed { node_id: 3 }))
+        );
+    }
+}

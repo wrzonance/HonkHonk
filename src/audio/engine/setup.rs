@@ -12,7 +12,7 @@ pub(super) struct RoutingSetup {
     _sink: pipewire::node::Node,
     _source: Option<pipewire::node::Node>,
     _graph_watcher: GraphWatcher,
-    _stream_watcher: streams::StreamWatcher,
+    pub stream_watcher: Rc<streams::StreamWatcher>,
     _feedback_monitor: FeedbackMonitor,
 }
 
@@ -41,6 +41,7 @@ impl RoutingSetup {
             },
         )?);
         let (stream_watcher, stream_rx) = spawn_stream_watcher(&core)?;
+        let stream_watcher = Rc::new(stream_watcher);
         let (router_tx, router_rx) = mpsc::channel();
         let router = Rc::new(RefCell::new(Router::new(router_tx)));
         router.borrow_mut().use_graph(graph);
@@ -61,6 +62,7 @@ impl RoutingSetup {
                 events,
                 observation,
                 voices,
+                stream_watcher: stream_watcher.clone(),
             },
             sink_id,
             stream_rx,
@@ -68,7 +70,7 @@ impl RoutingSetup {
             _sink: sink,
             _source: source,
             _graph_watcher: graph_watcher,
-            _stream_watcher: stream_watcher,
+            stream_watcher,
             _feedback_monitor: feedback_monitor,
         })
     }

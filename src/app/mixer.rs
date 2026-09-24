@@ -6,6 +6,14 @@ use super::{HonkHonk, Message};
 use crate::audio::{AudioCommand, FeedbackSource, RouteRejection, RouterCommand, StreamEvent};
 use crate::ui::mixer::MixerMessage;
 
+mod levels;
+
+fn preference_key(app: Option<String>, binary: Option<String>) -> Option<String> {
+    let app = app.unwrap_or_default();
+    let binary = binary.unwrap_or_default();
+    (!app.is_empty() || !binary.is_empty()).then(|| format!("{}:{binary}{app}", binary.len()))
+}
+
 #[derive(Default)]
 pub(crate) struct MixerState {
     pub sources: BTreeMap<u32, MixerSource>,
@@ -19,6 +27,9 @@ pub(crate) struct MixerState {
 }
 
 pub(crate) struct MixerSource {
+    pub level: crate::audio::streams::SourceLevel,
+    pub level_observed: bool,
+    pub preference_key: Option<String>,
     pub name: String,
     pub media_name: Option<String>,
     pub enabled: bool,
@@ -40,8 +51,21 @@ impl MixerState {
                 id,
                 name,
                 media_name,
+                app_name,
+                app_binary,
                 ..
-            } => self.source_added(id, name, media_name),
+            } => self.source_added(id, name, media_name, preference_key(app_name, app_binary)),
+            StreamEvent::SourceLevelChanged { id, volume, muted } => {
+                if let Some(source) = self.sources.get_mut(&id) {
+                    source.level_observed |= volume.is_some_and(f32::is_finite) && muted.is_some();
+                    if let Some(v) = volume.filter(|v| v.is_finite()) {
+                        source.level.volume = v.clamp(0.0, 1.0);
+                    }
+                    if let Some(muted) = muted {
+                        source.level.muted = muted;
+                    }
+                }
+            }
             StreamEvent::SourceRemoved { id } => {
                 self.sources.remove(&id);
                 self.pending_titles.remove(&id);
@@ -54,12 +78,7 @@ impl MixerState {
                 id,
                 media_name: Some(title),
             } => {
-                if self.sources.contains_key(&id) {
-                    self.pending_titles
-                        .entry(id)
-                        .and_modify(|(_, current)| current.clone_from(&title))
-                        .or_insert((now + Duration::from_millis(200), title));
-                }
+                self.title_changed(id, title, now);
             }
             StreamEvent::PortAdded {
                 id,
@@ -67,13 +86,7 @@ impl MixerState {
                 monitor: true,
                 ..
             } => {
-                self.monitor_ports.insert(id, node_id);
-                if let Some(source) = self.sources.get_mut(&node_id) {
-                    source.monitor = true;
-                }
-                if self.confirm == Some(node_id) {
-                    self.confirm = None;
-                }
+                self.monitor_added(id, node_id);
             }
             StreamEvent::PortRemoved { id } => self.port_removed(id),
             _ => {}
@@ -88,10 +101,38 @@ impl MixerState {
         }
     }
 
-    fn source_added(&mut self, id: u32, name: String, media_name: Option<String>) {
+    fn title_changed(&mut self, id: u32, title: String, now: Instant) {
+        if self.sources.contains_key(&id) {
+            self.pending_titles
+                .entry(id)
+                .and_modify(|(_, current)| current.clone_from(&title))
+                .or_insert((now + Duration::from_millis(200), title));
+        }
+    }
+
+    fn monitor_added(&mut self, id: u32, node_id: u32) {
+        self.monitor_ports.insert(id, node_id);
+        if let Some(source) = self.sources.get_mut(&node_id) {
+            source.monitor = true;
+        }
+        if self.confirm == Some(node_id) {
+            self.confirm = None;
+        }
+    }
+
+    fn source_added(
+        &mut self,
+        id: u32,
+        name: String,
+        media_name: Option<String>,
+        preference_key: Option<String>,
+    ) {
         self.sources.insert(
             id,
             MixerSource {
+                level: Default::default(),
+                level_observed: false,
+                preference_key,
                 name,
                 media_name,
                 enabled: false,
@@ -172,6 +213,9 @@ impl HonkHonk {
     pub(super) fn update_mixer(&mut self, message: MixerMessage) -> iced::Task<Message> {
         match message {
             MixerMessage::Tick(now) => self.mixer.tick(now),
+            MixerMessage::Volume(id, volume) => self.set_source_level(id, Some(volume), None),
+            MixerMessage::VolumeSave => self.persist_config(),
+            MixerMessage::Mute(id, muted) => self.set_source_level(id, None, Some(muted)),
             MixerMessage::SafeMode(enabled) => {
                 self.config.mixer_safe_mode = enabled;
                 self.mixer.confirm = None;
@@ -216,7 +260,7 @@ impl HonkHonk {
         }
     }
 
-    fn send_router(&self, command: RouterCommand) {
+    pub(super) fn send_router(&self, command: RouterCommand) {
         self.send_audio_commands([AudioCommand::Router(command)]);
     }
 }
