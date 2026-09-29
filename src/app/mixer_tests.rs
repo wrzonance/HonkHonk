@@ -3,7 +3,7 @@ use crate::audio::RouterCommand;
 use crate::audio::streams::StreamEvent;
 use crate::ui::mixer::MixerMessage;
 
-fn app() -> HonkHonk {
+pub(super) fn app() -> HonkHonk {
     let mut app = HonkHonk::new_for_test();
     app.audio = Some(crate::audio::test_handle().0);
     let _ = app.update(Message::AudioEvent(AudioEvent::Stream(added(7))));
@@ -22,7 +22,7 @@ fn added(id: u32) -> StreamEvent {
     }
 }
 
-fn change(app: &mut HonkHonk, message: MixerMessage) {
+pub(super) fn change(app: &mut HonkHonk, message: MixerMessage) {
     let _ = app.update(Message::Mixer(message));
 }
 

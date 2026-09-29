@@ -46,6 +46,10 @@ pub enum RouterCommand {
     },
     /// Remove all active routes and all route intents.
     UnrouteAll,
+    SetSourceLevel {
+        source_node_id: u32,
+        level: super::streams::SourceLevel,
+    },
     SetSafeMode(bool),
     UndoRoutingChange,
 }

@@ -55,6 +55,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub mixer_show_monitors: bool,
     #[serde(default)]
+    pub source_levels: BTreeMap<String, crate::audio::streams::SourceLevel>,
+    #[serde(default)]
     pub processing: crate::audio::processing::GlobalProcessing,
     pub sound_directories: Vec<PathBuf>,
     pub volume: f32,
@@ -97,6 +99,7 @@ impl Default for AppConfig {
         Self {
             mixer_safe_mode: true,
             mixer_show_monitors: false,
+            source_levels: BTreeMap::new(),
             processing: Default::default(),
             sound_directories,
             volume: DEFAULT_VOLUME,
