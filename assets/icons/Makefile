@@ -5,6 +5,12 @@ SVG_SYMBOLIC = icon-symbolic.svg
 OUT          = generated
 
 RESVG  ?= resvg
+# The committed PNGs are byte-compared in CI, and resvg's rasterizer output
+# changes between releases (0.47.0 -> 0.48.1 re-rendered every hicolor PNG).
+# This is the single source of truth for the renderer version: CI installs
+# exactly this release and `check-tools` refuses any other. Bump it together
+# with a `make clean && make icons` regeneration, in the same commit.
+RESVG_VERSION := 0.48.1
 # ImageMagick 6 ships `convert`; IM7 ships `magick` (and keeps a
 # `convert` compatibility wrapper). The default Ubuntu apt package
 # `imagemagick` is IM6, so we standardize on `convert` for portability
@@ -19,13 +25,18 @@ MAGICK ?= convert
 # cannot be expressed with a single static pattern.
 HICOLOR_PNGS = $(foreach s,$(SIZES),$(OUT)/hicolor/$(s)x$(s)/apps/$(APPID).png)
 
-.PHONY: icons hicolor symbolic favicon social clean check-tools
+.PHONY: icons hicolor symbolic favicon social clean check-tools resvg-version
 
 icons: check-tools hicolor symbolic favicon social
 
 check-tools:
-	@command -v $(RESVG)  >/dev/null || { echo "ERROR: resvg missing — cargo install resvg --locked"; exit 1; }
+	@command -v $(RESVG)  >/dev/null || { echo "ERROR: resvg missing — cargo install resvg --version $(RESVG_VERSION) --locked"; exit 1; }
+	@$(RESVG) --version | grep -qwF "$(RESVG_VERSION)" || { echo "ERROR: resvg $(RESVG_VERSION) required, found '$$($(RESVG) --version)' — cargo install resvg --version $(RESVG_VERSION) --locked --force"; exit 1; }
 	@command -v $(MAGICK) >/dev/null || { echo "ERROR: ImageMagick missing (need 'convert' binary)"; exit 1; }
+
+# Prints the pinned renderer version so CI installs the same release.
+resvg-version:
+	@echo $(RESVG_VERSION)
 
 hicolor: $(HICOLOR_PNGS) $(OUT)/hicolor/scalable/apps/$(APPID).svg
 
