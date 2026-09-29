@@ -1,0 +1,43 @@
+name: OSSF Scorecard
+
+# Grades supply-chain posture (SHA-pinned actions, token permissions, dangerous
+# workflow patterns) and reports to the Security tab. We already follow most of
+# these rules; the value is catching regressions.
+#
+# This workflow uses no external untrusted inputs: it runs only on a schedule
+# or a manual dispatch against the default branch.
+
+on:
+  schedule:
+    - cron: "30 6 * * 1" # Monday 6:30am UTC, after CodeQL
+  workflow_dispatch: # Allow manual trigger
+
+# Scorecard's own Token-Permissions check requires read-only defaults.
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          # Results stay in this repository's Security tab. Publishing to the
+          # public OpenSSF API (and its badge) is a separate, deliberate opt-in
+          # that also needs `id-token: write`.
+          publish_results: false
+
+      - name: Upload Scorecard results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: scorecard-results.sarif
+          category: scorecard
