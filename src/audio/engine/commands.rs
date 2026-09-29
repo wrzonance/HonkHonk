@@ -7,6 +7,9 @@ pub(super) fn handle(
     mainloop: &pipewire::main_loop::MainLoopRc,
     cmd: AudioCommand,
 ) {
+    if ctx.shutdown.borrow().active() {
+        return;
+    }
     match cmd {
         cmd @ (AudioCommand::Play { .. }
         | AudioCommand::StopVoice(_)
@@ -25,7 +28,7 @@ pub(super) fn handle(
         AudioCommand::Router(cmd) => router_command(ctx, cmd),
         AudioCommand::Shutdown => {
             let _ = ctx.voices.borrow_mut().stop_all();
-            mainloop.quit();
+            super::runtime::begin_shutdown(ctx, mainloop);
         }
         cmd @ (AudioCommand::SetEffectBypass { .. }
         | AudioCommand::SetEffectParam { .. }
@@ -86,10 +89,37 @@ fn router_command(ctx: &EngineCtx, cmd: super::super::router::RouterCommand) {
         RouterCommand::UnrouteSource { source_node_id } => {
             router.handle_command_unroute_source(source_node_id)
         }
+        RouterCommand::SetSourceLevel {
+            source_node_id,
+            level,
+        } => {
+            if let Some(error) = apply_source_level(&router, source_node_id, || {
+                ctx.stream_watcher.set_level(source_node_id, level)
+            }) {
+                let _ = ctx.evt_tx.send(error);
+            }
+        }
         RouterCommand::SetSafeMode(enabled) => router.set_safe_mode(enabled),
         RouterCommand::UndoRoutingChange => router.restore_last_change(),
         RouterCommand::UnrouteAll => router.handle_command_unroute_all(),
     }
+}
+
+fn apply_source_level(
+    router: &Router,
+    id: u32,
+    apply: impl FnOnce() -> Result<(), super::super::streams::VolumeError>,
+) -> Option<AudioEvent> {
+    if let Err(error) = router.check_source_control(id) {
+        return Some(level_error(id, &error));
+    }
+    apply().err().map(|error| level_error(id, &error))
+}
+
+pub(super) fn level_error(id: u32, error: &dyn std::fmt::Display) -> AudioEvent {
+    AudioEvent::Error(EngineErrorEvent::Routing {
+        detail: format!("source {id} volume: {error}"),
+    })
 }
 
 fn effect_command(ctx: &EngineCtx, cmd: AudioCommand) {
@@ -131,5 +161,20 @@ fn effect_command(ctx: &EngineCtx, cmd: AudioCommand) {
     };
     if let Some(error) = error {
         let _ = ctx.evt_tx.send(AudioEvent::Error(error));
+    }
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::*;
+    #[test]
+    fn rejected_level_command_is_contextual_error_not_route_rejection() {
+        let (tx, _) = mpsc::channel();
+        let router = Router::new(tx);
+        let event = apply_source_level(&router, 7, || panic!("unsafe source must not be written"));
+        assert!(
+            matches!(event, Some(AudioEvent::Error(EngineErrorEvent::Routing { detail }))
+            if detail.contains("source 7 volume") && detail.contains("routing metadata is not available yet"))
+        );
     }
 }

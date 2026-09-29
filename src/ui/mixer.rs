@@ -2,12 +2,15 @@
 use crate::app::{HonkHonk, Message};
 use iced::{
     Element, Length,
-    widget::{button, checkbox, column, container, row, text},
+    widget::{button, checkbox, column, container, row, slider, text},
 };
 use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MixerMessage {
+    Volume(u32, f32),
+    VolumeSave,
+    Mute(u32, bool),
     SafeMode(bool),
     ShowMonitors(bool),
     Route(u32),
@@ -118,25 +121,14 @@ fn source_row<'a>(
             ]
             .spacing(4)
             .width(Length::Fill),
+            source_level(app, id, source),
             control
         ]
         .spacing(12),
     )
     .padding(10)
     .width(Length::Fill)
-    .style(move |_| container::Style {
-        border: iced::Border {
-            color: if source.warning.is_some() {
-                iced::Color::from_rgb(0.9, 0.15, 0.15)
-            } else {
-                iced::Color::TRANSPARENT
-            },
-            width: pulse,
-            radius: 6.0.into(),
-        },
-        text_color: blocked.then_some(iced::Color::from_rgb(0.5, 0.5, 0.5)),
-        ..Default::default()
-    })
+    .style(move |_| source_style(source.warning.is_some(), blocked, pulse))
     .into()
 }
 
@@ -156,5 +148,53 @@ fn source_status(source: &crate::app::mixer::MixerSource, now: Instant) -> Strin
         "Routed".into()
     } else {
         "Not routed".into()
+    }
+}
+
+fn source_level<'a>(
+    app: &HonkHonk,
+    id: u32,
+    source: &crate::app::mixer::MixerSource,
+) -> Element<'a, Message> {
+    if !source.enabled {
+        return column![].into();
+    }
+    let enabled =
+        source.level_observed && !source.blocked(Instant::now()) && !app.config.mixer_safe_mode;
+    let control = slider(0.0..=1.0, source.level.volume, move |v| {
+        message(MixerMessage::Volume(id, v))
+    })
+    .on_release(message(MixerMessage::VolumeSave))
+    .step(0.01_f32)
+    .width(120);
+    column![
+        text(format!("Volume: {:.0}%", source.level.volume * 100.0)),
+        if enabled {
+            Element::from(control)
+        } else {
+            Element::from(text("Unavailable"))
+        },
+        checkbox(source.level.muted)
+            .label("Mute")
+            .on_toggle_maybe(enabled.then_some(move |v| message(MixerMessage::Mute(id, v)))),
+        text("Affects this source globally").size(12),
+    ]
+    .spacing(4)
+    .into()
+}
+
+fn source_style(warning: bool, blocked: bool, pulse: f32) -> container::Style {
+    container::Style {
+        border: iced::Border {
+            color: if warning {
+                iced::Color::from_rgb(0.9, 0.15, 0.15)
+            } else {
+                iced::Color::TRANSPARENT
+            },
+            width: pulse,
+            radius: 6.0.into(),
+        },
+        text_color: blocked.then_some(iced::Color::from_rgb(0.5, 0.5, 0.5)),
+        ..Default::default()
     }
 }

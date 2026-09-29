@@ -22,6 +22,15 @@ impl Default for RoutingSafety {
 }
 
 impl Router {
+    pub(crate) fn check_source_control(&self, id: u32) -> Result<(), RouteRejection> {
+        self.safety_check(id, Instant::now())?;
+        if !self.active_links.contains_key(&id) {
+            return Err(RouteRejection::Unknown);
+        }
+        let pairs = self.port_pairs(id).map_err(|_| RouteRejection::Unknown)?;
+        self.graph.borrow().check(id, &pairs)
+    }
+
     /// Safe mode starts enabled and never overrides a graph rejection.
     pub fn set_safe_mode(&mut self, enabled: bool) {
         self.safety.safe_mode = enabled;

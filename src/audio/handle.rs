@@ -9,6 +9,7 @@ use super::engine::{AudioCommand, AudioEvent};
 pub struct AudioHandle {
     cmd_tx: pipewire::channel::Sender<AudioCommand>,
     evt_rx: mpsc::Receiver<AudioEvent>,
+    completion: Option<mpsc::Receiver<()>>,
     // Test-only tap recording every command sent through this handle. The
     // pipewire command channel can't be drained synchronously, so this is how
     // unit tests assert the engine command boundary (e.g. exactly one `Play`
@@ -28,6 +29,7 @@ impl AudioHandle {
         Self {
             cmd_tx,
             evt_rx,
+            completion: None,
             #[cfg(test)]
             sent: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
@@ -50,8 +52,25 @@ impl AudioHandle {
         let _ = self.cmd_tx.send(cmd);
     }
 
+    /// Wait for source restoration before the app may terminate the process.
+    /// A failed or unresponsive engine must never prevent exit indefinitely.
     pub fn shutdown(&self) {
-        let _ = self.cmd_tx.send(AudioCommand::Shutdown);
+        if let Err(error) = self.shutdown_wait(std::time::Duration::from_secs(3)) {
+            tracing::warn!(%error, "audio engine shutdown did not complete");
+        }
+    }
+
+    pub(crate) fn with_completion(mut self, completion: mpsc::Receiver<()>) -> Self {
+        self.completion = Some(completion);
+        self
+    }
+
+    fn shutdown_wait(&self, timeout: std::time::Duration) -> Result<(), mpsc::RecvTimeoutError> {
+        self.send(AudioCommand::Shutdown);
+        if let Some(completion) = &self.completion {
+            completion.recv_timeout(timeout)?;
+        }
+        Ok(())
     }
 }
 
@@ -75,4 +94,33 @@ pub(crate) fn test_handle() -> (AudioHandle, mpsc::Sender<AudioEvent>) {
     let (cmd_tx, _cmd_rx) = pipewire::channel::channel::<AudioCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<AudioEvent>();
     (AudioHandle::from_parts(cmd_tx, evt_rx), evt_tx)
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn shutdown_waits_for_engine_completion_and_reports_timeout_or_disconnect() {
+        let (tx, rx) = mpsc::channel();
+        let handle = test_handle().0.with_completion(rx);
+        assert_eq!(
+            handle.shutdown_wait(Duration::ZERO),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        );
+        tx.send(()).unwrap();
+        assert_eq!(handle.shutdown_wait(Duration::ZERO), Ok(()));
+        drop(tx);
+        assert_eq!(
+            handle.shutdown_wait(Duration::ZERO),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        );
+        assert!(
+            handle
+                .sent_commands()
+                .iter()
+                .all(|cmd| matches!(cmd, AudioCommand::Shutdown))
+        );
+    }
 }
