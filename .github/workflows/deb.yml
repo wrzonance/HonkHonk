@@ -7,8 +7,9 @@ on:
       - "[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
 
+# Read-only by default; a job that needs more declares it itself.
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,6 +18,8 @@ jobs:
   build-deb:
     name: Build .deb (Ubuntu 24.04)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write # upload the package to the GitHub Release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
