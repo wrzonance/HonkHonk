@@ -47,6 +47,20 @@ jobs:
             exit 1
           fi
 
+      # Generated and verified before the release exists, so a release never
+      # ships with a missing or stale SBOM.
+      - name: Generate SBOM from Cargo.lock
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          file: Cargo.lock
+          format: spdx-json
+          output-file: honkhonk.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Verify SBOM matches Cargo.lock
+        run: tests/packaging/sbom_matches_lockfile.sh honkhonk.spdx.json
+
       - name: Generate release notes
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -101,3 +115,12 @@ jobs:
           fi
           gh release view "$TAG_NAME" >/dev/null 2>&1 \
             || gh release create "$TAG_NAME" "${RELEASE_ARGS[@]}"
+
+      - name: Attach SBOM to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          SBOM_ASSET="honkhonk-${TAG_NAME#v}.spdx.json"
+          cp honkhonk.spdx.json "$SBOM_ASSET"
+          gh release upload "$TAG_NAME" "$SBOM_ASSET" --clobber
