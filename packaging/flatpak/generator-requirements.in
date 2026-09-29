@@ -1,0 +1,7 @@
+# Dependencies of flatpak-cargo-generator.py (see its inline script metadata).
+# Compile to generator-requirements.txt with:
+#   uv pip compile --universal --generate-hashes --python-version 3.12 \
+#     packaging/flatpak/generator-requirements.in \
+#     -o packaging/flatpak/generator-requirements.txt
+aiohttp>=3.9.5,<4.0.0
+tomlkit>=0.13.3,<1.0
