@@ -1,0 +1,8 @@
+name: HonkHonk CodeQL config
+
+# vendor/ holds upstream snapshots carried via [patch.crates-io] (currently
+# winit 0.30.13 for Wayland file-drop). Findings there belong to upstream and
+# cannot be fixed here without forking further, so keep the analysis on
+# first-party code. See issue #259.
+paths-ignore:
+  - vendor
