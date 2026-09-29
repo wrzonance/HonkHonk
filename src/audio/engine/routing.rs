@@ -11,6 +11,7 @@ pub(super) struct RoutingRuntime {
     pub events: mpsc::Sender<AudioEvent>,
     pub observation: Rc<RefCell<FeedbackObservation>>,
     pub voices: Rc<RefCell<VoicePool>>,
+    pub stream_watcher: Rc<streams::StreamWatcher>,
 }
 
 impl RoutingRuntime {
@@ -75,12 +76,19 @@ impl RoutingRuntime {
                 ..
             } => router.on_port_added(id, node_id, channel, direction),
             StreamEvent::PortRemoved { id } => router.on_port_removed(id),
-            StreamEvent::SourceUpdated { .. } => {}
+            StreamEvent::SourceUpdated { .. } | StreamEvent::SourceLevelChanged { .. } => {}
         }
     }
 
     fn router_event(&self, event: RouterEvent) {
         use super::super::error::RouterError;
+        if let RouterEvent::RouteDestroyed { node_id } = &event
+            && let Err(error) = self.stream_watcher.restore_level(*node_id)
+        {
+            let _ = self
+                .events
+                .send(super::commands::level_error(*node_id, &error));
+        }
         let audio = match event {
             RouterEvent::RouteCreated { node_id, .. }
             | RouterEvent::AutoReconnected { node_id, .. } => AudioEvent::RoutingChanged {
