@@ -54,21 +54,33 @@ both `magick` and a `convert` compatibility wrapper, so the same
 ```bash
 # Arch / Manjaro
 sudo pacman -S imagemagick
-cargo install resvg --locked
+cargo install resvg --version 0.48.1 --locked
 
 # Fedora
 sudo dnf install ImageMagick
-cargo install resvg --locked
+cargo install resvg --version 0.48.1 --locked
 # See "ImageMagick policy note" below — ICO write is disabled by default.
 
 # Ubuntu / Debian
 sudo apt-get install imagemagick fonts-dejavu-core
-cargo install resvg --locked
+cargo install resvg --version 0.48.1 --locked
 ```
 
-`resvg` is pinned to whatever version `cargo install --locked` resolves
-when you run it (the publisher's `Cargo.lock` from that crate release
-keeps the dependency graph reproducible within a given version).
+## Determinism (why the renderer is pinned)
+
+CI regenerates `generated/` and byte-compares it against the committed
+copy, so the renderer stack has to stand still:
+
+- **resvg** is pinned by `RESVG_VERSION` in the `Makefile` — the single
+  source of truth. CI installs exactly that release and `make icons`
+  refuses to run with any other, because rasterizer output changes
+  between resvg releases.
+- **ImageMagick and the DejaVu fonts** come from the dated
+  `ubuntu-24.04` runner image rather than `ubuntu-latest`.
+
+To move to a newer resvg: bump `RESVG_VERSION` (and the install commands
+above), install that release, run `make clean && make icons`, and commit
+the regenerated outputs in the same change.
 
 ## Symbolic icon requirement
 
