@@ -5,14 +5,17 @@ on:
     - cron: "0 6 * * 1" # Monday 6am UTC
   workflow_dispatch: # Allow manual trigger
 
+# Read-only by default; a job that needs more declares it itself.
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   analyze:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload CodeQL results to code scanning
     strategy:
       matrix:
         language: [rust, actions]

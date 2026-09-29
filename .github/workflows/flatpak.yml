@@ -7,13 +7,16 @@ on:
       - "[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
 
+# Read-only by default; a job that needs more declares it itself.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-flatpak:
     name: Build Flatpak (Ubuntu 24.04)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write # upload the bundle to the GitHub Release
     container:
       image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
       options: --privileged
