@@ -1,0 +1,27 @@
+# Advisory exceptions for OSV-based scanners (OSSF Scorecard's Vulnerabilities
+# check). Every entry needs a reason and an exit condition.
+#
+# The first four mirror the `[advisories] ignore` list in deny.toml — keep the
+# two files in step: an advisory dropped from one is dropped from the other.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+reason = "paste is unmaintained (informational); transitive via lofty, no patched version available upstream. Drop once lofty releases a build free of paste."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0192"
+reason = "ttf-parser is unmaintained (informational); transitive via iced font dependencies, no patched version available upstream. Drop once the iced font stack no longer pulls ttf-parser."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0194"
+reason = "Build-time only: quick-xml is used solely by the wayland-scanner proc-macro to parse vendored protocol XML, never untrusted input. Drop when wayland-scanner requires quick-xml 0.41+."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0195"
+reason = "Build-time only: quick-xml is used solely by the wayland-scanner proc-macro to parse vendored protocol XML, never untrusted input. Drop when wayland-scanner requires quick-xml 0.41+."
+
+# Not in deny.toml: cargo-deny only reports `unsound` advisories for direct
+# workspace dependencies by default, and lru is transitive.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0253"
+reason = "Precondition cannot occur: the use-after-free needs a cache key whose Drop panics. The only lru user is cryoglyph's glyph cache, keyed by cosmic-text's CacheKey, which is Copy and so cannot implement Drop. The fix (lru 0.18.2) is unreachable while cryoglyph 0.1.0 requires lru ^0.16 under the pinned iced_wgpu =0.14.0. Drop with the next iced upgrade."
