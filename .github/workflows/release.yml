@@ -13,7 +13,7 @@ permissions:
 jobs:
   create-release:
     name: Create GitHub Release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write # create the GitHub Release
     steps:

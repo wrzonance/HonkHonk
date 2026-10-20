@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-flatpak:
     name: Build Flatpak (Ubuntu 24.04)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write # upload the bundle to the GitHub Release
     container:
