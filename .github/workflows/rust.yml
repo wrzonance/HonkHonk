@@ -36,7 +36,7 @@ jobs:
             libpipewire-0.3-dev libwayland-dev pkg-config
 
       - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Check formatting
         run: cargo fmt -- --check
@@ -54,7 +54,7 @@ jobs:
             | sarif-fmt
 
       - name: Upload clippy results to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: rust-clippy-results.sarif
           wait-for-processing: true
@@ -93,7 +93,7 @@ jobs:
             fonts-dejavu-core libpipewire-0.3-dev libwayland-dev pkg-config
 
       - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       # NOTE: PipeWire integration tests (tests/pipewire_integration.rs) require
       # --features pipewire-test and a live PipeWire session. They are not run here.
@@ -118,7 +118,7 @@ jobs:
             libpipewire-0.3-dev libwayland-dev pkg-config
 
       - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Build release binary
         run: cargo build --release
@@ -215,7 +215,7 @@ jobs:
             libpipewire-0.3-dev libwayland-dev pkg-config
 
       - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: "msrv"
 
