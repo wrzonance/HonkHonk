@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Install dependency audit tools
         run: |
@@ -50,7 +50,7 @@ jobs:
       # Generated and verified before the release exists, so a release never
       # ships with a missing or stale SBOM.
       - name: Generate SBOM from Cargo.lock
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           file: Cargo.lock
           format: spdx-json
