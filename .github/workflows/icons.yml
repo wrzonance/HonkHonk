@@ -31,7 +31,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends imagemagick fonts-dejavu-core
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Install resvg (version pinned in assets/icons/Makefile)
         run: cargo install resvg --version "$(make -s -C assets/icons resvg-version)" --locked
